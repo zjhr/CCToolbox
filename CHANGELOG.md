@@ -4,6 +4,21 @@
 
 该项目遵循 [Semantic Versioning](https://semver.org/)。
 
+## [2.2.8] - 2025-12-22
+
+### Added
+- 🚀 **智能安装功能** - 一键配置 Claude Code / Codex / Gemini，自动检测安装、生成配置、添加渠道
+- ✨ **品牌更新** - 主菜单标题改为 "Vibe Coding 会话管理工具"
+
+### Improved
+- 🔧 配置文件自动备份保护，敏感文件自动设置 600 权限
+- 💡 API Key 输入遮盖，安装进度实时显示
+
+### Fixed
+- 🐛 修复 Codex/Gemini 配置格式匹配问题
+
+---
+
 ## [2.2.0] - 2025-12-08
 
 ### Added

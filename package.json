@@ -1,10 +1,10 @@
 {
   "name": "coding-tool",
-  "version": "2.2.0",
+  "version": "2.2.8",
   "description": "Vibe Coding 增强工作助手 - 智能会话管理、动态渠道切换、全局搜索、实时监控",
   "main": "src/index.js",
   "bin": {
-    "ct": "./bin/ct.js"
+    "ct": "bin/ct.js"
   },
   "scripts": {
     "start": "node bin/ct.js",
@@ -42,7 +42,9 @@
     "dist/",
     "CHANGELOG.md",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "config.example.json",
+    "智能安装使用指南.md"
   ],
   "dependencies": {
     "@iarna/toml": "^2.2.5",
@@ -63,10 +65,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/CooperJiang/cc-tool.git"
+    "url": "git+https://github.com/zjhr/coding-tool.git"
   },
   "bugs": {
-    "url": "https://github.com/CooperJiang/cc-tool/issues"
+    "url": "https://github.com/zjhr/coding-tool/issues"
   },
-  "homepage": "https://github.com/CooperJiang/cc-tool#readme"
+  "homepage": "https://github.com/zjhr/coding-tool#readme"
 }

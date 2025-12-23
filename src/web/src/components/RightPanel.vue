@@ -342,9 +342,10 @@ watch(() => currentChannel.value, refreshChannel)
 .channels-scroll-area {
   flex: 1;
   min-height: 0;
-  padding: 12px;
+  padding: 0 12px 12px;
   overflow-y: auto;
   overflow-x: hidden;
+  background: var(--bg-primary);
 }
 
 /* 下半部分：实时日志 */
@@ -405,7 +406,7 @@ watch(() => currentChannel.value, refreshChannel)
   }
 
   .channels-scroll-area {
-    padding: 10px;
+    padding: 0 10px 10px;
   }
 
   .logs-section {
@@ -471,7 +472,7 @@ watch(() => currentChannel.value, refreshChannel)
   }
 
   .channels-scroll-area {
-    padding: 8px;
+    padding: 0 8px 8px;
   }
 
   .logs-section {
@@ -545,7 +546,7 @@ watch(() => currentChannel.value, refreshChannel)
   }
 
   .channels-scroll-area {
-    padding: 6px;
+    padding: 0 6px 6px;
   }
 
   .logs-section {
@@ -579,7 +580,7 @@ watch(() => currentChannel.value, refreshChannel)
   }
 
   .channels-scroll-area {
-    padding: 4px;
+    padding: 0 4px 4px;
   }
 
   .logs-section {

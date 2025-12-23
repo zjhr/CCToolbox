@@ -4,6 +4,35 @@
       <n-spin size="small" />
     </div>
     <div v-else>
+      <div class="channel-search">
+        <n-input
+          :value="searchInput"
+          type="search"
+          clearable
+          maxlength="100"
+          placeholder="搜索渠道名称、API地址..."
+          :input-props="{
+            'aria-label': '搜索渠道',
+            'aria-autocomplete': 'list',
+            role: 'searchbox'
+          }"
+          @update:value="handleSearchInput"
+          @keydown.esc="handleSearchClear"
+        >
+          <template #prefix>
+            <n-icon aria-hidden="true"><SearchOutline /></n-icon>
+          </template>
+        </n-input>
+        <n-text v-if="isSearching" depth="3" class="search-tip">搜索中，排序已暂停</n-text>
+      </div>
+      <div
+        v-if="hasSearchQuery"
+        class="visually-hidden"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        {{ searchResultText }}
+      </div>
       <div v-if="state.channels.length === 0" class="empty-state">
         <n-empty :description="config.emptyDescription">
           <template v-if="config.showEmptyAction" #extra>
@@ -16,19 +45,52 @@
           </template>
         </n-empty>
       </div>
-      <draggable
-        v-else
-        v-model="state.channels"
-        item-key="id"
-        class="channels-list"
-        ghost-class="ghost"
-        chosen-class="chosen"
-        drag-class="drag"
-        animation="200"
-        @end="actions.handleDragEnd"
-      >
-        <template #item="{ element }">
+      <div v-else-if="showSearchEmpty" class="empty-state">
+        <n-empty description="没有找到匹配的渠道">
+          <template #icon>
+            <n-icon aria-hidden="true"><SearchOutline /></n-icon>
+          </template>
+          <template #extra>
+            <n-text depth="3">尝试其他搜索词或清空筛选</n-text>
+          </template>
+        </n-empty>
+      </div>
+      <div v-else>
+        <draggable
+          v-if="!isSearching"
+          v-model="state.channels"
+          item-key="id"
+          class="channels-list"
+          ghost-class="ghost"
+          chosen-class="chosen"
+          drag-class="drag"
+          animation="200"
+          @end="actions.handleDragEnd"
+        >
+          <template #item="{ element }">
+            <ChannelCard
+              :key="element.id"
+              :channel="element"
+              :collapsed="state.collapsed[element.id]"
+              :header-tags="config.getHeaderTags(element, helpers)"
+              :info-rows="config.buildInfoRows(element, helpers)"
+              :meta="buildMeta(element)"
+              :show-apply-button="config.showApplyButton"
+              :channel-type="config.type"
+              :test-fn="config.testFn"
+              :highlight-text="searchQuery"
+              @toggle-collapse="actions.toggleCollapse(element.id)"
+              @apply="actions.handleApplyToSettings(element)"
+              @edit="actions.handleEdit(element)"
+              @delete="actions.handleDelete(element.id)"
+              @toggle-enabled="value => actions.handleToggleEnabled(element, value)"
+              @open-website="url => emit('open-website', url)"
+            />
+          </template>
+        </draggable>
+        <div v-else class="channels-list static">
           <ChannelCard
+            v-for="element in filteredChannels"
             :key="element.id"
             :channel="element"
             :collapsed="state.collapsed[element.id]"
@@ -38,6 +100,7 @@
             :show-apply-button="config.showApplyButton"
             :channel-type="config.type"
             :test-fn="config.testFn"
+            :highlight-text="searchQuery"
             @toggle-collapse="actions.toggleCollapse(element.id)"
             @apply="actions.handleApplyToSettings(element)"
             @edit="actions.handleEdit(element)"
@@ -45,8 +108,8 @@
             @toggle-enabled="value => actions.handleToggleEnabled(element, value)"
             @open-website="url => emit('open-website', url)"
           />
-        </template>
-      </draggable>
+        </div>
+      </div>
     </div>
 
     <n-modal
@@ -122,9 +185,11 @@ import {
   NInput,
   NSwitch,
   NInputNumber,
-  NSelect
+  NSelect,
+  NText
 } from 'naive-ui'
-import { AddOutline } from '@vicons/ionicons5'
+import { useDebounceFn, useStorage } from '@vueuse/core'
+import { AddOutline, SearchOutline } from '@vicons/ionicons5'
 import draggable from 'vuedraggable'
 import ChannelCard from './ChannelCard.vue'
 import channelPanelFactories from './channelPanelFactories'
@@ -144,6 +209,65 @@ const configFactory = channelPanelFactories[props.type] || channelPanelFactories
 const config = configFactory()
 const { state, validation, actions } = useChannelManager(config)
 const { getChannelInflight } = useChannelScheduler(config.schedulerSource)
+
+// 跨渠道面板保留搜索词
+const searchInput = useStorage('cc-tool-channel-search-input', '')
+const searchQuery = useStorage('cc-tool-channel-search-query', '')
+
+const applySearch = useDebounceFn((value) => {
+  searchQuery.value = value.trim()
+}, 300)
+
+if (searchInput.value.trim()) {
+  applySearch(searchInput.value)
+}
+
+function handleSearchInput(value) {
+  searchInput.value = value
+  if (!value.trim()) {
+    handleSearchClear()
+    return
+  }
+  applySearch(value)
+}
+
+function handleSearchClear() {
+  searchInput.value = ''
+  if (applySearch.cancel) {
+    applySearch.cancel()
+  }
+  searchQuery.value = ''
+}
+
+const isSearching = computed(() => searchInput.value.trim() !== '')
+const hasSearchQuery = computed(() => searchQuery.value.trim() !== '')
+
+const filteredChannels = computed(() => {
+  if (!hasSearchQuery.value) return state.channels
+  const query = searchQuery.value.trim().toLowerCase()
+  return state.channels.filter((channel) => {
+    const fields = [
+      channel.name,
+      channel.baseUrl,
+      channel.baseURL,
+      channel.model,
+      channel.modelConfig?.model,
+      channel.modelConfig?.haikuModel,
+      channel.modelConfig?.sonnetModel,
+      channel.modelConfig?.opusModel
+    ]
+    return fields.some((field) => {
+      if (field === null || field === undefined) return false
+      return String(field).toLowerCase().includes(query)
+    })
+  })
+})
+
+const showSearchEmpty = computed(() => hasSearchQuery.value && filteredChannels.value.length === 0)
+const searchResultText = computed(() => {
+  if (!hasSearchQuery.value) return ''
+  return `已找到 ${filteredChannels.value.length} 个渠道`
+})
 
 // 预设选项（仅 Claude 有）
 const presetOptions = computed(() => {

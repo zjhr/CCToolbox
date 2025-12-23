@@ -5,6 +5,39 @@
   padding: 80px 0;
 }
 
+.channel-search {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 -12px;
+  padding: 12px 12px 12px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg-primary);
+}
+
+.channel-search .n-input {
+  width: 100%;
+}
+
+.search-tip {
+  font-size: 12px;
+  color: var(--n-text-color-3);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .empty-state {
   display: flex;
   justify-content: center;
@@ -16,6 +49,11 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.channels-list.static .channel-header,
+.channels-list.static .channel-header:active {
+  cursor: default;
 }
 
 .channel-card {
@@ -268,4 +306,32 @@
   opacity: 0.8;
   transform: rotate(1deg);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2) !important;
+}
+
+@media (max-width: 1024px) {
+  .channel-search {
+    margin: 0 -10px;
+    padding: 10px 10px 10px;
+  }
+}
+
+@media (max-width: 768px) {
+  .channel-search {
+    margin: 0 -8px;
+    padding: 8px 8px 8px;
+  }
+}
+
+@media (max-width: 640px) {
+  .channel-search {
+    margin: 0 -6px;
+    padding: 6px 6px 6px;
+  }
+}
+
+@media (max-width: 480px) {
+  .channel-search {
+    margin: 0 -4px;
+    padding: 4px 4px 4px;
+  }
 }

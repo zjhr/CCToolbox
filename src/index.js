@@ -23,6 +23,7 @@ const { handleProxyStart: proxyStart, handleProxyStop: proxyStop, handleProxyRes
 const { handleLogs } = require('./commands/logs');
 const { handleStats, handleStatsExport } = require('./commands/stats');
 const { handleDoctor } = require('./commands/doctor');
+const { handleSmartInstall } = require('./commands/smart-install');
 const chalk = require('chalk');
 const path = require('path');
 const fs = require('fs');
@@ -75,6 +76,8 @@ function showHelp() {
   console.log('  ct stats export         导出统计数据\n');
 
   console.log(chalk.yellow('🛠️  其他命令:'));
+  console.log('  ct install              智能安装 CLI 工具（显示选择菜单）');
+  console.log('  ct install <type>       直接安装指定类型 (claude/codex/gemini)');
   console.log('  ct doctor               系统诊断');
   console.log('  ct update               检查并更新');
   console.log('  ct reset                重置配置');
@@ -134,6 +137,26 @@ async function main() {
   // reset 命令 - 恢复默认配置
   if (args[0] === 'reset') {
     await resetConfig();
+    return;
+  }
+
+  // install 命令 - 智能安装 CLI 工具
+  if (args[0] === 'install') {
+    const cliType = args[1]; // 可选的 CLI 类型: claude, codex, gemini
+
+    // 如果提供了 CLI 类型，验证是否有效
+    if (cliType && !['claude', 'codex', 'gemini'].includes(cliType)) {
+      console.log(chalk.red(`\n❌ 错误: 不支持的 CLI 类型 "${cliType}"\n`));
+      console.log(chalk.gray('支持的类型: claude, codex, gemini\n'));
+      console.log(chalk.yellow('用法:'));
+      console.log(chalk.gray('  ct install          # 显示选择菜单'));
+      console.log(chalk.gray('  ct install claude   # 直接安装 Claude Code'));
+      console.log(chalk.gray('  ct install codex    # 直接安装 Codex'));
+      console.log(chalk.gray('  ct install gemini   # 直接安装 Gemini\n'));
+      return;
+    }
+
+    await handleSmartInstall(cliType);
     return;
   }
 
@@ -328,6 +351,10 @@ async function main() {
       case 'switch-cli-type':
         await handleSwitchCliType();
         config = loadConfig(); // 重新加载配置以获取新的类型
+        break;
+
+      case 'smart-install':
+        await handleSmartInstall();
         break;
 
       case 'switch-channel':

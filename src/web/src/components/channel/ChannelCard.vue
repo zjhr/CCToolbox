@@ -20,7 +20,12 @@
             <ChevronDownOutline />
           </n-icon>
         </n-button>
-        <span class="channel-name">{{ channel.name }}</span>
+        <span class="channel-name">
+          <template v-for="(segment, index) in nameSegments" :key="index">
+            <mark v-if="segment.highlight" class="search-highlight">{{ segment.text }}</mark>
+            <span v-else>{{ segment.text }}</span>
+          </template>
+        </span>
         <template v-for="tag in headerTags" :key="tag.text">
           <n-tag size="tiny" :type="tag.type || 'default'" :bordered="false">
             {{ tag.text }}
@@ -87,7 +92,10 @@
         <div v-for="row in infoRows" :key="row.label" class="info-row">
           <n-text depth="3" class="label">{{ row.label }}:</n-text>
           <n-text depth="2" class="value" :class="{ mono: row.mono }">
-            {{ row.value || '—' }}
+            <template v-for="(segment, index) in getValueSegments(row.value)" :key="index">
+              <mark v-if="segment.highlight" class="search-highlight">{{ segment.text }}</mark>
+              <span v-else>{{ segment.text }}</span>
+            </template>
           </n-text>
           <n-button
             v-if="typeof row.action === 'function'"
@@ -130,7 +138,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { NButton, NIcon, NTag, NText, NSwitch } from 'naive-ui'
 import { ChevronDownOutline, OpenOutline, SpeedometerOutline, CheckmarkCircleOutline, CloseCircleOutline, CloseOutline } from '@vicons/ionicons5'
 
@@ -163,6 +171,10 @@ const props = defineProps({
     type: String,
     default: 'claude'
   },
+  highlightText: {
+    type: String,
+    default: ''
+  },
   testFn: {
     type: Function,
     default: null
@@ -173,6 +185,47 @@ defineEmits(['toggle-collapse', 'apply', 'edit', 'delete', 'toggle-enabled', 'op
 
 const testing = ref(false)
 const testResult = ref(null)
+
+const normalizedHighlight = computed(() => props.highlightText.trim())
+const nameSegments = computed(() => highlightMatch(props.channel.name || '', normalizedHighlight.value))
+
+function normalizeValue(value) {
+  if (!value) return '—'
+  return String(value)
+}
+
+function highlightMatch(text, query) {
+  if (!text) return [{ text: '', highlight: false }]
+  if (!query) return [{ text, highlight: false }]
+
+  const lowerText = text.toLowerCase()
+  const lowerQuery = query.toLowerCase()
+  const segments = []
+  let lastIndex = 0
+
+  while (true) {
+    const index = lowerText.indexOf(lowerQuery, lastIndex)
+    if (index === -1) break
+    if (index > lastIndex) {
+      segments.push({ text: text.slice(lastIndex, index), highlight: false })
+    }
+    segments.push({
+      text: text.slice(index, index + query.length),
+      highlight: true
+    })
+    lastIndex = index + query.length
+  }
+
+  if (lastIndex < text.length) {
+    segments.push({ text: text.slice(lastIndex), highlight: false })
+  }
+
+  return segments.length > 0 ? segments : [{ text, highlight: false }]
+}
+
+function getValueSegments(value) {
+  return highlightMatch(normalizeValue(value), normalizedHighlight.value)
+}
 
 async function runTest() {
   if (!props.testFn) return
@@ -226,6 +279,19 @@ async function runTest() {
   font-weight: 600;
   color: var(--text-primary);
   font-size: 14px;
+}
+
+.search-highlight {
+  background-color: var(--search-highlight-bg, #ffe58f);
+  color: var(--search-highlight-text, #d48806);
+  border-radius: 2px;
+  padding: 0 2px;
+  font-weight: 500;
+}
+
+:global([data-theme="dark"]) .search-highlight {
+  background-color: var(--search-highlight-bg-dark, rgba(255, 213, 145, 0.18));
+  color: var(--search-highlight-text-dark, #ffd591);
 }
 
 .collapse-btn {

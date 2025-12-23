@@ -8,7 +8,7 @@ const packageInfo = require('../../package.json');
  */
 async function showMainMenu(config) {
   console.log(chalk.bold.cyan('\n╔═══════════════════════════════════════════════╗'));
-  console.log(chalk.bold.cyan(`║    Claude Code 会话管理工具 v${packageInfo.version}          ║`));
+  console.log(chalk.bold.cyan(`║    Vibe Coding 会话管理工具 v${packageInfo.version}          ║`));
   console.log(chalk.bold.cyan('╚═══════════════════════════════════════════════╝\n'));
 
   // 显示当前CLI类型
@@ -98,10 +98,11 @@ async function showMainMenu(config) {
       type: 'list',
       name: 'action',
       message: '请选择操作:',
-      pageSize: 16,
+      pageSize: 17,
       choices: [
         { name: chalk.bold.yellow('切换 CLI 类型'), value: 'switch-cli-type' },
         new inquirer.Separator(chalk.gray('─'.repeat(14))),
+        { name: chalk.bold.hex('#00D9FF')('🚀 智能安装'), value: 'smart-install' },
         { name: chalk.bold.hex('#00D9FF')('启动 Web UI'), value: 'ui' },
         new inquirer.Separator(chalk.gray('─'.repeat(14))),
         { name: chalk.cyan('列出最新对话'), value: 'list' },

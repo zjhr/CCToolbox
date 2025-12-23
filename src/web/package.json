@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@vicons/ionicons5": "^0.13.0",
+    "@vueuse/core": "^14.1.0",
     "axios": "^1.6.5",
     "highlight.js": "^11.11.1",
     "marked": "^17.0.1",
