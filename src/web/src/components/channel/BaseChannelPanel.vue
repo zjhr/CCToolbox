@@ -399,7 +399,8 @@ function buildFieldProps(field) {
 
 defineExpose({
   openAddDialog: actions.openAddDialog,
-  refresh: actions.loadChannels
+  refresh: actions.loadChannels,
+  toggleAllCollapse: actions.toggleAllCollapse
 })
 </script>
 

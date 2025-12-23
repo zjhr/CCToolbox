@@ -11,6 +11,7 @@ const baseRef = ref(null)
 
 defineExpose({
   openAddDialog: () => baseRef.value?.openAddDialog(),
-  refresh: () => baseRef.value?.refresh()
+  refresh: () => baseRef.value?.refresh(),
+  toggleAllCollapse: () => baseRef.value?.toggleAllCollapse()
 })
 </script>

@@ -66,12 +66,30 @@
           <h3>{{ channelTitle }}</h3>
           <n-text depth="3" style="font-size: 12px; margin-left: 8px;">拖拽可调整顺序</n-text>
         </div>
-        <n-button type="primary" size="small" @click="handleAddClick">
-          <template #icon>
-            <n-icon><AddOutline /></n-icon>
-          </template>
-          添加渠道
-        </n-button>
+        <div class="header-actions">
+          <n-tooltip trigger="hover">
+            <template #trigger>
+              <n-button
+                text
+                size="small"
+                @click="handleToggleAllCollapse"
+                class="toggle-collapse-btn"
+              >
+                <template #icon>
+                  <n-icon :size="16"><ChevronDownOutline /></n-icon>
+                </template>
+              </n-button>
+            </template>
+            全部展开/收起
+          </n-tooltip>
+
+          <n-button type="primary" size="small" @click="handleAddClick">
+            <template #icon>
+              <n-icon><AddOutline /></n-icon>
+            </template>
+            添加渠道
+          </n-button>
+        </div>
       </div>
 
       <!-- 可滚动的渠道列表区域 -->
@@ -110,7 +128,7 @@ import { useRoute } from 'vue-router'
 import {
   NButton, NIcon, NText, NSwitch, NTooltip, NTag
 } from 'naive-ui'
-import { AddOutline, ChatbubblesOutline, ExtensionPuzzleOutline } from '@vicons/ionicons5'
+import { AddOutline, ChatbubblesOutline, ChevronDownOutline, ExtensionPuzzleOutline } from '@vicons/ionicons5'
 import ClaudeChannelPanel from './channel/ClaudeChannelPanel.vue'
 import CodexChannelPanel from './channel/CodexChannelPanel.vue'
 import GeminiChannelPanel from './channel/GeminiChannelPanel.vue'
@@ -186,6 +204,10 @@ function openWebsite(url) {
 
 function handleAddClick() {
   channelRefs[currentChannel.value]?.value?.openAddDialog?.()
+}
+
+function handleToggleAllCollapse() {
+  channelRefs[currentChannel.value]?.value?.toggleAllCollapse?.()
 }
 
 // 处理代理切换
@@ -336,6 +358,30 @@ watch(() => currentChannel.value, refreshChannel)
   display: flex;
   align-items: baseline;
   gap: 4px;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toggle-collapse-btn {
+  padding: 6px !important;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  color: var(--text-secondary);
+}
+
+.toggle-collapse-btn:hover {
+  background: var(--hover-bg);
+  color: #18a058;
+  transform: scale(1.05);
+}
+
+[data-theme="dark"] .toggle-collapse-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #34d399;
 }
 
 /* 可滚动的渠道列表区域 */

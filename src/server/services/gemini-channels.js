@@ -175,6 +175,14 @@ function createChannel(name, baseUrl, apiKey, model = 'gemini-2.5-pro', extraCon
     updatedAt: Date.now()
   };
 
+  if (newChannel.enabled) {
+    // Gemini 渠道单选：新启用时关闭其他渠道
+    data.channels = data.channels.map(ch => ({
+      ...ch,
+      enabled: false
+    }));
+  }
+
   data.channels.push(newChannel);
   saveChannels(data);
 
@@ -210,6 +218,14 @@ function updateChannel(channelId, updates) {
     createdAt: channel.createdAt, // 保持创建时间
     updatedAt: Date.now()
   };
+
+  if (updates.enabled === true) {
+    // Gemini 渠道单选：启用当前渠道时关闭其他渠道
+    data.channels = data.channels.map(ch => ({
+      ...ch,
+      enabled: ch.id === channelId
+    }));
+  }
 
   saveChannels(data);
 
@@ -247,16 +263,20 @@ function writeGeminiConfigForMultiChannel(allChannels) {
 
   const envPath = path.join(geminiDir, '.env');
 
-  // 获取第一个启用的渠道作为默认配置
+  // 获取启用的渠道作为默认配置
   const enabledChannels = allChannels.filter(c => c.enabled !== false);
-  const defaultChannel = enabledChannels[0] || allChannels[0];
 
-  if (!defaultChannel) {
-    // 没有渠道，写入空配置
-    const envContent = `# Gemini Configuration\n# No channels configured\n`;
+  if (enabledChannels.length === 0) {
+    // 所有渠道已禁用时写入说明
+    const envContent = `# Gemini Configuration\n# All channels are currently disabled\n# Enable a channel in CC-Tool dashboard to activate\n`;
     fs.writeFileSync(envPath, envContent, 'utf8');
+    if (process.platform !== 'win32') {
+      fs.chmodSync(envPath, 0o600);
+    }
     return;
   }
+
+  const defaultChannel = enabledChannels[0];
 
   // 构建 .env 内容
   const envContent = `GOOGLE_GEMINI_BASE_URL=${defaultChannel.baseUrl}

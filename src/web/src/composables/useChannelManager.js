@@ -159,6 +159,20 @@ export default function useChannelManager(config) {
     saveCollapseSettings()
   }
 
+  function toggleAllCollapse() {
+    if (state.channels.length === 0) return
+
+    const expandedCount = state.channels.filter(ch => !state.collapsed[ch.id]).length
+    const shouldCollapseAll = expandedCount > state.channels.length / 2
+
+    state.channels.forEach(ch => {
+      state.collapsed[ch.id] = shouldCollapseAll
+    })
+
+    setLocalCollapse(config.storageKeys.localCollapse, state.collapsed)
+    saveCollapseSettings()
+  }
+
   function openAddDialog() {
     state.editingChannel = null
     state.formData = config.getInitialForm()
@@ -319,6 +333,7 @@ export default function useChannelManager(config) {
       openAddDialog,
       closeDialog,
       toggleCollapse,
+      toggleAllCollapse,
       handleEdit,
       handleSave,
       handleDelete,

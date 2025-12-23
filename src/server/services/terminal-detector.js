@@ -192,7 +192,8 @@ function detectMacTerminals() {
       name: 'Warp',
       available: true,
       isDefault: false,
-      command: 'open -a Warp "{cwd}" --args -e "claude -r {sessionId}"'
+      // 命令由 terminal-config.js 的 Warp Launch Config 动态生成
+      command: '__WARP_LAUNCH_CONFIG__'
     });
   }
 

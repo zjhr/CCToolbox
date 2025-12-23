@@ -1,4 +1,5 @@
 const fs = require('fs');
+const crypto = require('crypto');
 const path = require('path');
 const os = require('os');
 const { detectAvailableTerminals, getDefaultTerminal } = require('./terminal-detector');
@@ -77,6 +78,92 @@ function getSelectedTerminal() {
   return selectedTerminal || getDefaultTerminal();
 }
 
+function escapeWarpYamlValue(value) {
+  return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function escapeAppleScriptString(value) {
+  return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function escapeShellSingleQuotes(value) {
+  return String(value).replace(/'/g, `'\"'\"'`);
+}
+
+function createWarpLaunchConfig(cwd, sessionId, customCliCommand) {
+  const warpConfigDir = path.join(os.homedir(), '.warp', 'launch_configurations');
+
+  if (!fs.existsSync(warpConfigDir)) {
+    fs.mkdirSync(warpConfigDir, { recursive: true });
+  }
+
+  const timestamp = Date.now();
+  const random = crypto.randomBytes(4).toString('hex');
+  const configName = `warp-cctools-${timestamp}-${random}`;
+  const filename = `${configName}.yaml`;
+  const configPath = path.join(warpConfigDir, filename);
+  const command = customCliCommand || `claude -r ${sessionId}`;
+  const sessionLabel = sessionId || 'custom';
+  const tabTitle = sessionId ? `Session ${sessionId}` : 'Session';
+  const clipboardCmd = `cd "${cwd}" && ${command}`;
+  const escapedClipboardCmd = clipboardCmd.replace(/"/g, '\\"');
+
+  const yamlContent = `---
+name: "${escapeWarpYamlValue(configName)}"
+windows:
+  - tabs:
+      - title: "${escapeWarpYamlValue(tabTitle)}"
+        layout:
+          cwd: "${escapeWarpYamlValue(cwd)}"
+          commands:
+            - exec: "${escapeWarpYamlValue(command)}"
+`;
+
+  try {
+    fs.writeFileSync(configPath, yamlContent, 'utf8');
+
+    // 5 秒后清理临时配置文件
+    setTimeout(() => {
+      try {
+        if (fs.existsSync(configPath)) {
+          fs.unlinkSync(configPath);
+        }
+      } catch (err) {
+        console.error('[Terminal] Failed to cleanup Warp config:', err);
+      }
+    }, 5000);
+
+    const scriptLines = [
+      'tell application "Warp" to activate',
+      'delay 0.4',
+      'tell application "System Events" to tell process "Warp" to keystroke "t" using {command down}',
+      'delay 0.2',
+      'tell application "System Events" to tell process "Warp" to keystroke "v" using {command down}',
+      'delay 0.4',
+      'tell application "System Events" to tell process "Warp" to key code 36'
+    ];
+    const osascriptCommand = `osascript ${scriptLines
+      .map(line => `-e '${escapeShellSingleQuotes(line)}'`)
+      .join(' ')}`;
+
+    return {
+      // 优先在已打开的 Warp 窗口中新开标签页
+      command: `printf '%s' "${escapedClipboardCmd}" | pbcopy && ${osascriptCommand} || open "warp://launch/${configName}"`,
+      terminalId: 'warp',
+      terminalName: 'Warp',
+      fallback: null
+    };
+  } catch (err) {
+    console.warn('[Terminal] Failed to create Warp config, using fallback:', err);
+    return {
+      command: `printf '%s' "${escapedClipboardCmd}" | pbcopy && open -a Warp "${cwd}"`,
+      terminalId: 'warp',
+      terminalName: 'Warp',
+      fallback: 'clipboard'
+    };
+  }
+}
+
 /**
  * 获取终端启动命令（填充参数后）
  * @param {string} cwd - 工作目录
@@ -88,6 +175,10 @@ function getTerminalLaunchCommand(cwd, sessionId, customCliCommand) {
 
   if (!terminal) {
     throw new Error('No terminal available');
+  }
+
+  if (terminal.id === 'warp') {
+    return createWarpLaunchConfig(cwd, sessionId, customCliCommand);
   }
 
   let command = terminal.command;
