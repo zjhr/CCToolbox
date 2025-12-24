@@ -139,8 +139,8 @@ windows:
       'tell application "System Events" to tell process "Warp" to keystroke "t" using {command down}',
       'delay 0.2',
       'tell application "System Events" to tell process "Warp" to keystroke "v" using {command down}',
-      'delay 0.4',
-      'tell application "System Events" to tell process "Warp" to key code 36'
+      'delay 0.8',
+      'tell application "System Events" to tell process "Warp" to keystroke return'
     ];
     const osascriptCommand = `osascript ${scriptLines
       .map(line => `-e '${escapeShellSingleQuotes(line)}'`)
