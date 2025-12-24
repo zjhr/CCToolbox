@@ -27,6 +27,7 @@ build/
 .claude/
 .gemini/
 .serena
+.gemini-home
 openspec
 CLAUDE.md
 

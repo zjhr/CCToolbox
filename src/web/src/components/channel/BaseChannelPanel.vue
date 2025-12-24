@@ -215,7 +215,20 @@ const searchInput = useStorage('cc-tool-channel-search-input', '')
 const searchQuery = useStorage('cc-tool-channel-search-query', '')
 
 const applySearch = useDebounceFn((value) => {
-  searchQuery.value = value.trim()
+  const normalizedValue = typeof value === 'string' ? value : ''
+  const trimmedValue = normalizedValue.trim()
+
+  if (!trimmedValue) {
+    searchQuery.value = ''
+    return
+  }
+
+  // 防止输入清空后 debounce 回写旧关键词
+  if (searchInput.value.trim() !== trimmedValue) {
+    return
+  }
+
+  searchQuery.value = trimmedValue
 }, 300)
 
 if (searchInput.value.trim()) {
@@ -223,12 +236,13 @@ if (searchInput.value.trim()) {
 }
 
 function handleSearchInput(value) {
-  searchInput.value = value
-  if (!value.trim()) {
+  const normalizedValue = typeof value === 'string' ? value : ''
+  searchInput.value = normalizedValue
+  if (!normalizedValue.trim()) {
     handleSearchClear()
     return
   }
-  applySearch(value)
+  applySearch(normalizedValue)
 }
 
 function handleSearchClear() {

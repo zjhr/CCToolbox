@@ -279,8 +279,12 @@ async function handleGlobalSearch() {
 
 async function handleLaunchTerminalFromGlobal(projectName, sessionId) {
   try {
-    await launchTerminal(projectName, sessionId, currentChannel.value)
-    message.success('已启动终端')
+    const data = await launchTerminal(projectName, sessionId, currentChannel.value)
+    if (data?.terminalId === 'vscode') {
+      message.success('VSCode 已打开，命令已复制到剪贴板。按 Cmd+` 打开终端并粘贴执行')
+    } else {
+      message.success('已启动终端')
+    }
     showGlobalSearch.value = false
   } catch (err) {
     message.error('启动失败: ' + err.message)

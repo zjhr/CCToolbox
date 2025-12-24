@@ -383,7 +383,7 @@ router.get('/:projectName/:sessionId/messages', async (req, res) => {
         const normalizedCwd = process.platform === 'win32' ? cwd.replace(/\//g, '\\') : cwd;
 
         // 获取启动命令
-        const { command, terminalId, terminalName } = getTerminalLaunchCommand(normalizedCwd, sessionId);
+        const { command, terminalId, terminalName, clipboardCommand } = getTerminalLaunchCommand(normalizedCwd, sessionId);
 
         console.log(`Launching terminal: ${terminalName} (${terminalId})`);
         console.log(`Command: ${command}`);
@@ -402,7 +402,8 @@ router.get('/:projectName/:sessionId/messages', async (req, res) => {
           cwd,
           sessionFile,
           terminal: terminalName,
-          terminalId
+          terminalId,
+          clipboardCommand
         });
       } catch (terminalError) {
         console.error('Failed to get terminal command:', terminalError);

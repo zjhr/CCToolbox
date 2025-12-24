@@ -90,6 +90,10 @@ function escapeShellSingleQuotes(value) {
   return String(value).replace(/'/g, `'\"'\"'`);
 }
 
+function escapeShellDoubleQuotes(value) {
+  return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
 function createWarpLaunchConfig(cwd, sessionId, customCliCommand) {
   const warpConfigDir = path.join(os.homedir(), '.warp', 'launch_configurations');
 
@@ -179,6 +183,28 @@ function getTerminalLaunchCommand(cwd, sessionId, customCliCommand) {
 
   if (terminal.id === 'warp') {
     return createWarpLaunchConfig(cwd, sessionId, customCliCommand);
+  }
+
+  if (terminal.id === 'vscode') {
+    const cliCommand = customCliCommand || (sessionId ? `claude -r ${sessionId}` : null);
+    if (!cliCommand) {
+      throw new Error('无法生成 VSCode 启动命令');
+    }
+
+    const escapedClipboardCommand = escapeShellSingleQuotes(cliCommand);
+    const escapedCwd = escapeShellSingleQuotes(cwd);
+    const appName = terminal.appName || 'Visual Studio Code';
+    const openCommand = terminal.hasCli && !terminal.appName
+      ? `code -r '${escapedCwd}'`
+      : `open -a "${escapeShellDoubleQuotes(appName)}" '${escapedCwd}'`;
+    const command = `printf '%s' '${escapedClipboardCommand}' | pbcopy; ${openCommand}`;
+
+    return {
+      command,
+      terminalId: terminal.id,
+      terminalName: terminal.name,
+      clipboardCommand: cliCommand
+    };
   }
 
   let command = terminal.command;

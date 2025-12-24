@@ -213,6 +213,21 @@ ct
 </details>
 
 <details>
+<summary><b>VSCode 终端集成（macOS）</b></summary>
+
+1. 在 Web UI 的「设置 > 终端工具」选择 VSCode。
+2. 在会话列表点击「使用对话」。
+3. VSCode 会打开到项目目录，命令已复制到剪贴板。
+4. 按 `Cmd+`` 打开 VSCode 终端并粘贴执行。
+
+**常见问题**
+- **VSCode 未检测到**：确认应用位于 `/Applications/Visual Studio Code.app`，或已安装预览版；也可在 VSCode 中执行 `Shell Command: Install 'code' command in PATH`。
+- **剪贴板不工作**：检查系统剪贴板是否被第三方工具占用，必要时手动执行命令（格式：`claude -r <sessionId>`）。
+- **权限问题**：如果系统弹出权限提示，请允许相关应用访问自动化/剪贴板权限。
+
+</details>
+
+<details>
 <summary><b>系统诊断</b></summary>
 
 遇到问题时，首先运行 `ct doctor` 进行全面诊断：

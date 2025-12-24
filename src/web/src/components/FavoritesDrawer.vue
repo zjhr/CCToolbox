@@ -256,8 +256,12 @@ async function confirmAlias() {
 
 async function handleLaunch(channel, session) {
   try {
-    await launchTerminal(session.projectName, session.sessionId, channel)
-    message.success('已启动终端')
+    const data = await launchTerminal(session.projectName, session.sessionId, channel)
+    if (data?.terminalId === 'vscode') {
+      message.success('VSCode 已打开，命令已复制到剪贴板。按 Cmd+` 打开终端并粘贴执行')
+    } else {
+      message.success('已启动终端')
+    }
   } catch (err) {
     message.error('启动失败: ' + err.message)
   }

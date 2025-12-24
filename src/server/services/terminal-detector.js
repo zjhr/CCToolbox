@@ -197,6 +197,42 @@ function detectMacTerminals() {
     });
   }
 
+  // VSCode（稳定版/预览版）
+  const vscodeStablePath = '/Applications/Visual Studio Code.app';
+  const vscodeInsidersPath = '/Applications/Visual Studio Code - Insiders.app';
+  const hasVscodeStable = fs.existsSync(vscodeStablePath);
+  const hasVscodeInsiders = fs.existsSync(vscodeInsidersPath);
+  let hasVscodeCli = false;
+
+  try {
+    execSync('which code', { encoding: 'utf8', stdio: 'pipe' });
+    hasVscodeCli = true;
+  } catch (e) {
+    // VSCode CLI 不可用
+  }
+
+  if (hasVscodeStable || hasVscodeInsiders || hasVscodeCli) {
+    let appName = null;
+    let displayName = 'VSCode';
+
+    if (hasVscodeStable) {
+      appName = 'Visual Studio Code';
+    } else if (hasVscodeInsiders) {
+      appName = 'Visual Studio Code - Insiders';
+      displayName = 'VSCode (Insiders)';
+    }
+
+    terminals.push({
+      id: 'vscode',
+      name: displayName,
+      available: true,
+      isDefault: false,
+      command: '__VSCODE_LAUNCH__',
+      appName,
+      hasCli: hasVscodeCli
+    });
+  }
+
   // Hyper
   if (fs.existsSync('/Applications/Hyper.app')) {
     terminals.push({

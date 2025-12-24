@@ -447,20 +447,15 @@ module.exports = (config) => {
         // Windows 路径需要转换为反斜杠格式
         const normalizedCwd = process.platform === 'win32' ? cwd.replace(/\//g, '\\') : cwd;
 
-        // 获取启动命令（使用 sessionId 作为占位符）
-        const { command, terminalId, terminalName } = getTerminalLaunchCommand(normalizedCwd, sessionId);
-
-        // 将命令中的 'claude -r' 替换为 'codex resume'
-        const codexCommand = command
-          .replace(/claude\s+-r\s+/g, 'codex resume ')
-          .replace(/claude\s+--resume\s+/g, 'codex resume ');
+        const codexCliCommand = `codex resume ${sessionId}`;
+        const { command, terminalId, terminalName, clipboardCommand } = getTerminalLaunchCommand(normalizedCwd, sessionId, codexCliCommand);
 
         console.log(`[Codex] Launching terminal: ${terminalName} (${terminalId})`);
-        console.log(`[Codex] Command: ${codexCommand}`);
+        console.log(`[Codex] Command: ${command}`);
 
         // 异步执行命令，不等待结果
         const shellOption = process.platform === 'win32' ? { shell: 'cmd.exe' } : { shell: true };
-        exec(codexCommand, shellOption, (error, stdout, stderr) => {
+        exec(command, shellOption, (error, stdout, stderr) => {
           if (error) {
             console.error(`[Codex] Failed to launch terminal ${terminalName}:`, error.message);
           }
@@ -473,6 +468,7 @@ module.exports = (config) => {
           sessionFile: session.filePath,
           terminal: terminalName,
           terminalId,
+          clipboardCommand,
           sessionId
         });
       } catch (terminalError) {
