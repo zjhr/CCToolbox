@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const fs = require('fs');
+const path = require('path');
 const {
   getProjectSessions,
   getSessionById,
@@ -92,8 +94,9 @@ module.exports = (config) => {
 
       // 使用彩虹表解析真实路径
       const realPath = getProjectPath(projectHash);
-      const path = require('path');
       const displayName = realPath ? path.basename(realPath) : `Project ${projectHash.substring(0, 8)}`;
+      const fullPath = realPath || projectHash;
+      const hasOpenSpec = realPath ? fs.existsSync(path.join(realPath, 'openspec')) : false;
 
       res.json({
         sessions,
@@ -101,9 +104,10 @@ module.exports = (config) => {
         aliases,
         projectInfo: {
           name: projectHash,
-          fullPath: realPath || projectHash,
-          path: realPath || projectHash,
-          displayName
+          fullPath,
+          path: fullPath,
+          displayName,
+          hasOpenSpec
         }
       });
     } catch (err) {

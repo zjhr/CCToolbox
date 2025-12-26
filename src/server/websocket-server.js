@@ -366,11 +366,30 @@ function broadcastSchedulerState(source, schedulerState) {
   }
 }
 
+// 广播 OpenSpec 文件变更
+function broadcastOpenSpecChange(change = {}) {
+  const payload = {
+    type: 'openspec-change',
+    timestamp: Date.now(),
+    ...change
+  };
+
+  if (wss && wsClients.size > 0) {
+    const message = JSON.stringify(payload);
+    wsClients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(message);
+      }
+    });
+  }
+}
+
 module.exports = {
   startWebSocketServer,
   stopWebSocketServer,
   broadcastLog,
   clearAllLogs,
   broadcastProxyState,
-  broadcastSchedulerState
+  broadcastSchedulerState,
+  broadcastOpenSpecChange
 };

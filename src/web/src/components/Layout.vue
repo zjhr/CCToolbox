@@ -84,8 +84,14 @@
         <div v-if="updateInfo" class="update-notification">
           <div class="update-badge" @click="handleUpdateClick">
             <n-icon :size="18">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="currentColor">
-                <path d="M256 48C141.13 48 48 141.13 48 256s93.13 208 208 208 208-93.13 208-208S370.87 48 256 48zm-80 288v-32h160v32H176zm48-112h-48v-32h48v-48h32v48h48v32h-48v48h-32v-48z"/>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 512 512"
+                fill="currentColor"
+              >
+                <path
+                  d="M256 48C141.13 48 48 141.13 48 256s93.13 208 208 208 208-93.13 208-208S370.87 48 256 48zm-80 288v-32h160v32H176zm48-112h-48v-32h48v-48h32v48h48v32h-48v48h-32v-48z"
+                />
               </svg>
             </n-icon>
             <span class="update-text">有更新</span>
@@ -159,9 +165,7 @@
       <!-- Global Loading Overlay -->
       <div v-if="globalLoading" class="global-loading-overlay">
         <n-spin size="large">
-          <template #description>
-            加载配置中...
-          </template>
+          <template #description> 加载配置中... </template>
         </n-spin>
       </div>
 
@@ -184,7 +188,10 @@
     </div>
 
     <!-- Recent Sessions Drawer -->
-    <RecentSessionsDrawer v-model:visible="showRecentDrawer" :channel="currentChannel" />
+    <RecentSessionsDrawer
+      v-model:visible="showRecentDrawer"
+      :channel="currentChannel"
+    />
 
     <!-- Favorites Drawer -->
     <FavoritesDrawer v-model:visible="showFavoritesDrawer" />
@@ -202,32 +209,119 @@
     <SpeedTestDrawer v-model:visible="showSpeedTestDrawer" />
 
     <!-- Help Modal -->
-    <n-modal v-model:show="showHelpModal" preset="card" title="CODING-TOOL 使用帮助" style="width: 800px; max-width: 90vw;">
+    <n-modal
+      v-model:show="showHelpModal"
+      preset="card"
+      title="CODING-TOOL 使用帮助"
+      style="width: 800px; max-width: 90vw"
+    >
       <div class="help-content">
         <div class="help-section">
           <h4>🚀 快速开始</h4>
-          <p>CODING-TOOL 是 AI 编程工具的增强管理助手，支持 Claude Code、Codex 和 Gemini 三种 AI 工具，提供智能会话管理、动态渠道切换、全局搜索和实时监控功能。</p>
+          <p>
+            CODING-TOOL 是 AI 编程工具的增强管理助手，支持 Claude Code、Codex 和
+            Gemini 三种 AI
+            工具，提供智能会话管理、动态渠道切换、全局搜索和实时监控功能。
+          </p>
 
-          <h5 style="margin: 12px 0 8px 0; font-size: 13px; color: #18a058;">⭐ 最简单的启动方式：</h5>
-          <div style="background: var(--bg-primary); padding: 12px; border-radius: 6px; margin: 8px 0; border-left: 3px solid #18a058;">
-            <p style="margin: 0; font-family: 'Courier New', monospace; font-size: 13px; font-weight: 600; color: var(--primary-color);">ct start</p>
-            <p style="margin: 4px 0 0 0; font-size: 12px; color: var(--text-secondary);">• 后台启动所有服务<br/>• 可以关闭终端窗口<br/>• 代理服务保持运行</p>
+          <h5 style="margin: 12px 0 8px 0; font-size: 13px; color: #18a058">
+            ⭐ 最简单的启动方式：
+          </h5>
+          <div
+            style="
+              background: var(--bg-primary);
+              padding: 12px;
+              border-radius: 6px;
+              margin: 8px 0;
+              border-left: 3px solid #18a058;
+            "
+          >
+            <p
+              style="
+                margin: 0;
+                font-family: 'Courier New', monospace;
+                font-size: 13px;
+                font-weight: 600;
+                color: var(--primary-color);
+              "
+            >
+              ct start
+            </p>
+            <p
+              style="
+                margin: 4px 0 0 0;
+                font-size: 12px;
+                color: var(--text-secondary);
+              "
+            >
+              • 后台启动所有服务<br />• 可以关闭终端窗口<br />• 代理服务保持运行
+            </p>
           </div>
 
-          <h5 style="margin: 12px 0 8px 0; font-size: 13px; color: #18a058;">📋 日常工作流：</h5>
-          <div style="font-size: 12px; line-height: 1.8; color: var(--text-secondary);">
-            <code style="background: var(--bg-primary); padding: 2px 6px; border-radius: 3px; color: var(--primary-color);">ct start</code> 启动服务<br/>
-            <code style="background: var(--bg-primary); padding: 2px 6px; border-radius: 3px; color: var(--primary-color);">ct status</code> 查看状态<br/>
-            <code style="background: var(--bg-primary); padding: 2px 6px; border-radius: 3px; color: var(--primary-color);">ct logs</code> 查看日志<br/>
-            <code style="background: var(--bg-primary); padding: 2px 6px; border-radius: 3px; color: var(--primary-color);">ct stop</code> 停止服务
+          <h5 style="margin: 12px 0 8px 0; font-size: 13px; color: #18a058">
+            📋 日常工作流：
+          </h5>
+          <div
+            style="
+              font-size: 12px;
+              line-height: 1.8;
+              color: var(--text-secondary);
+            "
+          >
+            <code
+              style="
+                background: var(--bg-primary);
+                padding: 2px 6px;
+                border-radius: 3px;
+                color: var(--primary-color);
+              "
+              >ct start</code
+            >
+            启动服务<br />
+            <code
+              style="
+                background: var(--bg-primary);
+                padding: 2px 6px;
+                border-radius: 3px;
+                color: var(--primary-color);
+              "
+              >ct status</code
+            >
+            查看状态<br />
+            <code
+              style="
+                background: var(--bg-primary);
+                padding: 2px 6px;
+                border-radius: 3px;
+                color: var(--primary-color);
+              "
+              >ct logs</code
+            >
+            查看日志<br />
+            <code
+              style="
+                background: var(--bg-primary);
+                padding: 2px 6px;
+                border-radius: 3px;
+                color: var(--primary-color);
+              "
+              >ct stop</code
+            >
+            停止服务
           </div>
         </div>
 
         <div class="help-section">
           <h4>🤖 支持的 AI 工具</h4>
           <ul>
-            <li><strong>Claude Code</strong>：Anthropic 官方命令行工具，支持 Claude 系列模型</li>
-            <li><strong>Codex</strong>：支持 OpenAI GPT 系列和 Claude 模型（通过 OpenAI 兼容格式）</li>
+            <li>
+              <strong>Claude Code</strong>：Anthropic 官方命令行工具，支持
+              Claude 系列模型
+            </li>
+            <li>
+              <strong>Codex</strong>：支持 OpenAI GPT 系列和 Claude 模型（通过
+              OpenAI 兼容格式）
+            </li>
             <li><strong>Gemini</strong>：支持 Google Gemini 系列模型</li>
           </ul>
         </div>
@@ -235,7 +329,15 @@
         <div class="help-section">
           <h4>📋 命令行用法</h4>
 
-          <h5 style="margin: 16px 0 8px 0; font-size: 14px; color: var(--primary-color);">🚀 服务管理</h5>
+          <h5
+            style="
+              margin: 16px 0 8px 0;
+              font-size: 14px;
+              color: var(--primary-color);
+            "
+          >
+            🚀 服务管理
+          </h5>
           <div class="command-list">
             <div class="command-item">
               <code>ct start</code>
@@ -255,7 +357,15 @@
             </div>
           </div>
 
-          <h5 style="margin: 16px 0 8px 0; font-size: 14px; color: var(--primary-color);">🔌 代理管理</h5>
+          <h5
+            style="
+              margin: 16px 0 8px 0;
+              font-size: 14px;
+              color: var(--primary-color);
+            "
+          >
+            🔌 代理管理
+          </h5>
           <div class="command-list">
             <div class="command-item">
               <code>ct claude start</code>
@@ -275,7 +385,15 @@
             </div>
           </div>
 
-          <h5 style="margin: 16px 0 8px 0; font-size: 14px; color: var(--primary-color);">📋 日志管理</h5>
+          <h5
+            style="
+              margin: 16px 0 8px 0;
+              font-size: 14px;
+              color: var(--primary-color);
+            "
+          >
+            📋 日志管理
+          </h5>
           <div class="command-list">
             <div class="command-item">
               <code>ct logs</code>
@@ -295,7 +413,15 @@
             </div>
           </div>
 
-          <h5 style="margin: 16px 0 8px 0; font-size: 14px; color: var(--primary-color);">📊 其他命令</h5>
+          <h5
+            style="
+              margin: 16px 0 8px 0;
+              font-size: 14px;
+              color: var(--primary-color);
+            "
+          >
+            📊 其他命令
+          </h5>
           <div class="command-list">
             <div class="command-item">
               <code>ct stats</code>
@@ -319,13 +445,33 @@
         <div class="help-section">
           <h4>🎯 Web UI 功能</h4>
           <ul>
-            <li><strong>多类型支持</strong>：统一管理 Claude Code、Codex、Gemini 三种工具的项目和会话</li>
-            <li><strong>项目管理</strong>：查看所有项目，支持拖拽排序、搜索过滤、删除项目</li>
-            <li><strong>会话管理</strong>：查看项目会话列表，支持搜索、Fork、删除、重命名</li>
-            <li><strong>快速启动</strong>：点击会话直接在终端中启动对应的 AI 工具</li>
-            <li><strong>动态切换</strong>：每种工具独立的渠道管理，可在右侧面板快速切换 API 渠道</li>
-            <li><strong>实时日志</strong>：查看各类型代理的实时请求日志、token 消耗和成本统计</li>
-            <li><strong>全局搜索</strong>：使用 <kbd>⌘/Ctrl</kbd> + <kbd>K</kbd> 在所有项目中搜索对话内容</li>
+            <li>
+              <strong>多类型支持</strong>：统一管理 Claude Code、Codex、Gemini
+              三种工具的项目和会话
+            </li>
+            <li>
+              <strong>项目管理</strong
+              >：查看所有项目，支持拖拽排序、搜索过滤、删除项目
+            </li>
+            <li>
+              <strong>会话管理</strong
+              >：查看项目会话列表，支持搜索、Fork、删除、重命名
+            </li>
+            <li>
+              <strong>快速启动</strong>：点击会话直接在终端中启动对应的 AI 工具
+            </li>
+            <li>
+              <strong>动态切换</strong
+              >：每种工具独立的渠道管理，可在右侧面板快速切换 API 渠道
+            </li>
+            <li>
+              <strong>实时日志</strong>：查看各类型代理的实时请求日志、token
+              消耗和成本统计
+            </li>
+            <li>
+              <strong>全局搜索</strong>：使用 <kbd>⌘/Ctrl</kbd> +
+              <kbd>K</kbd> 在所有项目中搜索对话内容
+            </li>
           </ul>
         </div>
 
@@ -333,48 +479,118 @@
           <h4>⚡ 代理服务与渠道管理</h4>
           <p>每种 AI 工具都有独立的代理服务和渠道配置：</p>
           <ul>
-            <li><strong>Claude 代理</strong>：端口 10088，支持 Anthropic API 格式</li>
-            <li><strong>Codex 代理</strong>：端口 10089，支持 OpenAI API 格式（兼容 Claude）</li>
-            <li><strong>Gemini 代理</strong>：端口 10090，支持 Gemini API 格式</li>
+            <li>
+              <strong>Claude 代理</strong>：端口 10088，支持 Anthropic API 格式
+            </li>
+            <li>
+              <strong>Codex 代理</strong>：端口 10089，支持 OpenAI API
+              格式（兼容 Claude）
+            </li>
+            <li>
+              <strong>Gemini 代理</strong>：端口 10090，支持 Gemini API 格式
+            </li>
           </ul>
-          <p>在 Dashboard 或各工具详情页，可以添加多个渠道并快速切换，无需修改配置文件或重启工具。</p>
+          <p>
+            在 Dashboard
+            或各工具详情页，可以添加多个渠道并快速切换，无需修改配置文件或重启工具。
+          </p>
         </div>
 
         <div class="help-section">
           <h4>⭐ 后台启动与开机自启</h4>
 
-          <h5 style="margin: 12px 0 8px 0; font-size: 13px; color: #18a058;">后台启动服务</h5>
-          <p style="font-size: 12px; line-height: 1.8;">使用 <code style="background: var(--bg-primary); padding: 2px 6px;">ct start</code> 命令后台启动所有服务，可以安全关闭终端窗口而不影响代理服务的运行。</p>
+          <h5 style="margin: 12px 0 8px 0; font-size: 13px; color: #18a058">
+            后台启动服务
+          </h5>
+          <p style="font-size: 12px; line-height: 1.8">
+            使用
+            <code style="background: var(--bg-primary); padding: 2px 6px"
+              >ct start</code
+            >
+            命令后台启动所有服务，可以安全关闭终端窗口而不影响代理服务的运行。
+          </p>
 
-          <h5 style="margin: 12px 0 8px 0; font-size: 13px; color: #18a058;">配置开机自启（可选）</h5>
-          <p style="font-size: 12px; color: var(--text-secondary); margin: 0 0 8px 0;">第一次启用开机自启只需三个步骤：</p>
-          <div style="background: var(--bg-primary); padding: 12px; border-radius: 6px; margin: 8px 0; border-left: 3px solid #18a058; font-family: 'Courier New', monospace; font-size: 11px; line-height: 1.8; color: var(--text-secondary);">
-            # 第 1 步：启用 PM2 开机自启<br/>
-            <span style="color: var(--primary-color);">pm2 startup</span><br/>
-            <br/>
-            # 第 2 步：保存配置<br/>
-            <span style="color: var(--primary-color);">pm2 save</span><br/>
-            <br/>
+          <h5 style="margin: 12px 0 8px 0; font-size: 13px; color: #18a058">
+            配置开机自启（可选）
+          </h5>
+          <p
+            style="
+              font-size: 12px;
+              color: var(--text-secondary);
+              margin: 0 0 8px 0;
+            "
+          >
+            第一次启用开机自启只需三个步骤：
+          </p>
+          <div
+            style="
+              background: var(--bg-primary);
+              padding: 12px;
+              border-radius: 6px;
+              margin: 8px 0;
+              border-left: 3px solid #18a058;
+              font-family: 'Courier New', monospace;
+              font-size: 11px;
+              line-height: 1.8;
+              color: var(--text-secondary);
+            "
+          >
+            # 第 1 步：启用 PM2 开机自启<br />
+            <span style="color: var(--primary-color)">pm2 startup</span><br />
+            <br />
+            # 第 2 步：保存配置<br />
+            <span style="color: var(--primary-color)">pm2 save</span><br />
+            <br />
             # 第 3 步：重启电脑，服务自动启动 ✓
           </div>
 
-          <h5 style="margin: 12px 0 8px 0; font-size: 13px; color: #18a058;">相关命令</h5>
-          <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.8;">
-            <code style="background: var(--bg-primary); padding: 2px 6px;">ct start</code> 后台启动<br/>
-            <code style="background: var(--bg-primary); padding: 2px 6px;">ct status</code> 查看状态<br/>
-            <code style="background: var(--bg-primary); padding: 2px 6px;">ct logs</code> 查看日志<br/>
-            <code style="background: var(--bg-primary); padding: 2px 6px;">pm2 list</code> 查看所有后台进程<br/>
-            <code style="background: var(--bg-primary); padding: 2px 6px;">pm2 unstartup</code> 禁用开机自启
+          <h5 style="margin: 12px 0 8px 0; font-size: 13px; color: #18a058">
+            相关命令
+          </h5>
+          <div
+            style="
+              font-size: 12px;
+              color: var(--text-secondary);
+              line-height: 1.8;
+            "
+          >
+            <code style="background: var(--bg-primary); padding: 2px 6px"
+              >ct start</code
+            >
+            后台启动<br />
+            <code style="background: var(--bg-primary); padding: 2px 6px"
+              >ct status</code
+            >
+            查看状态<br />
+            <code style="background: var(--bg-primary); padding: 2px 6px"
+              >ct logs</code
+            >
+            查看日志<br />
+            <code style="background: var(--bg-primary); padding: 2px 6px"
+              >pm2 list</code
+            >
+            查看所有后台进程<br />
+            <code style="background: var(--bg-primary); padding: 2px 6px"
+              >pm2 unstartup</code
+            >
+            禁用开机自启
           </div>
 
-          <p style="color: #18a058; font-size: 12px; margin-top: 8px;">💡 提示：配置开机自启后，重启电脑时 Coding-Tool 会自动启动，无需手动运行命令。</p>
+          <p style="color: #18a058; font-size: 12px; margin-top: 8px">
+            💡 提示：配置开机自启后，重启电脑时 Coding-Tool
+            会自动启动，无需手动运行命令。
+          </p>
         </div>
 
         <div class="help-section">
           <h4>🔗 相关链接</h4>
           <div class="link-list">
-            <a href="https://github.com/CooperJiang/cc-tool" target="_blank">GitHub 仓库</a>
-            <a href="https://github.com/CooperJiang/cc-tool/issues" target="_blank">问题反馈</a>
+            <a href="https://github.com/zjhr/coding-tool" target="_blank"
+              >GitHub 仓库</a
+            >
+            <a href="https://github.com/zjhr/coding-tool/issues" target="_blank"
+              >问题反馈</a
+            >
           </div>
         </div>
       </div>
@@ -383,287 +599,322 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, h } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
-import { NTooltip, NSwitch, NSpin, NModal, NIcon } from 'naive-ui'
-import { ChatbubblesOutline, ServerOutline, TerminalOutline, LogoGithub, HelpCircleOutline, MoonOutline, SunnyOutline, SettingsOutline, HomeOutline, ChatboxEllipsesOutline, CodeSlashOutline, SparklesOutline, BookmarkOutline, ExtensionPuzzleOutline, ChatboxOutline, SpeedometerOutline, WarningOutline } from '@vicons/ionicons5'
-import RightPanel from './RightPanel.vue'
-import RecentSessionsDrawer from './RecentSessionsDrawer.vue'
-import FavoritesDrawer from './FavoritesDrawer.vue'
-import SettingsDrawer from './SettingsDrawer.vue'
-import McpDrawer from './McpDrawer.vue'
-import PromptsDrawer from './PromptsDrawer.vue'
-import SpeedTestDrawer from './SpeedTestDrawer.vue'
-import HeaderButton from './HeaderButton.vue'
-import UpdateDialog from './UpdateDialog.vue'
-import EnvConflictModal from './EnvConflictModal.vue'
-import { updateNestedUIConfig } from '../api/ui-config'
-import { checkForUpdates as checkForUpdatesApi, getChangelog } from '../api/version'
-import { checkEnvConflicts } from '../api/env'
-import message, { dialog } from '../utils/message'
-import { useTheme } from '../composables/useTheme'
-import { useGlobalState } from '../composables/useGlobalState'
-import { useFavorites } from '../composables/useFavorites'
-import { useDashboard } from '../composables/useDashboard'
+import { ref, computed, onMounted, onUnmounted, h } from "vue";
+import { useRouter, useRoute } from "vue-router";
+import { NTooltip, NSwitch, NSpin, NModal, NIcon } from "naive-ui";
+import {
+  ChatbubblesOutline,
+  ServerOutline,
+  TerminalOutline,
+  LogoGithub,
+  HelpCircleOutline,
+  MoonOutline,
+  SunnyOutline,
+  SettingsOutline,
+  HomeOutline,
+  ChatboxEllipsesOutline,
+  CodeSlashOutline,
+  SparklesOutline,
+  BookmarkOutline,
+  ExtensionPuzzleOutline,
+  ChatboxOutline,
+  SpeedometerOutline,
+  WarningOutline,
+} from "@vicons/ionicons5";
+import RightPanel from "./RightPanel.vue";
+import RecentSessionsDrawer from "./RecentSessionsDrawer.vue";
+import FavoritesDrawer from "./FavoritesDrawer.vue";
+import SettingsDrawer from "./SettingsDrawer.vue";
+import McpDrawer from "./McpDrawer.vue";
+import PromptsDrawer from "./PromptsDrawer.vue";
+import SpeedTestDrawer from "./SpeedTestDrawer.vue";
+import HeaderButton from "./HeaderButton.vue";
+import UpdateDialog from "./UpdateDialog.vue";
+import EnvConflictModal from "./EnvConflictModal.vue";
+import { updateNestedUIConfig } from "../api/ui-config";
+import {
+  checkForUpdates as checkForUpdatesApi,
+  getChangelog,
+} from "../api/version";
+import { checkEnvConflicts } from "../api/env";
+import message, { dialog } from "../utils/message";
+import { useTheme } from "../composables/useTheme";
+import { useGlobalState } from "../composables/useGlobalState";
+import { useFavorites } from "../composables/useFavorites";
+import { useDashboard } from "../composables/useDashboard";
 
 // 使用主题 composable
-const { isDark, toggleTheme } = useTheme()
+const { isDark, toggleTheme } = useTheme();
 
 // 使用全局状态 composable
-const {
-  claudeProxy,
-  codexProxy,
-  geminiProxy,
-  startProxy,
-  stopProxy
-} = useGlobalState()
+const { claudeProxy, codexProxy, geminiProxy, startProxy, stopProxy } =
+  useGlobalState();
 
 // 使用收藏功能
-const { totalFavorites } = useFavorites()
+const { totalFavorites } = useFavorites();
 
 // 使用 dashboard 聚合数据
-const { dashboardData, isLoading: dashboardLoading, loadDashboard } = useDashboard()
+const {
+  dashboardData,
+  isLoading: dashboardLoading,
+  loadDashboard,
+} = useDashboard();
 
-const router = useRouter()
-const route = useRoute()
+const router = useRouter();
+const route = useRoute();
 
 // 导航状态
-const currentRoute = computed(() => route.name)
-const currentChannel = computed(() => route.meta.channel || null)
+const currentRoute = computed(() => route.name);
+const currentChannel = computed(() => route.meta.channel || null);
 
 // 是否显示右侧面板（首页不显示）
 const shouldShowRightPanel = computed(() => {
-  return currentChannel.value && (showChannels.value || (showLogs.value && effectiveProxyRunning.value))
-})
+  return (
+    currentChannel.value &&
+    (showChannels.value || (showLogs.value && effectiveProxyRunning.value))
+  );
+});
 
-const showRecentDrawer = ref(false)
-const showFavoritesDrawer = ref(false)
-const showSettingsDrawer = ref(false)
-const showMcpDrawer = ref(false)
-const showPromptsDrawer = ref(false)
-const showSpeedTestDrawer = ref(false)
-const showHelpModal = ref(false)
+const showRecentDrawer = ref(false);
+const showFavoritesDrawer = ref(false);
+const showSettingsDrawer = ref(false);
+const showMcpDrawer = ref(false);
+const showPromptsDrawer = ref(false);
+const showSpeedTestDrawer = ref(false);
+const showHelpModal = ref(false);
 
 // 环境变量冲突检测
-const envConflicts = ref([])
-const showEnvModal = ref(false)
+const envConflicts = ref([]);
+const showEnvModal = ref(false);
 
 // 检测环境变量冲突
 async function checkEnvConflictsOnLoad() {
   try {
-    const result = await checkEnvConflicts()
+    const result = await checkEnvConflicts();
     if (result.success && result.conflicts?.length > 0) {
-      envConflicts.value = result.conflicts
+      envConflicts.value = result.conflicts;
 
       // 检查是否用户选择了"不再提醒"，如果没有则自动弹出
-      const neverRemind = localStorage.getItem('envConflictNeverRemind')
-      if (neverRemind !== 'true') {
-        showEnvModal.value = true
+      const neverRemind = localStorage.getItem("envConflictNeverRemind");
+      if (neverRemind !== "true") {
+        showEnvModal.value = true;
       }
     }
   } catch (err) {
-    console.error('Check env conflicts failed:', err)
+    console.error("Check env conflicts failed:", err);
   }
 }
 
 // 处理删除后
 async function handleEnvDeleted() {
   try {
-    const result = await checkEnvConflicts()
+    const result = await checkEnvConflicts();
     if (result.success) {
-      envConflicts.value = result.conflicts || []
+      envConflicts.value = result.conflicts || [];
       if (envConflicts.value.length === 0) {
-        showEnvModal.value = false
+        showEnvModal.value = false;
       }
     }
   } catch (err) {
-    console.error('Recheck env conflicts failed:', err)
+    console.error("Recheck env conflicts failed:", err);
   }
 }
 
 // 暂时忽略
 function handleEnvIgnore() {
-  showEnvModal.value = false
+  showEnvModal.value = false;
 }
 
 // 不再提醒（只是不自动弹出，顶部图标还在）
 function handleEnvNeverRemind() {
-  showEnvModal.value = false
-  localStorage.setItem('envConflictNeverRemind', 'true')
+  showEnvModal.value = false;
+  localStorage.setItem("envConflictNeverRemind", "true");
 }
-const globalLoading = ref(false) // 全局 loading 状态
-const updateInfo = ref(null) // 版本更新信息
+const globalLoading = ref(false); // 全局 loading 状态
+const updateInfo = ref(null); // 版本更新信息
 
 // 根据当前 channel 计算有效的代理状态
 const effectiveProxyRunning = computed(() => {
-  if (currentChannel.value === 'codex') return codexProxy.value.running
-  if (currentChannel.value === 'gemini') return geminiProxy.value.running
-  return claudeProxy.value.running
-})
+  if (currentChannel.value === "codex") return codexProxy.value.running;
+  if (currentChannel.value === "gemini") return geminiProxy.value.running;
+  return claudeProxy.value.running;
+});
 const effectiveProxyLoading = computed(() => {
-  if (currentChannel.value === 'codex') return codexProxy.value.loading
-  if (currentChannel.value === 'gemini') return geminiProxy.value.loading
-  return claudeProxy.value.loading
-})
+  if (currentChannel.value === "codex") return codexProxy.value.loading;
+  if (currentChannel.value === "gemini") return geminiProxy.value.loading;
+  return claudeProxy.value.loading;
+});
 
 // Panel visibility settings (with file persistence)
-const showChannels = ref(true)
-const showLogs = ref(true)
+const showChannels = ref(true);
+const showLogs = ref(true);
 
 // Load panel visibility from server using dashboard API
 async function loadPanelSettings() {
   try {
-    const data = await loadDashboard()
+    const data = await loadDashboard();
     if (data && data.uiConfig) {
-      showChannels.value = data.uiConfig.panelVisibility?.showChannels !== false
-      showLogs.value = data.uiConfig.panelVisibility?.showLogs !== false
+      showChannels.value =
+        data.uiConfig.panelVisibility?.showChannels !== false;
+      showLogs.value = data.uiConfig.panelVisibility?.showLogs !== false;
     }
   } catch (err) {
-    console.error('Failed to load dashboard data:', err)
+    console.error("Failed to load dashboard data:", err);
   }
 }
 
 // Save panel visibility to server
 async function savePanelSettings() {
   try {
-    await updateNestedUIConfig('panelVisibility', 'showChannels', showChannels.value)
-    await updateNestedUIConfig('panelVisibility', 'showLogs', showLogs.value)
+    await updateNestedUIConfig(
+      "panelVisibility",
+      "showChannels",
+      showChannels.value
+    );
+    await updateNestedUIConfig("panelVisibility", "showLogs", showLogs.value);
   } catch (err) {
-    console.error('Failed to save panel settings:', err)
+    console.error("Failed to save panel settings:", err);
   }
 }
 
 // Toggle handlers
 function toggleChannels() {
-  showChannels.value = !showChannels.value
-  savePanelSettings()
+  showChannels.value = !showChannels.value;
+  savePanelSettings();
 }
 
 function toggleLogs() {
-  showLogs.value = !showLogs.value
-  savePanelSettings()
+  showLogs.value = !showLogs.value;
+  savePanelSettings();
 }
 
 function goHome() {
-  router.push({ name: 'home' })
+  router.push({ name: "home" });
 }
 
 function openGithub() {
-  window.open('https://github.com/CooperJiang/cc-tool', '_blank')
+  window.open("https://github.com/zjhr/coding-tool", "_blank");
 }
 
 // 统一的代理切换处理器（根据当前 channel 路由到正确的代理）
 async function handleProxyToggle(newValue) {
-  const channelType = currentChannel.value || 'claude'
+  const channelType = currentChannel.value || "claude";
 
   try {
-    let result
+    let result;
     if (newValue) {
-      result = await startProxy(channelType)
+      result = await startProxy(channelType);
     } else {
-      result = await stopProxy(channelType)
+      result = await stopProxy(channelType);
     }
 
     // 处理结果
     if (result.success !== false) {
-      message.success(newValue ? '代理已启动' : '代理已停止')
+      message.success(newValue ? "代理已启动" : "代理已停止");
       // 自动展示/隐藏日志面板
       if (newValue) {
-        showLogs.value = true
+        showLogs.value = true;
       }
-      savePanelSettings()
+      savePanelSettings();
     } else {
-      message.error(result.error || '操作失败')
+      message.error(result.error || "操作失败");
     }
   } catch (error) {
-    message.error(error.response?.data?.error || error.message || '操作失败')
+    message.error(error.response?.data?.error || error.message || "操作失败");
   }
 }
 
 // 监听来自 SettingsDrawer 的面板可见性变化
 function handlePanelVisibilityChange(event) {
-  const { showChannels: newShowChannels, showLogs: newShowLogs } = event.detail
-  showChannels.value = newShowChannels
-  showLogs.value = newShowLogs
+  const { showChannels: newShowChannels, showLogs: newShowLogs } = event.detail;
+  showChannels.value = newShowChannels;
+  showLogs.value = newShowLogs;
 }
 
 // 检查版本更新
 async function checkForUpdates() {
   try {
-    const result = await checkForUpdatesApi()
+    const result = await checkForUpdatesApi();
     if (result.hasUpdate && !result.error) {
-      updateInfo.value = result
+      updateInfo.value = result;
     }
   } catch (err) {
     // 静默失败，不影响用户体验
-    console.error('Version check failed:', err)
+    console.error("Version check failed:", err);
   }
 }
 
 // 处理更新点击
 async function handleUpdateClick() {
-  if (!updateInfo.value) return
+  if (!updateInfo.value) return;
 
   // 获取更新日志
-  let changelogData = null
+  let changelogData = null;
   try {
-    const result = await getChangelog(updateInfo.value.latest)
+    const result = await getChangelog(updateInfo.value.latest);
     if (result.success) {
-      changelogData = result.changelog
+      changelogData = result.changelog;
     }
   } catch (err) {
-    console.error('Failed to load changelog:', err)
+    console.error("Failed to load changelog:", err);
   }
 
   // 使用 dialog.create 方法显示更新弹窗
   dialog.create({
-    title: '✨ 发现新版本',
-    content: () => h(UpdateDialog, {
-      currentVersion: updateInfo.value.current,
-      latestVersion: updateInfo.value.latest,
-      changelog: changelogData
-    }),
+    title: "✨ 发现新版本",
+    content: () =>
+      h(UpdateDialog, {
+        currentVersion: updateInfo.value.current,
+        latestVersion: updateInfo.value.latest,
+        changelog: changelogData,
+      }),
     maskClosable: true,
     closable: true,
     showIcon: false,
     style: {
-      width: '580px'
-    }
-  })
+      width: "580px",
+    },
+  });
 }
 
 onMounted(() => {
   // 加载面板可见性设置
-  loadPanelSettings()
+  loadPanelSettings();
 
   // 监听面板可见性变化事件
-  window.addEventListener('panel-visibility-change', handlePanelVisibilityChange)
+  window.addEventListener(
+    "panel-visibility-change",
+    handlePanelVisibilityChange
+  );
 
   // 检测环境变量冲突
-  checkEnvConflictsOnLoad()
+  checkEnvConflictsOnLoad();
 
   // 延迟检查版本更新，等页面完全加载后再执行
   // 使用 requestIdleCallback 在浏览器空闲时执行，或者延迟到 2 秒后
   if (window.requestIdleCallback) {
     window.requestIdleCallback(() => {
-      checkForUpdates().catch(err => {
-        console.warn('Version check failed:', err)
-      })
-    })
+      checkForUpdates().catch((err) => {
+        console.warn("Version check failed:", err);
+      });
+    });
   } else {
     // 降级方案：延迟 2 秒后执行
     setTimeout(() => {
-      checkForUpdates().catch(err => {
-        console.warn('Version check failed:', err)
-      })
-    }, 2000)
+      checkForUpdates().catch((err) => {
+        console.warn("Version check failed:", err);
+      });
+    }, 2000);
   }
-})
+});
 
 onUnmounted(() => {
   // 移除事件监听
-  window.removeEventListener('panel-visibility-change', handlePanelVisibilityChange)
-})
+  window.removeEventListener(
+    "panel-visibility-change",
+    handlePanelVisibilityChange
+  );
+});
 </script>
 
 <style scoped>
@@ -751,7 +1002,11 @@ onUnmounted(() => {
   width: 36px;
   height: 36px;
   border-radius: 6px;
-  background: linear-gradient(135deg, rgba(24, 160, 88, 0.15) 0%, rgba(24, 160, 88, 0.05) 100%);
+  background: linear-gradient(
+    135deg,
+    rgba(24, 160, 88, 0.15) 0%,
+    rgba(24, 160, 88, 0.05) 100%
+  );
   display: flex;
   align-items: center;
   justify-content: center;
@@ -836,7 +1091,7 @@ onUnmounted(() => {
 }
 
 .nav-tab.active::after {
-  content: '';
+  content: "";
   position: absolute;
   bottom: 0;
   left: 12px;
@@ -1011,7 +1266,7 @@ onUnmounted(() => {
 
 .command-item code {
   min-width: 160px;
-  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
   font-size: 13px;
   font-weight: 600;
   color: #18a058;
@@ -1036,7 +1291,7 @@ onUnmounted(() => {
 .help-section kbd {
   display: inline-block;
   padding: 3px 8px;
-  font-family: 'SF Mono', Monaco, monospace;
+  font-family: "SF Mono", Monaco, monospace;
   font-size: 12px;
   font-weight: 600;
   color: var(--text-primary);
@@ -1081,7 +1336,7 @@ onUnmounted(() => {
 }
 
 .link-list a::before {
-  content: '→';
+  content: "→";
   font-weight: 700;
 }
 
@@ -1105,7 +1360,11 @@ onUnmounted(() => {
   align-items: center;
   gap: 4px;
   padding: 5px 10px;
-  background: linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(251, 146, 60, 0.15));
+  background: linear-gradient(
+    135deg,
+    rgba(245, 158, 11, 0.15),
+    rgba(251, 146, 60, 0.15)
+  );
   border: 1px solid rgba(245, 158, 11, 0.3);
   border-radius: 6px;
   cursor: pointer;
@@ -1114,7 +1373,11 @@ onUnmounted(() => {
 }
 
 .update-badge:hover {
-  background: linear-gradient(135deg, rgba(245, 158, 11, 0.25), rgba(251, 146, 60, 0.25));
+  background: linear-gradient(
+    135deg,
+    rgba(245, 158, 11, 0.25),
+    rgba(251, 146, 60, 0.25)
+  );
   border-color: rgba(245, 158, 11, 0.5);
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
@@ -1133,7 +1396,8 @@ onUnmounted(() => {
 }
 
 @keyframes pulse-update {
-  0%, 100% {
+  0%,
+  100% {
     transform: scale(1);
     box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4);
   }
@@ -1144,12 +1408,20 @@ onUnmounted(() => {
 }
 
 [data-theme="dark"] .update-badge {
-  background: linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(251, 146, 60, 0.2));
+  background: linear-gradient(
+    135deg,
+    rgba(245, 158, 11, 0.2),
+    rgba(251, 146, 60, 0.2)
+  );
   border-color: rgba(245, 158, 11, 0.4);
 }
 
 [data-theme="dark"] .update-badge:hover {
-  background: linear-gradient(135deg, rgba(245, 158, 11, 0.3), rgba(251, 146, 60, 0.3));
+  background: linear-gradient(
+    135deg,
+    rgba(245, 158, 11, 0.3),
+    rgba(251, 146, 60, 0.3)
+  );
   border-color: rgba(245, 158, 11, 0.6);
 }
 

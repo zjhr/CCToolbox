@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const fs = require('fs');
+const path = require('path');
 const {
   getSessionsByProject,
   getSessionById,
@@ -7,7 +9,8 @@ const {
   forkSession,
   deleteSession,
   getRecentSessions,
-  saveSessionOrder
+  saveSessionOrder,
+  getProjects
 } = require('../services/codex-sessions');
 const { isCodexInstalled } = require('../services/codex-config');
 const { loadAliases } = require('../services/alias');
@@ -118,14 +121,22 @@ module.exports = (config) => {
       // 获取别名
       const aliases = loadAliases();
 
+      const projects = getProjects();
+      const projectMeta = projects.find(project => project.name === projectName);
+      const fullPath = projectMeta?.fullPath || projectName;
+      const hasOpenSpec = projectMeta?.fullPath && path.isAbsolute(projectMeta.fullPath)
+        ? fs.existsSync(path.join(projectMeta.fullPath, 'openspec'))
+        : false;
+
       res.json({
         sessions,
         totalSize,
         aliases, // 返回所有别名
         projectInfo: {
           name: projectName,
-          fullPath: projectName,
-          displayName: projectName
+          fullPath,
+          displayName: projectName,
+          hasOpenSpec
         }
       });
     } catch (err) {

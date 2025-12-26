@@ -20,6 +20,23 @@
           <n-text depth="3" class="project-path">{{ displayProjectPath }}</n-text>
         </div>
 
+        <!-- Search Actions -->
+        <div class="search-actions">
+          <n-tooltip :disabled="hasOpenSpec">
+            <template #trigger>
+              <span class="openspec-button-wrapper">
+                <n-button size="small" secondary :disabled="!hasOpenSpec" @click="handleOpenSpec">
+                  <template #icon>
+                    <n-icon><DocumentTextOutline /></n-icon>
+                  </template>
+                  OpenSpec
+                </n-button>
+              </span>
+            </template>
+            使用 openspec init 初始化项目
+          </n-tooltip>
+        </div>
+
         <!-- Search Bar -->
         <n-input
           v-model:value="searchQuery"
@@ -261,6 +278,14 @@
       :channel="currentChannel"
       @error="handleChatHistoryError"
     />
+
+    <!-- OpenSpec Drawer -->
+    <OpenSpecDrawer
+      v-model:show="showOpenSpecDrawer"
+      :project-name="projectDisplayName"
+      :project-path="store.currentProjectInfo?.fullPath || ''"
+      :channel="currentChannel"
+    />
   </div>
 </template>
 
@@ -282,6 +307,7 @@ import { useFavorites } from '../composables/useFavorites'
 import message, { dialog } from '../utils/message'
 import { searchSessions as searchSessionsApi, launchTerminal } from '../api/sessions'
 import ChatHistoryDrawer from '../components/ChatHistoryDrawer.vue'
+import OpenSpecDrawer from '../components/openspecui/OpenSpecDrawer.vue'
 
 const props = defineProps({
   projectName: {
@@ -308,6 +334,7 @@ const searchResults = ref(null)
 const showSearchResults = ref(false)
 const contentEl = ref(null)
 const searching = ref(false)
+const showOpenSpecDrawer = ref(false)
 
 // Chat history drawer state
 const showChatHistory = ref(false)
@@ -323,6 +350,10 @@ const projectDisplayName = computed(() => {
 // Full project path (使用后端解析的路径)
 const displayProjectPath = computed(() => {
   return store.currentProjectInfo?.fullPath || props.projectName
+})
+
+const hasOpenSpec = computed(() => {
+  return Boolean(store.currentProjectInfo?.hasOpenSpec)
 })
 
 // Sync with store
@@ -347,6 +378,11 @@ const filteredSessions = computed(() => {
 function goBack() {
   const channel = route.meta.channel || 'claude'
   router.push({ name: `${channel}-projects` })
+}
+
+function handleOpenSpec() {
+  if (!hasOpenSpec.value) return
+  showOpenSpecDrawer.value = true
 }
 
 async function handleSearch() {
@@ -622,6 +658,16 @@ onUnmounted(() => {
   display: block;
   color: #666;
   margin-bottom: 2px;
+}
+
+.search-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.openspec-button-wrapper {
+  display: inline-flex;
 }
 
 .search-input {

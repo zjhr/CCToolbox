@@ -53,6 +53,8 @@ module.exports = (config) => {
 
       // Parse project path info
       const { fullPath, projectName: displayName } = parseRealProjectPath(projectName);
+      const openspecPath = path.join(fullPath, 'openspec');
+      const hasOpenSpec = fs.existsSync(openspecPath);
 
       res.json({
         sessions: result.sessions,
@@ -61,7 +63,8 @@ module.exports = (config) => {
         projectInfo: {
           name: projectName,
           displayName,
-          fullPath
+          fullPath,
+          hasOpenSpec
         }
       });
     } catch (error) {
