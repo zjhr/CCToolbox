@@ -1,5 +1,5 @@
 const express = require('express');
-const { exec } = require('child_process');
+const { exec, execFile } = require('child_process');
 const { promisify } = require('util');
 const path = require('path');
 const fs = require('fs');
@@ -84,7 +84,7 @@ async function enableAutoStart() {
         }
 
         // Save current process list
-        pm2.save((saveErr) => {
+        pm2.dump((saveErr) => {
           if (saveErr) {
             pm2.disconnect();
             console.error('PM2 save error:', saveErr);
@@ -96,32 +96,66 @@ async function enableAutoStart() {
 
           // Run startup command
           const platform = process.platform;
+          const user = os.userInfo().username;
+          const homeDir = os.homedir();
+          const homeArg = JSON.stringify(homeDir);
           const command = platform === 'darwin'
-            ? 'pm2 startup launchd -u $(whoami) --hp $(eval echo ~$(whoami))'
+            ? `pm2 startup launchd -u ${user} --hp ${homeArg}`
             : platform === 'linux'
-            ? 'pm2 startup systemd -u $(whoami) --hp $(eval echo ~$(whoami))'
+            ? `pm2 startup systemd -u ${user} --hp ${homeArg}`
             : 'pm2 startup';
+
+          const runStartupCommand = (callback) => {
+            if (platform === 'darwin') {
+              const envPath = process.env.PATH || '';
+              const appleCommand = `env PATH=${JSON.stringify(envPath)} ${command}`;
+              const appleScript = `do shell script ${JSON.stringify(appleCommand)} with administrator privileges`;
+              return execFile('osascript', ['-e', appleScript], { timeout: 30000 }, callback);
+            }
+            return exec(command, { shell: '/bin/bash', timeout: 30000 }, callback);
+          };
 
           console.log(`Running startup command: ${command}`);
 
-          exec(command, { shell: '/bin/bash', timeout: 30000 }, (execErr, stdout, stderr) => {
+          runStartupCommand((execErr, stdout, stderr) => {
             pm2.disconnect();
+            const combinedOutput = [stdout, stderr].filter(Boolean).join('\n').trim();
+            const sudoLine = combinedOutput
+              .split('\n')
+              .map(line => line.trim())
+              .find(line => line.startsWith('sudo '));
 
             if (execErr) {
               console.error('Startup command error:', execErr);
-              console.error('stderr:', stderr);
+              if (stderr) {
+                console.error('stderr:', stderr);
+              }
+              if (stdout) {
+                console.error('stdout:', stdout);
+              }
 
               // Check if it's already enabled
-              if (stderr && stderr.includes('already')) {
+              if (combinedOutput.includes('already')) {
                 return resolve({
                   success: true,
                   message: '开机自启已启用（或已存在）'
                 });
               }
 
+              if (combinedOutput.includes('copy/paste the following command') || sudoLine) {
+                return resolve({
+                  success: false,
+                  message: sudoLine
+                    ? '需要管理员权限，请在终端执行以下命令完成开机自启：\n' + sudoLine
+                    : '需要管理员权限，请在终端执行 PM2 提示的 sudo 命令完成开机自启。' +
+                      (combinedOutput ? '\n' + combinedOutput : '')
+                });
+              }
+
               return resolve({
                 success: false,
-                message: '启用失败。' + (stderr || execErr.message || '请确保已安装 PM2 且有足够权限'),
+                message: '启用失败：' +
+                  (combinedOutput || execErr.message || '请确保已安装 PM2 且有足够权限'),
                 error: execErr.message
               });
             }
