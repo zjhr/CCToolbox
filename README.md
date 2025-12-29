@@ -40,18 +40,12 @@
 
 ## 📦 安装
 
-### npm（推荐）
-
-```bash
-npm install -g cctoolbox
-```
-
 ### 从源码构建
 
 ```bash
 git clone https://github.com/zjhr/coding-tool.git
 cd coding-tool
-npm install && npm link
+./install.sh
 ```
 
 ### 验证安装
@@ -308,6 +302,19 @@ ct logs --clear
 ---
 
 ## ❓ 常见问题
+
+<details>
+<summary>Web UI 显示 Cannot GET / ？</summary>
+
+这是因为前端未构建。从源码安装时需要构建前端：
+
+```bash
+cd src/web && npm install && npm run build
+```
+
+构建完成后，`dist/web` 目录会被创建，服务器就能正常提供静态文件了。
+
+</details>
 
 <details>
 <summary>如何后台运行服务？</summary>
