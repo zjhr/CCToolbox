@@ -60,7 +60,7 @@ router.get('/current', (req, res) => {
  */
 router.get('/changelog/:version', async (req, res) => {
   const { version } = req.params;
-  const owner = 'CooperJiang';
+  const owner = 'zjhr';
   const repo = 'coding-tool';
   const changelogUrl = `https://raw.githubusercontent.com/${owner}/${repo}/main/CHANGELOG.md`;
 
@@ -72,7 +72,7 @@ router.get('/changelog/:version', async (req, res) => {
     const response = await fetch(changelogUrl, {
       signal: controller.signal,
       headers: {
-        'User-Agent': 'coding-tool'
+        'User-Agent': 'cctoolbox'
       }
     });
     clearTimeout(timeoutId);

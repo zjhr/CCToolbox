@@ -20,7 +20,7 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-Coding-Tool is a Node-based CLI whose public entry point is `bin/ct.js`, and `src/index.js` orchestrates menu routing plus command handlers. CLI actions live under `src/commands`, shared helpers sit in `src/utils`, and configuration schemas stay in `src/config`. The Express proxy/websocket backend resides in `src/server` (api, services, proxy-server). The Vue 3 dashboard lives under `src/web` with composables/components/views; install and script inside that folder separately. Docs and marketing assets stay in `docs/`. User-level data lives at `%USERPROFILE%\.claude\cc-tool` and must remain untracked.
+CCToolbox is a Node-based CLI whose public entry point is `bin/ct.js`, and `src/index.js` orchestrates menu routing plus command handlers. CLI actions live under `src/commands`, shared helpers sit in `src/utils`, and configuration schemas stay in `src/config`. The Express proxy/websocket backend resides in `src/server` (api, services, proxy-server). The Vue 3 dashboard lives under `src/web` with composables/components/views; install and script inside that folder separately. Docs and marketing assets stay in `docs/`. User-level data lives at `%USERPROFILE%\.claude\cctoolbox` and must remain untracked.
 
 ## Build, Test, and Development Commands
 - `npm start` - runs the CLI exactly as `ct`.
@@ -39,4 +39,4 @@ Use 2-space indentation, single quotes, and CommonJS modules in the CLI/server (
 Follow the conventional commit style shown in `git log` (`feat: add session log`, `fix: docs`). PRs must describe the motivation, list CLI/Web changes, mention affected configs in `.claude`, and link related issues. Attach before/after screenshots for UI tweaks and include sample command output for CLI changes.
 
 ## Security & Configuration Tips
-Secrets and API tokens belong in `%USERPROFILE%\.claude\cc-tool\config.json`; never inline them in commits. When adding channels or proxy options, thread the config through `src/config` loaders and document defaults in `README.md`. Validate user paths and HTTP targets inside `src/server/services` to avoid shell injection, and run `publish.sh` only after confirming no private data lands in `dist/` or npm artifacts.
+Secrets and API tokens belong in `%USERPROFILE%\.claude\cctoolbox\config.json`; never inline them in commits. When adding channels or proxy options, thread the config through `src/config` loaders and document defaults in `README.md`. Validate user paths and HTTP targets inside `src/server/services` to avoid shell injection, and run `publish.sh` only after confirming no private data lands in `dist/` or npm artifacts.

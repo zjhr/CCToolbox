@@ -3,6 +3,7 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 const { getAllSessions, parseSessionInfoFast } = require('../../utils/session');
+const { getAppDir } = require('../../utils/app-path-manager');
 const { loadAliases } = require('./alias');
 const {
   getCachedProjects,
@@ -12,9 +13,9 @@ const {
   rememberHasMessages
 } = require('./session-cache');
 
-// Base directory for cc-tool data
+// Base directory for CCToolbox data
 function getCcToolDir() {
-  return path.join(os.homedir(), '.claude', 'cc-tool');
+  return getAppDir();
 }
 
 // Get path for storing project order

@@ -1,25 +1,23 @@
 const chalk = require('chalk');
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 const { spawn } = require('child_process');
+const { getLogFile } = require('../utils/app-path-manager');
 
-const LOGS_DIR = path.join(os.homedir(), '.claude/logs');
-
-const LOG_FILES = {
-  ui: 'cc-tool-out.log',
-  claude: 'claude-proxy.log',
-  codex: 'codex-proxy.log',
-  gemini: 'gemini-proxy.log'
-};
+const LOG_TYPES = ['ui', 'claude', 'codex', 'gemini'];
 
 /**
  * 确保日志目录存在
  */
 function ensureLogsDir() {
-  if (!fs.existsSync(LOGS_DIR)) {
-    fs.mkdirSync(LOGS_DIR, { recursive: true });
+  const logDir = path.dirname(getLogFile('ui'));
+  if (!fs.existsSync(logDir)) {
+    fs.mkdirSync(logDir, { recursive: true });
   }
+}
+
+function getLogPath(type) {
+  return getLogFile(type);
 }
 
 /**
@@ -43,14 +41,13 @@ async function handleLogs(type = null, options = {}) {
   }
 
   // 显示特定类型的日志
-  const logFile = LOG_FILES[type];
-  if (!logFile) {
+  if (!LOG_TYPES.includes(type)) {
     console.error(chalk.red(`\n❌ 无效的日志类型: ${type}\n`));
     console.log(chalk.gray('支持的类型: ui, claude, codex, gemini\n'));
     process.exit(1);
   }
 
-  const logPath = path.join(LOGS_DIR, logFile);
+  const logPath = getLogPath(type);
 
   // 检查日志文件是否存在
   if (!fs.existsSync(logPath)) {
@@ -81,8 +78,8 @@ function showAllLogs(lines, follow) {
   const allLogs = [];
 
   // 读取所有日志文件
-  Object.entries(LOG_FILES).forEach(([type, filename]) => {
-    const logPath = path.join(LOGS_DIR, filename);
+  LOG_TYPES.forEach((type) => {
+    const logPath = getLogPath(type);
     if (fs.existsSync(logPath)) {
       try {
         const content = fs.readFileSync(logPath, 'utf8');
@@ -115,7 +112,7 @@ function showAllLogs(lines, follow) {
   });
 
   console.log(chalk.gray(`\n═`.repeat(60)));
-  console.log(chalk.gray(`\n💡 使用 `) + chalk.cyan(`ct logs ${Object.keys(LOG_FILES).join('|')}`) + chalk.gray(` 查看特定类型日志\n`));
+  console.log(chalk.gray(`\n💡 使用 `) + chalk.cyan(`ct logs ${LOG_TYPES.join('|')}`) + chalk.gray(` 查看特定类型日志\n`));
 }
 
 /**
@@ -195,13 +192,12 @@ function clearLogs(type) {
     console.log(chalk.green(`\n✅ 共清空 ${cleared} 个日志文件\n`));
   } else {
     // 清空特定类型日志
-    const logFile = LOG_FILES[type];
-    if (!logFile) {
+    if (!LOG_TYPES.includes(type)) {
       console.error(chalk.red(`\n❌ 无效的日志类型: ${type}\n`));
       process.exit(1);
     }
 
-    const logPath = path.join(LOGS_DIR, logFile);
+    const logPath = getLogPath(type);
     if (fs.existsSync(logPath)) {
       try {
         fs.writeFileSync(logPath, '');

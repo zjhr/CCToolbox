@@ -130,7 +130,7 @@ function testNetworkConnectivity(url, apiKey, timeout) {
       headers: {
         'Authorization': `Bearer ${apiKey || ''}`,
         'Content-Type': 'application/json',
-        'User-Agent': 'Coding-Tool-SpeedTest/1.0'
+        'User-Agent': 'CCToolbox-SpeedTest/1.0'
       }
     };
 
@@ -284,7 +284,7 @@ function testAPIFunctionality(baseUrl, apiKey, timeout, channelType = 'claude', 
       headers = {
         'Authorization': `Bearer ${apiKey || ''}`,
         'Content-Type': 'application/json',
-        'User-Agent': 'Coding-Tool-SpeedTest/1.0'
+        'User-Agent': 'CCToolbox-SpeedTest/1.0'
       };
     } else {
       // 默认使用 OpenAI 格式
@@ -300,7 +300,7 @@ function testAPIFunctionality(baseUrl, apiKey, timeout, channelType = 'claude', 
       headers = {
         'Authorization': `Bearer ${apiKey || ''}`,
         'Content-Type': 'application/json',
-        'User-Agent': 'Coding-Tool-SpeedTest/1.0'
+        'User-Agent': 'CCToolbox-SpeedTest/1.0'
       };
     }
 

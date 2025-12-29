@@ -7,10 +7,14 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { getAppDir } = require('../../utils/app-path-manager');
 
 // Prompts 配置文件路径
-const CC_TOOL_DIR = path.join(os.homedir(), '.claude', 'cc-tool');
-const PROMPTS_FILE = path.join(CC_TOOL_DIR, 'prompts.json');
+function getPromptsFilePath() {
+  const appDir = getAppDir();
+  ensureDir(appDir);
+  return path.join(appDir, 'prompts.json');
+}
 
 // 各平台提示词文件路径
 const CLAUDE_PROMPT_PATH = path.join(os.homedir(), '.claude', 'CLAUDE.md');
@@ -172,7 +176,7 @@ function deleteFile(filePath) {
  * 如果用户已有提示词文件，自动导入为"当前使用"
  */
 function initPromptsData() {
-  const data = readJsonFile(PROMPTS_FILE, null);
+  const data = readJsonFile(getPromptsFilePath(), null);
 
   if (!data) {
     // 首次使用，创建初始数据
@@ -208,7 +212,7 @@ function initPromptsData() {
       initialData.activePresetId = 'current';
     }
 
-    writeJsonFile(PROMPTS_FILE, initialData);
+    writeJsonFile(getPromptsFilePath(), initialData);
     return initialData;
   }
 
@@ -293,7 +297,7 @@ function savePreset(preset) {
   }
 
   data.presets[preset.id] = preset;
-  writeJsonFile(PROMPTS_FILE, data);
+  writeJsonFile(getPromptsFilePath(), data);
 
   return preset;
 }
@@ -319,7 +323,7 @@ function deletePreset(id) {
   }
 
   delete data.presets[id];
-  writeJsonFile(PROMPTS_FILE, data);
+  writeJsonFile(getPromptsFilePath(), data);
 
   return true;
 }
@@ -337,7 +341,7 @@ async function activatePreset(id) {
 
   // 更新激活状态
   data.activePresetId = id;
-  writeJsonFile(PROMPTS_FILE, data);
+  writeJsonFile(getPromptsFilePath(), data);
 
   // 同步到各平台
   await syncPresetToAllPlatforms(preset);
@@ -353,7 +357,7 @@ async function deactivatePrompt() {
 
   // 清空激活状态
   data.activePresetId = null;
-  writeJsonFile(PROMPTS_FILE, data);
+  writeJsonFile(getPromptsFilePath(), data);
 
   // 删除各平台的提示词文件
   const results = {

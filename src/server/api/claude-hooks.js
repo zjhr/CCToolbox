@@ -9,11 +9,17 @@ const http = require('http');
 // Claude settings.json 路径
 const CLAUDE_SETTINGS_PATH = path.join(os.homedir(), '.claude', 'settings.json');
 
+const { getAppDir } = require('../../utils/app-path-manager');
+
 // UI 配置路径（记录用户是否主动关闭过、飞书配置等）
-const UI_CONFIG_PATH = path.join(os.homedir(), '.cc-tool', 'ui-config.json');
+function getUiConfigPath() {
+  return path.join(getAppDir(), 'ui-config.json');
+}
 
 // 通知脚本路径（用于飞书通知）
-const NOTIFY_SCRIPT_PATH = path.join(os.homedir(), '.cc-tool', 'notify-hook.js');
+function getNotifyScriptPath() {
+  return path.join(getAppDir(), 'notify-hook.js');
+}
 
 // 检测操作系统
 const platform = os.platform(); // 'darwin' | 'win32' | 'linux'
@@ -50,8 +56,9 @@ function writeClaudeSettings(settings) {
 // 读取 UI 配置
 function readUIConfig() {
   try {
-    if (fs.existsSync(UI_CONFIG_PATH)) {
-      const content = fs.readFileSync(UI_CONFIG_PATH, 'utf8');
+    const configPath = getUiConfigPath();
+    if (fs.existsSync(configPath)) {
+      const content = fs.readFileSync(configPath, 'utf8');
       return JSON.parse(content);
     }
     return {};
@@ -63,11 +70,12 @@ function readUIConfig() {
 // 写入 UI 配置
 function writeUIConfig(config) {
   try {
-    const dir = path.dirname(UI_CONFIG_PATH);
+    const configPath = getUiConfigPath();
+    const dir = path.dirname(configPath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    fs.writeFileSync(UI_CONFIG_PATH, JSON.stringify(config, null, 2), 'utf8');
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
     return true;
   } catch (error) {
     console.error('Failed to write UI config:', error);
@@ -80,25 +88,25 @@ function generateSystemNotificationCommand(type) {
   if (platform === 'darwin') {
     // macOS
     if (type === 'dialog') {
-      return `osascript -e 'display dialog "Claude Code 任务已完成 | 等待交互" with title "Coding Tool" buttons {"好的"} default button 1 with icon note'`;
+      return `osascript -e 'display dialog "Claude Code 任务已完成 | 等待交互" with title "CCToolbox" buttons {"好的"} default button 1 with icon note'`;
     } else {
       // 优先使用 terminal-notifier（点击可打开终端），否则使用 osascript
       // terminal-notifier 需要 brew install terminal-notifier
-      return `if command -v terminal-notifier &>/dev/null; then terminal-notifier -title "Coding Tool" -message "任务已完成 | 等待交互" -sound Glass -activate com.apple.Terminal; else osascript -e 'display notification "任务已完成 | 等待交互" with title "Coding Tool" sound name "Glass"'; fi`;
+      return `if command -v terminal-notifier &>/dev/null; then terminal-notifier -title "CCToolbox" -message "任务已完成 | 等待交互" -sound Glass -activate com.apple.Terminal; else osascript -e 'display notification "任务已完成 | 等待交互" with title "CCToolbox" sound name "Glass"'; fi`;
     }
   } else if (platform === 'win32') {
     // Windows
     if (type === 'dialog') {
-      return `powershell -Command "Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('Claude Code 任务已完成 | 等待交互', 'Coding Tool', 'OK', 'Information')"`;
+      return `powershell -Command "Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('Claude Code 任务已完成 | 等待交互', 'CCToolbox', 'OK', 'Information')"`;
     } else {
-      return `powershell -Command "$wshell = New-Object -ComObject Wscript.Shell; $wshell.Popup('任务已完成 | 等待交互', 5, 'Coding Tool', 0x40)"`;
+      return `powershell -Command "$wshell = New-Object -ComObject Wscript.Shell; $wshell.Popup('任务已完成 | 等待交互', 5, 'CCToolbox', 0x40)"`;
     }
   } else {
     // Linux
     if (type === 'dialog') {
-      return `zenity --info --title="Coding Tool" --text="Claude Code 任务已完成 | 等待交互" 2>/dev/null || notify-send "Coding Tool" "任务已完成 | 等待交互"`;
+      return `zenity --info --title="CCToolbox" --text="Claude Code 任务已完成 | 等待交互" 2>/dev/null || notify-send "CCToolbox" "任务已完成 | 等待交互"`;
     } else {
-      return `notify-send "Coding Tool" "任务已完成 | 等待交互"`;
+      return `notify-send "CCToolbox" "任务已完成 | 等待交互"`;
     }
   }
 }
@@ -108,7 +116,7 @@ function generateNotifyScript(config) {
   const { systemNotification, feishu } = config;
 
   let script = `#!/usr/bin/env node
-// CC-Tool 通知脚本 - 自动生成，请勿手动修改
+// CCToolbox 通知脚本 - 自动生成，请勿手动修改
 const https = require('https');
 const http = require('http');
 const { execSync } = require('child_process');
@@ -140,7 +148,7 @@ const feishuData = JSON.stringify({
   msg_type: 'interactive',
   card: {
     header: {
-      title: { tag: 'plain_text', content: '🎉 Coding Tool - 任务完成' },
+      title: { tag: 'plain_text', content: '🎉 CCToolbox - 任务完成' },
       template: 'green'
     },
     elements: [
@@ -195,13 +203,14 @@ try {
 // 写入通知脚本
 function writeNotifyScript(config) {
   try {
-    const dir = path.dirname(NOTIFY_SCRIPT_PATH);
+    const notifyPath = getNotifyScriptPath();
+    const dir = path.dirname(notifyPath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
 
     const script = generateNotifyScript(config);
-    fs.writeFileSync(NOTIFY_SCRIPT_PATH, script, { mode: 0o755 });
+    fs.writeFileSync(notifyPath, script, { mode: 0o755 });
     return true;
   } catch (error) {
     console.error('Failed to write notify script:', error);
@@ -280,8 +289,9 @@ function updateStopHook(systemNotification, feishu) {
       }
     }
     // 删除通知脚本
-    if (fs.existsSync(NOTIFY_SCRIPT_PATH)) {
-      fs.unlinkSync(NOTIFY_SCRIPT_PATH);
+    const notifyPath = getNotifyScriptPath();
+    if (fs.existsSync(notifyPath)) {
+      fs.unlinkSync(notifyPath);
     }
   } else {
     // 生成并写入通知脚本
@@ -294,7 +304,7 @@ function updateStopHook(systemNotification, feishu) {
         hooks: [
           {
             type: 'command',
-            command: `node "${NOTIFY_SCRIPT_PATH}"`
+            command: `node "${getNotifyScriptPath()}"`
           }
         ]
       }
@@ -415,7 +425,7 @@ router.post('/test', (req, res) => {
         msg_type: 'interactive',
         card: {
           header: {
-            title: { tag: 'plain_text', content: '🧪 Coding Tool - 测试通知' },
+            title: { tag: 'plain_text', content: '🧪 CCToolbox - 测试通知' },
             template: 'blue'
           },
           elements: [

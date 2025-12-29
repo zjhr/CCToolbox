@@ -1,11 +1,11 @@
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 const crypto = require('crypto');
 const toml = require('toml');
 const tomlStringify = require('@iarna/toml').stringify;
 const { getCodexDir } = require('./codex-config');
 const { injectEnvToShell, removeEnvFromShell, isProxyConfig } = require('./codex-settings-manager');
+const { getAppDir } = require('../../utils/app-path-manager');
 
 /**
  * Codex 渠道管理服务（多渠道架构）
@@ -22,11 +22,11 @@ const { injectEnvToShell, removeEnvFromShell, isProxyConfig } = require('./codex
 
 // 获取渠道存储文件路径
 function getChannelsFilePath() {
-  const ccToolDir = path.join(os.homedir(), '.claude', 'cc-tool');
-  if (!fs.existsSync(ccToolDir)) {
-    fs.mkdirSync(ccToolDir, { recursive: true });
+  const appDir = getAppDir();
+  if (!fs.existsSync(appDir)) {
+    fs.mkdirSync(appDir, { recursive: true });
   }
-  return path.join(ccToolDir, 'codex-channels.json');
+  return path.join(appDir, 'codex-channels.json');
 }
 
 // 读取所有渠道(从我们的存储文件)
@@ -387,7 +387,7 @@ function writeCodexConfigForMultiChannel(allChannels) {
     const tomlContent = tomlStringify(config);
     // 在开头添加标记注释
     const annotatedContent = `# Codex Configuration
-# Managed by Coding-Tool
+# Managed by CCToolbox
 # WARNING: MCP servers and projects are preserved automatically
 
 ${tomlContent}`;
@@ -561,7 +561,7 @@ function applyChannelToSettings(channelId) {
   try {
     const tomlContent = tomlStringify(config);
     const annotatedContent = `# Codex Configuration
-# Managed by Coding-Tool
+# Managed by CCToolbox
 # Current provider: ${channel.name}
 
 ${tomlContent}`;

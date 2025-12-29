@@ -42,6 +42,7 @@ const { handleLogs } = require("./commands/logs");
 const { handleStats, handleStatsExport } = require("./commands/stats");
 const { handleDoctor } = require("./commands/doctor");
 const { handleSmartInstall } = require("./commands/smart-install");
+const { migrateIfNeeded } = require("./utils/app-path-manager");
 const chalk = require("chalk");
 const path = require("path");
 const fs = require("fs");
@@ -56,7 +57,7 @@ function getVersion() {
 // 显示帮助信息
 function showHelp() {
   const version = getVersion();
-  console.log(chalk.cyan.bold(`\nCODING-TOOL v${version}`));
+  console.log(chalk.cyan.bold(`\nCCTOOLBOX v${version}`));
   console.log(
     chalk.gray(
       "Vibe Coding 增强工作助手 - 智能会话管理、动态渠道切换、全局搜索、实时监控\n"
@@ -158,6 +159,31 @@ async function main() {
   if (args[0] === "--help" || args[0] === "-h") {
     showHelp();
     return;
+  }
+
+  let hasMigrationProgress = false;
+  const migrationResult = migrateIfNeeded({
+    onProgress: (current, total) => {
+      hasMigrationProgress = true;
+      process.stdout.write(`\r正在迁移配置: ${current}/${total}`);
+    },
+  });
+  if (hasMigrationProgress) {
+    process.stdout.write("\n");
+  }
+  if (migrationResult?.status === "completed") {
+    console.log(chalk.green("\n✅ 配置迁移完成\n"));
+  }
+  if (migrationResult?.status === "failed") {
+    console.log(chalk.red("\n❌ 配置迁移失败，已自动回滚。\n"));
+    console.log(chalk.gray("旧配置未受影响："));
+    console.log(chalk.gray("  ~/.claude/cc-tool/\n"));
+    console.log(chalk.gray("错误日志："));
+    console.log(chalk.gray("  ~/.claude/cctoolbox-migration-error.log\n"));
+    console.log(chalk.yellow("建议："));
+    console.log(chalk.gray("  1. 检查磁盘空间和文件权限"));
+    console.log(chalk.gray("  2. 重新运行命令触发迁移"));
+    console.log(chalk.gray("  3. 必要时手动复制配置\n"));
   }
 
   // reset 命令 - 恢复默认配置

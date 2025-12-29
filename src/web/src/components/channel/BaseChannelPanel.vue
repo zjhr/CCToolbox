@@ -211,8 +211,8 @@ const { state, validation, actions } = useChannelManager(config)
 const { getChannelInflight } = useChannelScheduler(config.schedulerSource)
 
 // 跨渠道面板保留搜索词
-const searchInput = useStorage('cc-tool-channel-search-input', '')
-const searchQuery = useStorage('cc-tool-channel-search-query', '')
+const searchInput = useStorage('cctoolbox-channel-search-input', '')
+const searchQuery = useStorage('cctoolbox-channel-search-query', '')
 
 const applySearch = useDebounceFn((value) => {
   const normalizedValue = typeof value === 'string' ? value : ''

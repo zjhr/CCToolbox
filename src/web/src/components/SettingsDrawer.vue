@@ -782,7 +782,7 @@
                   <div class="setting-label">
                     <n-text strong>开机自启</n-text>
                     <n-text depth="3" style="font-size: 13px; margin-top: 4px;">
-                      启用此选项后，重启电脑时 Coding-Tool 会自动启动
+                      启用此选项后，重启电脑时 CCToolbox 会自动启动
                     </n-text>
                   </div>
 
@@ -922,9 +922,9 @@ const autoStartLoading = ref(false)
 const autoStartStatus = computed(() => autoStartEnabled.value ? '✓ 已启用' : '未启用')
 const autoStartHelp = computed(() => {
   if (autoStartEnabled.value) {
-    return '重启电脑时 Coding-Tool 会自动启动。如需禁用，点击下方按钮'
+    return '重启电脑时 CCToolbox 会自动启动。如需禁用，点击下方按钮'
   } else {
-    return '启用后，重启电脑时 Coding-Tool 会自动启动'
+    return '启用后，重启电脑时 CCToolbox 会自动启动'
   }
 })
 

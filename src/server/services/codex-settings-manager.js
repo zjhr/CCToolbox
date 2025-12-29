@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { getBackupPath: getAppBackupPath } = require('../../utils/app-path-manager');
 const toml = require('toml');
 
 // Codex 配置文件路径
@@ -14,11 +15,11 @@ function getAuthPath() {
 
 // 备份文件路径
 function getConfigBackupPath() {
-  return path.join(os.homedir(), '.codex', 'config.toml.cc-tool-backup');
+  return getAppBackupPath('codex-config');
 }
 
 function getAuthBackupPath() {
-  return path.join(os.homedir(), '.codex', 'auth.json.cc-tool-backup');
+  return getAppBackupPath('codex-auth');
 }
 
 // 检查配置文件是否存在
@@ -48,7 +49,7 @@ function readConfig() {
 // 将配置对象转换为 TOML 字符串
 function configToToml(config) {
   let content = `# Codex Configuration
-# Managed by Coding-Tool (Proxy Mode)
+# Managed by CCToolbox (Proxy Mode)
 
 `;
 
@@ -203,7 +204,7 @@ function injectEnvToShell(envName, envValue) {
   const configPath = getShellConfigPath();
   const exportLine = `export ${envName}="${envValue}"`;
   // 使用更具体的标记，包含环境变量名，方便后续精确移除
-  const marker = `# Added by Coding-Tool for Codex [${envName}]`;
+  const marker = `# Added by CCToolbox for Codex [${envName}]`;
 
   try {
     let content = '';
@@ -218,7 +219,7 @@ function injectEnvToShell(envName, envValue) {
     if (alreadyExists) {
       // 已存在，替换它（保留原有的标记注释）
       content = content.replace(
-        new RegExp(`^(# Added by Coding-Tool for Codex \\[${envName}\\]\n)?export ${envName}=.*$`, 'm'),
+        new RegExp(`^(# Added by (CCToolbox|Coding-Tool) for Codex \\[${envName}\\]\n)?export ${envName}=.*$`, 'm'),
         `${marker}\n${exportLine}`
       );
     } else {
@@ -248,7 +249,7 @@ function removeEnvFromShell(envName) {
 
     // 移除具体标记的环境变量（推荐方式）
     content = content.replace(
-      new RegExp(`\\n?# Added by Coding-Tool for Codex \\[${envName}\\]\\nexport ${envName}=.*\\n?`, 'g'),
+      new RegExp(`\\n?# Added by (CCToolbox|Coding-Tool) for Codex \\[${envName}\\]\\nexport ${envName}=.*\\n?`, 'g'),
       '\n'
     );
 

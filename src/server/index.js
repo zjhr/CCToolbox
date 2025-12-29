@@ -13,6 +13,7 @@ const {
 const { startProxyServer } = require('./proxy-server');
 const { startCodexProxyServer } = require('./codex-proxy-server');
 const { startGeminiProxyServer } = require('./gemini-proxy-server');
+const { getAppDir } = require('../utils/app-path-manager');
 
 async function startServer(port) {
   const config = loadConfig();
@@ -139,7 +140,7 @@ async function startServer(port) {
 
   // Start server
   const server = app.listen(port, () => {
-    console.log(`\n🚀 Coding-Tool Web UI running at:`);
+    console.log(`\n🚀 CCToolbox Web UI running at:`);
     console.log(`   http://localhost:${port}`);
 
     // 附加 WebSocket 服务器到同一个端口
@@ -167,11 +168,9 @@ async function startServer(port) {
 // 自动恢复代理状态
 function autoRestoreProxies() {
   const config = loadConfig();
-  const os = require('os');
   const fs = require('fs');
-  const path = require('path');
 
-  const ccToolDir = path.join(os.homedir(), '.claude', 'cc-tool');
+  const ccToolDir = getAppDir();
 
   // 检查 Claude 代理状态文件
   const claudeActiveFile = path.join(ccToolDir, 'active-channel.json');

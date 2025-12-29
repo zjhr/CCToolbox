@@ -1,6 +1,6 @@
 # OpenSpec UI 使用指南
 
-本指南介绍如何在 Coding-Tool 的 Web UI 中使用 OpenSpec 规范管理功能。
+本指南介绍如何在 CCToolbox 的 Web UI 中使用 OpenSpec 规范管理功能。
 
 ## 入口与前置条件
 

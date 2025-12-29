@@ -14,7 +14,7 @@ const execAsync = promisify(exec);
  */
 async function handleDoctor() {
   console.log(chalk.bold.cyan('\n╔══════════════════════════════════════╗'));
-  console.log(chalk.bold.cyan('║        Coding-Tool 系统诊断         ║'));
+  console.log(chalk.bold.cyan('║        CCToolbox 系统诊断         ║'));
   console.log(chalk.bold.cyan('╚══════════════════════════════════════╝\n'));
 
   const checks = [];
@@ -262,11 +262,12 @@ async function checkProcessStatus() {
     // 检查是否有 PM2 进程
     try {
       const { stdout } = await execAsync('pm2 list');
-      if (stdout.includes('cc-tool')) {
+      const processNames = ['cctoolbox', 'coding-tool', 'cc-tool'];
+      if (processNames.some(name => stdout.includes(name))) {
         return {
           name: '进程状态',
           status: 'pass',
-          message: 'Coding-Tool 进程运行中'
+          message: 'CCToolbox 进程运行中'
         };
       }
     } catch (err) {
@@ -276,7 +277,7 @@ async function checkProcessStatus() {
     return {
       name: '进程状态',
       status: 'warning',
-      message: 'Coding-Tool 服务未运行',
+      message: 'CCToolbox 服务未运行',
       suggestion: '使用 ct start 启动服务'
     };
   } catch (err) {

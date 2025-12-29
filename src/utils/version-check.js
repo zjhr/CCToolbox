@@ -96,7 +96,7 @@ function compareVersions(v1, v2) {
  * @returns {Promise<{hasUpdate: boolean, current: string, latest: string|null}>}
  */
 async function checkForUpdates() {
-  const packageName = 'coding-tool';
+  const packageName = 'cctoolbox';
   const currentVersion = getCurrentVersion();
   const latestVersion = await fetchLatestVersion(packageName);
 

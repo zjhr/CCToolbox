@@ -99,7 +99,7 @@
 
 #### 配置文件
 
-新增配置文件存储在 `~/.claude/cc-tool/`：
+新增配置文件存储在 `~/.claude/cctoolbox/`：
 - `channels.json` - API 渠道配置
 - `proxy-logs.json` - 实时日志持久化
 - `project-order.json` - 项目排序

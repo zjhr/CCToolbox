@@ -1,12 +1,12 @@
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
+const { getStatsPath } = require('../../utils/app-path-manager');
 
 /**
  * Codex 统计服务 - 数据采集和存储
  *
  * 文件结构：
- * ~/.claude/cc-tool/
+ * ~/.claude/cctoolbox/stats/
  *   ├── codex-statistics.json         # Codex 总体统计
  *   └── codex-daily-stats/
  *       ├── 2025-12-05.json           # 每日汇总统计
@@ -15,11 +15,33 @@ const os = require('os');
 
 // 获取基础目录
 function getBaseDir() {
-  const dir = path.join(os.homedir(), '.claude', 'cc-tool');
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+  const statsDir = getStatsPath();
+  if (!fs.existsSync(statsDir)) {
+    fs.mkdirSync(statsDir, { recursive: true });
   }
-  return dir;
+
+  const appDir = path.dirname(statsDir);
+  const legacyStatsFile = path.join(appDir, 'codex-statistics.json');
+  const legacyDailyDir = path.join(appDir, 'codex-daily-stats');
+
+  const targetStatsFile = path.join(statsDir, 'codex-statistics.json');
+  const targetDailyDir = path.join(statsDir, 'codex-daily-stats');
+
+  if (fs.existsSync(legacyStatsFile) && !fs.existsSync(targetStatsFile)) {
+    fs.copyFileSync(legacyStatsFile, targetStatsFile);
+  }
+  if (fs.existsSync(legacyDailyDir) && !fs.existsSync(targetDailyDir)) {
+    fs.mkdirSync(targetDailyDir, { recursive: true });
+    const entries = fs.readdirSync(legacyDailyDir, { withFileTypes: true });
+    entries.forEach((entry) => {
+      if (!entry.isFile()) return;
+      const sourcePath = path.join(legacyDailyDir, entry.name);
+      const targetPath = path.join(targetDailyDir, entry.name);
+      fs.copyFileSync(sourcePath, targetPath);
+    });
+  }
+
+  return statsDir;
 }
 
 // 获取每日统计目录

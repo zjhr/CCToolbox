@@ -296,7 +296,7 @@ function countRequirements(content) {
 .spec-detail.spec-detail--fullscreen {
   position: fixed;
   inset: 0;
-  z-index: 2001;
+  z-index: 2030;
   border-radius: 0;
   border: none;
   box-sizing: border-box;

@@ -2,17 +2,18 @@ const fs = require('fs');
 const crypto = require('crypto');
 const path = require('path');
 const os = require('os');
+const { getAppDir } = require('../../utils/app-path-manager');
 const { detectAvailableTerminals, getDefaultTerminal } = require('./terminal-detector');
 
 /**
  * 获取配置文件路径
  */
 function getConfigFilePath() {
-  const ccToolDir = path.join(os.homedir(), '.claude', 'cc-tool');
-  if (!fs.existsSync(ccToolDir)) {
-    fs.mkdirSync(ccToolDir, { recursive: true });
+  const appDir = getAppDir();
+  if (!fs.existsSync(appDir)) {
+    fs.mkdirSync(appDir, { recursive: true });
   }
-  return path.join(ccToolDir, 'terminal-config.json');
+  return path.join(appDir, 'terminal-config.json');
 }
 
 /**

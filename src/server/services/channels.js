@@ -2,20 +2,24 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { isProxyConfig } = require('./settings-manager');
+const { getAppDir, getChannelsPath } = require('../../utils/app-path-manager');
 
-function getChannelsFilePath() {
-  const dir = path.join(os.homedir(), '.claude', 'cc-tool');
+function ensureAppDir() {
+  const dir = getAppDir();
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
-  return path.join(dir, 'channels.json');
+  return dir;
+}
+
+function getChannelsFilePath() {
+  const filePath = getChannelsPath();
+  ensureAppDir();
+  return filePath;
 }
 
 function getActiveChannelIdPath() {
-  const dir = path.join(os.homedir(), '.claude', 'cc-tool');
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
+  const dir = ensureAppDir();
   return path.join(dir, 'active-channel.json');
 }
 

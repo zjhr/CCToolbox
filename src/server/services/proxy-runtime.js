@@ -1,13 +1,13 @@
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
+const { getAppDir } = require('../../utils/app-path-manager');
 
 function getRuntimeFilePath(proxyType) {
-  const ccToolDir = path.join(os.homedir(), '.claude', 'cc-tool');
-  if (!fs.existsSync(ccToolDir)) {
-    fs.mkdirSync(ccToolDir, { recursive: true });
+  const appDir = getAppDir();
+  if (!fs.existsSync(appDir)) {
+    fs.mkdirSync(appDir, { recursive: true });
   }
-  return path.join(ccToolDir, `${proxyType}-proxy-runtime.json`);
+  return path.join(appDir, `${proxyType}-proxy-runtime.json`);
 }
 
 function saveProxyStartTime(proxyType, preserveExisting = false) {

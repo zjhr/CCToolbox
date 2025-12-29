@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { getBackupPath: getAppBackupPath } = require('../../utils/app-path-manager');
 
 // Gemini 配置文件路径
 function getEnvPath() {
@@ -13,11 +14,11 @@ function getSettingsPath() {
 
 // 备份文件路径
 function getEnvBackupPath() {
-  return path.join(os.homedir(), '.gemini', '.env.cc-tool-backup');
+  return getAppBackupPath('gemini-env');
 }
 
 function getSettingsBackupPath() {
-  return path.join(os.homedir(), '.gemini', 'settings.json.cc-tool-backup');
+  return getAppBackupPath('gemini-settings');
 }
 
 // 检查配置文件是否存在

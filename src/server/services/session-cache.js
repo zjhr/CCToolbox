@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
+const { getAppDir } = require('../../utils/app-path-manager');
 
 const PROJECTS_CACHE_TTL = 30 * 1000; // 30s
 const projectsCache = new Map();
@@ -11,7 +11,7 @@ let hasMessagesPersisted = {};
 let hasMessagesPersistTimer = null;
 
 function getCcToolDir() {
-  return path.join(os.homedir(), '.claude', 'cc-tool');
+  return getAppDir();
 }
 
 function ensureDirExists(dir) {

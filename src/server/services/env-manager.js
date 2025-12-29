@@ -6,10 +6,10 @@
 
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
+const { getAppDir } = require('../../utils/app-path-manager');
 
 // 备份目录
-const BACKUP_DIR = path.join(os.homedir(), '.claude', 'cc-tool', 'env-backups');
+const BACKUP_DIR = path.join(getAppDir(), 'env-backups');
 
 /**
  * 确保备份目录存在

@@ -3,7 +3,7 @@
 ## 目录结构
 
 ```
-cc-tool/
+cctoolbox/
 ├── bin/
 │   └── cc.js                   # CLI 入口脚本
 ├── src/
@@ -63,7 +63,7 @@ cc-tool/
 │   ├── CHANGELOG.md            # 更新日志
 │   ├── PROJECT_STRUCTURE.md    # 本文件
 │   ├── logo.png                # Logo 图片
-│   └── cc-tool.png             # 截图
+│   └── home.png                # 截图
 ├── test/                       # 测试文件
 ├── .gitignore
 ├── .npmignore
@@ -104,7 +104,7 @@ cc-tool/
 ┌─────────────────────────────────────────────────────┐
 │                 数据层 (File System)                │
 │  ~/.claude/projects/     - ClaudeCode 项目         │
-│  ~/.claude/cc-tool/      - 配置文件                │
+│  ~/.claude/cctoolbox/      - 配置文件              │
 │    ├── aliases.json      - 会话别名                │
 │    ├── channels.json     - API 渠道                │
 │    ├── proxy-logs.json   - 实时日志                │

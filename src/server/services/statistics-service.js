@@ -1,12 +1,12 @@
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
+const { getStatsPath } = require('../../utils/app-path-manager');
 
 /**
  * 统计服务 - 数据采集和存储
  *
  * 文件结构：
- * ~/.claude/cc-tool/
+ * ~/.claude/cctoolbox/stats/
  *   ├── statistics.json              # 总体统计（实时更新）
  *   ├── daily-stats/
  *   │   ├── 2025-11-22.json         # 每日汇总统计
@@ -19,12 +19,54 @@ const os = require('os');
  */
 
 // 获取基础目录
-function getBaseDir() {
-  const dir = path.join(os.homedir(), '.claude', 'cc-tool');
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+function copyDirectory(sourceDir, targetDir) {
+  if (!fs.existsSync(sourceDir)) {
+    return;
   }
-  return dir;
+  if (!fs.existsSync(targetDir)) {
+    fs.mkdirSync(targetDir, { recursive: true });
+  }
+  const entries = fs.readdirSync(sourceDir, { withFileTypes: true });
+  entries.forEach((entry) => {
+    const sourcePath = path.join(sourceDir, entry.name);
+    const targetPath = path.join(targetDir, entry.name);
+    if (entry.isDirectory()) {
+      copyDirectory(sourcePath, targetPath);
+    } else if (entry.isFile()) {
+      fs.copyFileSync(sourcePath, targetPath);
+    }
+  });
+}
+
+function ensureStatsDir(statsDir) {
+  if (!fs.existsSync(statsDir)) {
+    fs.mkdirSync(statsDir, { recursive: true });
+  }
+
+  const appDir = path.dirname(statsDir);
+  const legacyStatsFile = path.join(appDir, 'statistics.json');
+  const legacyDailyDir = path.join(appDir, 'daily-stats');
+  const legacyRequestDir = path.join(appDir, 'request-logs');
+
+  const targetStatsFile = path.join(statsDir, 'statistics.json');
+  const targetDailyDir = path.join(statsDir, 'daily-stats');
+  const targetRequestDir = path.join(statsDir, 'request-logs');
+
+  if (fs.existsSync(legacyStatsFile) && !fs.existsSync(targetStatsFile)) {
+    fs.copyFileSync(legacyStatsFile, targetStatsFile);
+  }
+  if (fs.existsSync(legacyDailyDir) && !fs.existsSync(targetDailyDir)) {
+    copyDirectory(legacyDailyDir, targetDailyDir);
+  }
+  if (fs.existsSync(legacyRequestDir) && !fs.existsSync(targetRequestDir)) {
+    copyDirectory(legacyRequestDir, targetRequestDir);
+  }
+}
+
+function getBaseDir() {
+  const statsDir = getStatsPath();
+  ensureStatsDir(statsDir);
+  return statsDir;
 }
 
 // 获取每日统计目录

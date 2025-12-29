@@ -1,9 +1,14 @@
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
+const { getAppDir } = require('../../utils/app-path-manager');
 
-const UI_CONFIG_DIR = path.join(os.homedir(), '.claude', 'cc-tool');
-const UI_CONFIG_FILE = path.join(UI_CONFIG_DIR, 'ui-config.json');
+function getUiConfigFilePath() {
+  const appDir = getAppDir();
+  if (!fs.existsSync(appDir)) {
+    fs.mkdirSync(appDir, { recursive: true });
+  }
+  return path.join(appDir, 'ui-config.json');
+}
 
 // Default UI config
 const DEFAULT_UI_CONFIG = {
@@ -35,8 +40,9 @@ let cacheInitialized = false;
 
 // Ensure UI config directory exists
 function ensureConfigDir() {
-  if (!fs.existsSync(UI_CONFIG_DIR)) {
-    fs.mkdirSync(UI_CONFIG_DIR, { recursive: true });
+  const configDir = path.dirname(getUiConfigFilePath());
+  if (!fs.existsSync(configDir)) {
+    fs.mkdirSync(configDir, { recursive: true });
   }
 }
 
@@ -44,12 +50,13 @@ function ensureConfigDir() {
 function readUIConfigFromFile() {
   ensureConfigDir();
 
-  if (!fs.existsSync(UI_CONFIG_FILE)) {
+  const configFile = getUiConfigFilePath();
+  if (!fs.existsSync(configFile)) {
     return { ...DEFAULT_UI_CONFIG };
   }
 
   try {
-    const content = fs.readFileSync(UI_CONFIG_FILE, 'utf8');
+    const content = fs.readFileSync(configFile, 'utf8');
     const data = JSON.parse(content);
     // Merge with defaults to ensure all keys exist
     return {
@@ -73,7 +80,7 @@ function initializeCache() {
 
   // 监听文件变化，更新缓存
   try {
-    fs.watchFile(UI_CONFIG_FILE, { persistent: false }, () => {
+    fs.watchFile(getUiConfigFilePath(), { persistent: false }, () => {
       uiConfigCache = readUIConfigFromFile();
     });
   } catch (err) {
@@ -94,7 +101,7 @@ function saveUIConfig(config) {
   ensureConfigDir();
 
   try {
-    fs.writeFileSync(UI_CONFIG_FILE, JSON.stringify(config, null, 2), 'utf8');
+    fs.writeFileSync(getUiConfigFilePath(), JSON.stringify(config, null, 2), 'utf8');
     // 同时更新缓存
     uiConfigCache = JSON.parse(JSON.stringify(config));
   } catch (error) {

@@ -205,7 +205,7 @@ async function handleStatsExport(type = null, format = 'json') {
 
     const fs = require('fs');
     const path = require('path');
-    const filename = `cc-tool-stats-${type || 'all'}-${Date.now()}.${format}`;
+    const filename = `cctoolbox-stats-${type || 'all'}-${Date.now()}.${format}`;
     const filepath = path.join(process.cwd(), filename);
 
     fs.writeFileSync(filepath, JSON.stringify(response.data, null, 2));

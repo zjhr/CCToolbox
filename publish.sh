@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# CODING-TOOL 发布脚本
+# CCTOOLBOX 发布脚本
 
-echo "📦 开始发布 CODING-TOOL v1.0.0..."
+echo "📦 开始发布 CCTOOLBOX v1.0.0..."
 
 # 1. 构建前端
 echo ""
@@ -37,8 +37,8 @@ if [ $? -eq 0 ]; then
   echo "✅ 发布成功！"
   echo ""
   echo "📖 接下来："
-  echo "   1. 访问 https://www.npmjs.com/package/coding-tool 查看"
-  echo "   2. 测试安装: npm install -g coding-tool"
+  echo "   1. 访问 https://www.npmjs.com/package/cctoolbox 查看"
+  echo "   2. 测试安装: npm install -g cctoolbox"
   echo "   3. 运行测试: ct ui"
 else
   echo ""

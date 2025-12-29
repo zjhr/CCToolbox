@@ -2,8 +2,10 @@ const pm2 = require('pm2');
 const path = require('path');
 const chalk = require('chalk');
 const { loadConfig } = require('../config/loader');
+const { getLogFile } = require('../utils/app-path-manager');
 
-const PM2_APP_NAME = 'cc-tool';
+const PM2_APP_NAME = 'cctoolbox';
+const LEGACY_PM2_NAMES = ['coding-tool', 'cc-tool'];
 
 /**
  * 连接到 PM2
@@ -43,11 +45,18 @@ function getProcessList() {
 }
 
 /**
- * 获取 Coding-Tool 进程
+ * 获取 CCToolbox 进程
  */
 async function getCCToolProcess() {
   const list = await getProcessList();
-  return list.find(proc => proc.name === PM2_APP_NAME);
+  const candidates = [PM2_APP_NAME, ...LEGACY_PM2_NAMES];
+  for (const name of candidates) {
+    const proc = list.find(item => item.name === name);
+    if (proc) {
+      return { proc, name };
+    }
+  }
+  return { proc: null, name: PM2_APP_NAME };
 }
 
 /**
@@ -59,10 +68,10 @@ async function handleStart() {
 
     // 检查是否已经在运行
     const existing = await getCCToolProcess();
-    if (existing && existing.pm2_env.status === 'online') {
+    if (existing.proc && existing.proc.pm2_env.status === 'online') {
       console.log(chalk.yellow('\n⚠️  服务已在运行中\n'));
-      console.log(chalk.gray(`进程 ID: ${existing.pid}`));
-      console.log(chalk.gray(`运行时长: ${formatUptime(existing.pm2_env.pm_uptime)}`));
+      console.log(chalk.gray(`进程 ID: ${existing.proc.pid}`));
+      console.log(chalk.gray(`运行时长: ${formatUptime(existing.proc.pm2_env.pm_uptime)}`));
       console.log(chalk.gray('\n使用 ') + chalk.cyan('ct status') + chalk.gray(' 查看详细状态'));
       console.log(chalk.gray('使用 ') + chalk.cyan('ct restart') + chalk.gray(' 重启服务\n'));
       disconnectPM2();
@@ -73,8 +82,9 @@ async function handleStart() {
     const port = config.ports?.webUI || 10099;
 
     // 启动 PM2 进程
+    const appName = existing.proc ? existing.name : PM2_APP_NAME;
     pm2.start({
-      name: PM2_APP_NAME,
+      name: appName,
       script: path.join(__dirname, '../index.js'),
       args: ['ui', '--daemon'],
       interpreter: 'node',
@@ -84,8 +94,8 @@ async function handleStart() {
         NODE_ENV: 'production',
         CC_TOOL_PORT: port
       },
-      output: path.join(require('os').homedir(), '.claude/logs/cc-tool-out.log'),
-      error: path.join(require('os').homedir(), '.claude/logs/cc-tool-error.log'),
+      output: getLogFile('out'),
+      error: getLogFile('error'),
       merge_logs: true,
       log_date_format: 'YYYY-MM-DD HH:mm:ss'
     }, (err) => {
@@ -95,7 +105,7 @@ async function handleStart() {
         process.exit(1);
       }
 
-      console.log(chalk.green('\n✅ Coding-Tool 服务已启动（后台运行）\n'));
+      console.log(chalk.green('\n✅ CCToolbox 服务已启动（后台运行）\n'));
       console.log(chalk.gray(`Web UI: http://localhost:${port}`));
       console.log(chalk.gray('\n可以安全关闭此终端窗口'));
       console.log(chalk.gray('\n常用命令:'));
@@ -123,13 +133,13 @@ async function handleStop() {
     await connectPM2();
 
     const existing = await getCCToolProcess();
-    if (!existing) {
+    if (!existing.proc) {
       console.log(chalk.yellow('\n⚠️  服务未在运行\n'));
       disconnectPM2();
       return;
     }
 
-    pm2.stop(PM2_APP_NAME, (err) => {
+    pm2.stop(existing.name, (err) => {
       if (err) {
         console.error(chalk.red('\n❌ 停止服务失败:'), err.message);
         disconnectPM2();
@@ -137,11 +147,11 @@ async function handleStop() {
       }
 
       // 删除进程
-      pm2.delete(PM2_APP_NAME, (err) => {
+      pm2.delete(existing.name, (err) => {
         if (err) {
           console.error(chalk.red('删除进程失败:'), err.message);
         } else {
-          console.log(chalk.green('\n✅ Coding-Tool 服务已停止\n'));
+          console.log(chalk.green('\n✅ CCToolbox 服务已停止\n'));
         }
 
         pm2.dump((err) => {
@@ -164,20 +174,20 @@ async function handleRestart() {
     await connectPM2();
 
     const existing = await getCCToolProcess();
-    if (!existing) {
+    if (!existing.proc) {
       console.log(chalk.yellow('\n⚠️  服务未在运行，请使用 ') + chalk.cyan('ct start') + chalk.yellow(' 启动\n'));
       disconnectPM2();
       return;
     }
 
-    pm2.restart(PM2_APP_NAME, (err) => {
+    pm2.restart(existing.name, (err) => {
       if (err) {
         console.error(chalk.red('\n❌ 重启服务失败:'), err.message);
         disconnectPM2();
         process.exit(1);
       }
 
-      console.log(chalk.green('\n✅ Coding-Tool 服务已重启\n'));
+      console.log(chalk.green('\n✅ CCToolbox 服务已重启\n'));
 
       pm2.dump((err) => {
         disconnectPM2();
@@ -201,18 +211,18 @@ async function handleStatus() {
     const config = loadConfig();
 
     console.log(chalk.bold.cyan('\n╔══════════════════════════════════════╗'));
-    console.log(chalk.bold.cyan('║        Coding-Tool 服务状态         ║'));
+    console.log(chalk.bold.cyan('║        CCToolbox 服务状态         ║'));
     console.log(chalk.bold.cyan('╚══════════════════════════════════════╝\n'));
 
     // UI 服务状态
     console.log(chalk.bold('📱 Web UI 服务:'));
-    if (existing && existing.pm2_env.status === 'online') {
+    if (existing.proc && existing.proc.pm2_env.status === 'online') {
       console.log(chalk.green('  ✅ 状态: 运行中'));
       console.log(chalk.gray(`  🌐 地址: http://localhost:${config.ports?.webUI || 10099}`));
-      console.log(chalk.gray(`  🔑 进程 ID: ${existing.pid}`));
-      console.log(chalk.gray(`  ⏱️  运行时长: ${formatUptime(existing.pm2_env.pm_uptime)}`));
-      console.log(chalk.gray(`  💾 内存使用: ${formatMemory(existing.monit?.memory)}`));
-      console.log(chalk.gray(`  🔄 重启次数: ${existing.pm2_env.restart_time}`));
+      console.log(chalk.gray(`  🔑 进程 ID: ${existing.proc.pid}`));
+      console.log(chalk.gray(`  ⏱️  运行时长: ${formatUptime(existing.proc.pm2_env.pm_uptime)}`));
+      console.log(chalk.gray(`  💾 内存使用: ${formatMemory(existing.proc.monit?.memory)}`));
+      console.log(chalk.gray(`  🔄 重启次数: ${existing.proc.pm2_env.restart_time}`));
     } else {
       console.log(chalk.gray('  ❌ 状态: 未运行'));
     }

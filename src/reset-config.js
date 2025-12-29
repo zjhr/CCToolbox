@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { getAppDir, getBackupPath, getChannelsPath } = require('./utils/app-path-manager');
 
 // 恢复配置到默认状态
 async function resetConfig() {
@@ -24,7 +25,7 @@ async function resetConfig() {
 
     // 2. 检查并恢复 settings.json
     const settingsPath = path.join(os.homedir(), '.claude', 'settings.json');
-    const backupPath = path.join(os.homedir(), '.claude', 'settings.json.cc-tool-backup');
+    const backupPath = getBackupPath('claude-settings');
 
     if (fs.existsSync(backupPath)) {
       console.log('发现备份文件，正在恢复...');
@@ -42,10 +43,10 @@ async function resetConfig() {
         console.log('检测到代理配置，尝试恢复到正常渠道...');
 
         // 读取激活的渠道
-        const activeChannelPath = path.join(os.homedir(), '.claude', 'cc-tool', 'active-channel.json');
+        const activeChannelPath = path.join(getAppDir(), 'active-channel.json');
         if (fs.existsSync(activeChannelPath)) {
           const activeChannelData = JSON.parse(fs.readFileSync(activeChannelPath, 'utf8'));
-          const channelsPath = path.join(os.homedir(), '.claude', 'cc-tool', 'channels.json');
+          const channelsPath = getChannelsPath();
 
           if (fs.existsSync(channelsPath)) {
             const channelsData = JSON.parse(fs.readFileSync(channelsPath, 'utf8'));
@@ -83,7 +84,7 @@ async function resetConfig() {
     console.error('❌ 恢复配置时出错:', err.message);
     console.log('\n您可以尝试手动恢复：');
     console.log('1. 检查 ~/.claude/settings.json 文件');
-    console.log('2. 如果有 settings.json.cc-tool-backup 备份文件，手动恢复');
+    console.log('2. 如果有 settings.json.cctoolbox-backup 或 settings.json.cc-tool-backup 备份文件，手动恢复');
     console.log('3. 或者通过 Web UI 重新配置渠道\n');
     process.exit(1);
   }

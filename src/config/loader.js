@@ -2,9 +2,25 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { getAppDir, getLegacyAppDir } = require('../utils/app-path-manager');
 const DEFAULT_CONFIG = require('./default');
 
-const CONFIG_FILE = path.join(__dirname, '../../config.json');
+const PROJECT_CONFIG_FILE = path.join(__dirname, '../../config.json');
+const APP_CONFIG_FILE = path.join(getAppDir(), 'config.json');
+const LEGACY_APP_CONFIG_FILE = path.join(getLegacyAppDir(), 'config.json');
+
+function resolveConfigFile() {
+  if (fs.existsSync(APP_CONFIG_FILE)) {
+    return APP_CONFIG_FILE;
+  }
+  if (fs.existsSync(LEGACY_APP_CONFIG_FILE)) {
+    return LEGACY_APP_CONFIG_FILE;
+  }
+  if (fs.existsSync(PROJECT_CONFIG_FILE)) {
+    return PROJECT_CONFIG_FILE;
+  }
+  return APP_CONFIG_FILE;
+}
 
 /**
  * 展开 ~ 为用户主目录
@@ -35,8 +51,9 @@ function mergePricing(defaultPricing, overrides = {}) {
  */
 function loadConfig() {
   try {
-    if (fs.existsSync(CONFIG_FILE)) {
-      const userConfig = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+    const configFile = resolveConfigFile();
+    if (fs.existsSync(configFile)) {
+      const userConfig = JSON.parse(fs.readFileSync(configFile, 'utf8'));
       const config = { ...DEFAULT_CONFIG, ...userConfig };
       config.projectsDir = expandHome(config.projectsDir);
 
@@ -62,7 +79,12 @@ function loadConfig() {
  */
 function saveConfig(config) {
   try {
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+    const configFile = resolveConfigFile();
+    const configDir = path.dirname(configFile);
+    if (!fs.existsSync(configDir)) {
+      fs.mkdirSync(configDir, { recursive: true });
+    }
+    fs.writeFileSync(configFile, JSON.stringify(config, null, 2));
   } catch (error) {
     console.error('保存配置失败:', error.message);
   }

@@ -67,7 +67,7 @@ async function handleUpdate() {
  */
 function performUpdate() {
   return new Promise((resolve, reject) => {
-    const updateProcess = spawn('npm', ['install', '-g', 'coding-tool@latest'], {
+    const updateProcess = spawn('npm', ['install', '-g', 'cctoolbox@latest'], {
       stdio: 'inherit',
       shell: true
     });
@@ -80,7 +80,7 @@ function performUpdate() {
       } else {
         console.log(chalk.red('\n❌ 更新失败'));
         console.log(chalk.yellow('💡 提示: 您可以尝试手动更新：'));
-        console.log(chalk.gray('   $ npm install -g coding-tool@latest\n'));
+        console.log(chalk.gray('   $ npm install -g cctoolbox@latest\n'));
         reject(new Error('Update failed with code ' + code));
       }
     });
@@ -88,7 +88,7 @@ function performUpdate() {
     updateProcess.on('error', (err) => {
       console.log(chalk.red('\n❌ 更新失败:'), err.message);
       console.log(chalk.yellow('💡 提示: 您可以尝试手动更新：'));
-      console.log(chalk.gray('   $ npm install -g coding-tool@latest\n'));
+      console.log(chalk.gray('   $ npm install -g cctoolbox@latest\n'));
       reject(err);
     });
   });

@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { getAppDir } = require('../../utils/app-path-manager');
 const { execFileSync, execFile } = require('child_process');
 const chokidar = require('chokidar');
 const { createTwoFilesPatch } = require('diff');
@@ -8,10 +9,22 @@ const { createEtag } = require('../utils/etag');
 const { broadcastOpenSpecChange } = require('../websocket-server');
 
 const LARGE_FILE_SIZE = 500 * 1024;
-const SETTINGS_PATH = path.join(os.homedir(), '.claude', 'cc-tool', 'openspec-settings.json');
+function getOpenSpecSettingsPath() {
+  const appDir = getAppDir();
+  if (!fs.existsSync(appDir)) {
+    fs.mkdirSync(appDir, { recursive: true });
+  }
+  return path.join(appDir, 'openspec-settings.json');
+}
 const CLI_CONFIG_PATH = path.join(os.homedir(), '.config', 'openspec', 'config.json');
 const OPENSPEC_PACKAGE = '@fission-ai/openspec';
-const NPM_CACHE_PATH = path.join(os.homedir(), '.claude', 'cc-tool', 'npm-cache');
+function getNpmCachePath() {
+  const appDir = getAppDir();
+  if (!fs.existsSync(appDir)) {
+    fs.mkdirSync(appDir, { recursive: true });
+  }
+  return path.join(appDir, 'npm-cache');
+}
 const CLI_CACHE_TTL = 60 * 1000;
 let cliInfoCache = null;
 
@@ -400,8 +413,9 @@ function getInstalledVersion() {
 
 function getLatestVersion() {
   try {
-    ensureDir(NPM_CACHE_PATH);
-    const output = execFileSync('npm', ['view', OPENSPEC_PACKAGE, 'version', '--cache', NPM_CACHE_PATH], {
+    const cachePath = getNpmCachePath();
+    ensureDir(cachePath);
+    const output = execFileSync('npm', ['view', OPENSPEC_PACKAGE, 'version', '--cache', cachePath], {
       encoding: 'utf8',
       timeout: 6000
     });
@@ -457,10 +471,11 @@ function initTools(projectPath, tools) {
 function readSettings(projectPath) {
   const defaults = buildDefaultSettings(projectPath);
   try {
-    if (!fs.existsSync(SETTINGS_PATH)) {
+    const settingsPath = getOpenSpecSettingsPath();
+    if (!fs.existsSync(settingsPath)) {
       return defaults;
     }
-    const raw = fs.readFileSync(SETTINGS_PATH, 'utf8');
+    const raw = fs.readFileSync(settingsPath, 'utf8');
     const parsed = JSON.parse(raw || '{}');
     const stored = parsed[projectPath] || {};
     return {
@@ -484,11 +499,12 @@ function buildDefaultSettings(projectPath) {
 }
 
 function saveSettings(projectPath, settings) {
-  ensureDir(path.dirname(SETTINGS_PATH));
+  const settingsPath = getOpenSpecSettingsPath();
+  ensureDir(path.dirname(settingsPath));
   let data = {};
-  if (fs.existsSync(SETTINGS_PATH)) {
+  if (fs.existsSync(settingsPath)) {
     try {
-      data = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf8') || '{}');
+      data = JSON.parse(fs.readFileSync(settingsPath, 'utf8') || '{}');
     } catch (err) {
       data = {};
     }
@@ -501,7 +517,7 @@ function saveSettings(projectPath, settings) {
     aiTool: settings?.aiTool ?? defaults.aiTool,
     cliConfigPath: defaults.cliConfigPath
   };
-  fs.writeFileSync(SETTINGS_PATH, JSON.stringify(data, null, 2), 'utf8');
+  fs.writeFileSync(settingsPath, JSON.stringify(data, null, 2), 'utf8');
   return data[projectPath];
 }
 

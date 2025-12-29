@@ -2,7 +2,7 @@ const WebSocket = require('ws');
 const chalk = require('chalk');
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
+const { getAppDir } = require('../utils/app-path-manager');
 const { loadConfig } = require('../config/loader');
 
 const MAX_PERSISTED_LOGS = 500;
@@ -26,11 +26,11 @@ let wsClients = new Set();
 
 // 日志持久化文件路径
 function getLogsFilePath() {
-  const ccToolDir = path.join(os.homedir(), '.claude', 'cc-tool');
-  if (!fs.existsSync(ccToolDir)) {
-    fs.mkdirSync(ccToolDir, { recursive: true });
+  const appDir = getAppDir();
+  if (!fs.existsSync(appDir)) {
+    fs.mkdirSync(appDir, { recursive: true });
   }
-  return path.join(ccToolDir, 'proxy-logs.json');
+  return path.join(appDir, 'proxy-logs.json');
 }
 
 function getTodayRange() {

@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
+const { getAppDir } = require('../../utils/app-path-manager');
 
 /**
  * Gemini 渠道管理服务（多渠道架构）
@@ -23,11 +24,11 @@ function getGeminiDir() {
 
 // 获取渠道存储文件路径
 function getChannelsFilePath() {
-  const ccToolDir = path.join(os.homedir(), '.claude', 'cc-tool');
-  if (!fs.existsSync(ccToolDir)) {
-    fs.mkdirSync(ccToolDir, { recursive: true });
+  const appDir = getAppDir();
+  if (!fs.existsSync(appDir)) {
+    fs.mkdirSync(appDir, { recursive: true });
   }
-  return path.join(ccToolDir, 'gemini-channels.json');
+  return path.join(appDir, 'gemini-channels.json');
 }
 
 // 检查是否在代理模式

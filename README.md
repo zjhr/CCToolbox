@@ -1,22 +1,22 @@
 <div align="center">
 
-<img src="docs/logo.png" alt="Coding-Tool Logo" width="140" />
+<img src="docs/logo.png" alt="CCToolbox Logo" width="140" />
 
-# Coding-Tool
+# CCToolbox
 
 **Claude Code / Codex / Gemini CLI 增强工具**
 
 智能会话管理 | 多渠道动态切换 | 实时 Token 监控
 
-[![npm version](https://img.shields.io/npm/v/coding-tool.svg?style=flat-square)](https://www.npmjs.com/package/coding-tool)
-[![npm downloads](https://img.shields.io/npm/dm/coding-tool.svg?style=flat-square)](https://www.npmjs.com/package/coding-tool)
-[![GitHub stars](https://img.shields.io/github/stars/CooperJiang/cc-tool?style=flat-square)](https://github.com/zjhr/coding-tool/stargazers)
+[![npm version](https://img.shields.io/npm/v/cctoolbox.svg?style=flat-square)](https://www.npmjs.com/package/cctoolbox)
+[![npm downloads](https://img.shields.io/npm/dm/cctoolbox.svg?style=flat-square)](https://www.npmjs.com/package/cctoolbox)
+[![GitHub stars](https://img.shields.io/github/stars/zjhr/coding-tool?style=flat-square)](https://github.com/zjhr/coding-tool/stargazers)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D14.0.0-brightgreen.svg?style=flat-square)](package.json)
 
 <br />
 
-<img src="docs/home.png" alt="Coding-Tool Preview" width="90%" />
+<img src="docs/home.png" alt="CCToolbox Preview" width="90%" />
 
 <p><sub>现代化 Web 界面 - 项目管理、会话浏览、实时日志监控</sub></p>
 
@@ -43,14 +43,14 @@
 ### npm（推荐）
 
 ```bash
-npm install -g coding-tool
+npm install -g cctoolbox
 ```
 
 ### 从源码构建
 
 ```bash
 git clone https://github.com/zjhr/coding-tool.git
-cd cc-tool
+cd coding-tool
 npm install && npm link
 ```
 
@@ -398,7 +398,7 @@ ct logs --clear      # 清空日志
 
 直接复制以下目录即可备份所有配置和数据：
 
-- 配置：`~/.claude/cc-tool/`
+- 配置：`~/.claude/cctoolbox/`
 - 日志：`~/.claude/logs/`
 
 </details>
@@ -427,6 +427,6 @@ ct logs --clear      # 清空日志
 
 **如果这个项目对你有帮助，请给它一个 Star ⭐**
 
-[![Star History Chart](https://api.star-history.com/svg?repos=CooperJiang/cc-tool&type=Date)](https://star-history.com/#CooperJiang/cc-tool&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=zjhr/coding-tool&type=Date)](https://star-history.com/#zjhr/coding-tool&Date)
 
 </div>

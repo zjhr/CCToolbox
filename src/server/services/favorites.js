@@ -1,9 +1,14 @@
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
+const { getAppDir } = require('../../utils/app-path-manager');
 
-const FAVORITES_DIR = path.join(os.homedir(), '.claude', 'cc-tool');
-const FAVORITES_FILE = path.join(FAVORITES_DIR, 'favorites.json');
+function getFavoritesFilePath() {
+  const appDir = getAppDir();
+  if (!fs.existsSync(appDir)) {
+    fs.mkdirSync(appDir, { recursive: true });
+  }
+  return path.join(appDir, 'favorites.json');
+}
 
 // 内存缓存
 let favoritesCache = null;
@@ -17,8 +22,9 @@ const DEFAULT_FAVORITES = {
 
 // Ensure favorites directory exists
 function ensureFavoritesDir() {
-  if (!fs.existsSync(FAVORITES_DIR)) {
-    fs.mkdirSync(FAVORITES_DIR, { recursive: true });
+  const favoritesDir = path.dirname(getFavoritesFilePath());
+  if (!fs.existsSync(favoritesDir)) {
+    fs.mkdirSync(favoritesDir, { recursive: true });
   }
 }
 
@@ -26,12 +32,13 @@ function ensureFavoritesDir() {
 function readFavoritesFromFile() {
   ensureFavoritesDir();
 
-  if (!fs.existsSync(FAVORITES_FILE)) {
+  const favoritesFile = getFavoritesFilePath();
+  if (!fs.existsSync(favoritesFile)) {
     return { ...DEFAULT_FAVORITES };
   }
 
   try {
-    const content = fs.readFileSync(FAVORITES_FILE, 'utf8');
+    const content = fs.readFileSync(favoritesFile, 'utf8');
     const data = JSON.parse(content);
     return {
       claude: data.claude || [],
@@ -52,7 +59,7 @@ function initializeCache() {
 
   // 监听文件变化，更新缓存
   try {
-    fs.watchFile(FAVORITES_FILE, { persistent: false }, () => {
+    fs.watchFile(getFavoritesFilePath(), { persistent: false }, () => {
       favoritesCache = readFavoritesFromFile();
     });
   } catch (err) {
@@ -73,7 +80,7 @@ function saveFavorites(favorites) {
   ensureFavoritesDir();
 
   try {
-    fs.writeFileSync(FAVORITES_FILE, JSON.stringify(favorites, null, 2), 'utf8');
+    fs.writeFileSync(getFavoritesFilePath(), JSON.stringify(favorites, null, 2), 'utf8');
     // 同时更新缓存
     favoritesCache = JSON.parse(JSON.stringify(favorites));
   } catch (error) {

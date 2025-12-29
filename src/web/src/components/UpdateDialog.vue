@@ -68,11 +68,11 @@ const props = defineProps({
 })
 
 const changelogUrl = computed(() => {
-  return 'https://github.com/CooperJiang/coding-tool/blob/main/CHANGELOG.md'
+  return 'https://github.com/zjhr/coding-tool/blob/main/CHANGELOG.md'
 })
 
 function openNpmPage() {
-  window.open('https://www.npmjs.com/package/coding-tool', '_blank')
+  window.open('https://www.npmjs.com/package/cctoolbox', '_blank')
 }
 
 /**

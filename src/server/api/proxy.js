@@ -8,13 +8,14 @@ const {
   getCurrentProxyPort,
   settingsExists,
   hasBackup,
-  readSettings
+  readSettings,
+  getBackupPath
 } = require('../services/settings-manager');
 const { getAllChannels } = require('../services/channels');
 const { clearAllLogs } = require('../websocket-server');
+const { getAppDir } = require('../../utils/app-path-manager');
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 
 function sanitizeChannelForResponse(channel) {
   if (!channel) return null;
@@ -28,7 +29,7 @@ function sanitizeChannelForResponse(channel) {
 
 // 保存激活渠道ID
 function saveActiveChannelId(channelId) {
-  const dir = path.join(os.homedir(), '.claude', 'cc-tool');
+  const dir = getAppDir();
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
@@ -182,14 +183,14 @@ router.post('/stop', async (req, res) => {
 
     // 3. 删除备份文件和active-channel.json
     if (hasBackup()) {
-      const backupPath = path.join(os.homedir(), '.claude', 'settings.json.cc-tool-backup');
+      const backupPath = getBackupPath();
       if (fs.existsSync(backupPath)) {
         fs.unlinkSync(backupPath);
         console.log('✅ Removed backup file');
       }
     }
 
-    const activeChannelPath = path.join(os.homedir(), '.claude', 'cc-tool', 'active-channel.json');
+    const activeChannelPath = path.join(getAppDir(), 'active-channel.json');
     if (fs.existsSync(activeChannelPath)) {
       fs.unlinkSync(activeChannelPath);
       console.log('✅ Removed active-channel.json');

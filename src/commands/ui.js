@@ -11,7 +11,7 @@ async function handleUI() {
 
   if (!isDaemon) {
     console.clear();
-    console.log(chalk.cyan.bold('\n🌐 启动 Coding-Tool Web UI...\n'));
+    console.log(chalk.cyan.bold('\n🌐 启动 CCToolbox Web UI...\n'));
   }
 
   // 从配置加载端口
@@ -95,7 +95,7 @@ async function handleUI() {
       console.log(chalk.gray('按 Ctrl+C 停止服务器'));
     } else {
       // Daemon 模式：保持运行
-      console.log(chalk.green(`✅ Coding-Tool 服务已在后台启动 (端口: ${port})`));
+      console.log(chalk.green(`✅ CCToolbox 服务已在后台启动 (端口: ${port})`));
     }
 
   } catch (error) {

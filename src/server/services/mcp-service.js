@@ -7,14 +7,20 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { getAppDir } = require('../../utils/app-path-manager');
 const toml = require('@iarna/toml');
 const { spawn } = require('child_process');
 const http = require('http');
 const https = require('https');
 
 // MCP 配置文件路径
-const CC_TOOL_DIR = path.join(os.homedir(), '.claude', 'cc-tool');
-const MCP_SERVERS_FILE = path.join(CC_TOOL_DIR, 'mcp-servers.json');
+function getMcpServersFilePath() {
+  const appDir = getAppDir();
+  if (!fs.existsSync(appDir)) {
+    fs.mkdirSync(appDir, { recursive: true });
+  }
+  return path.join(appDir, 'mcp-servers.json');
+}
 
 // 各平台配置文件路径
 const CLAUDE_CONFIG_PATH = path.join(os.homedir(), '.claude.json');
@@ -303,7 +309,7 @@ function writeTomlFile(filePath, data) {
  * 获取所有 MCP 服务器
  */
 function getAllServers() {
-  return readJsonFile(MCP_SERVERS_FILE, {});
+  return readJsonFile(getMcpServersFilePath(), {});
 }
 
 /**
@@ -339,7 +345,7 @@ async function saveServer(server) {
   }
 
   servers[server.id] = server;
-  writeJsonFile(MCP_SERVERS_FILE, servers);
+  writeJsonFile(getMcpServersFilePath(), servers);
 
   // 同步到各平台配置
   await syncServerToAllPlatforms(server);
@@ -359,7 +365,7 @@ async function deleteServer(id) {
   }
 
   delete servers[id];
-  writeJsonFile(MCP_SERVERS_FILE, servers);
+  writeJsonFile(getMcpServersFilePath(), servers);
 
   // 从所有平台配置中移除
   await removeServerFromAllPlatforms(id);
@@ -385,7 +391,7 @@ async function toggleServerApp(serverId, app, enabled) {
   server.apps[app] = enabled;
   server.updatedAt = Date.now();
 
-  writeJsonFile(MCP_SERVERS_FILE, servers);
+  writeJsonFile(getMcpServersFilePath(), servers);
 
   // 同步到对应平台
   if (enabled) {
@@ -667,7 +673,7 @@ async function importFromPlatform(platform) {
   }
 
   if (importedCount > 0) {
-    writeJsonFile(MCP_SERVERS_FILE, servers);
+    writeJsonFile(getMcpServersFilePath(), servers);
   }
 
   return importedCount;
@@ -1067,7 +1073,7 @@ async function updateServerStatus(serverId, status) {
   server.status = status;
   server.lastChecked = Date.now();
 
-  writeJsonFile(MCP_SERVERS_FILE, servers);
+  writeJsonFile(getMcpServersFilePath(), servers);
   return server;
 }
 
@@ -1089,7 +1095,7 @@ function updateServerOrder(serverIds) {
     }
   });
 
-  writeJsonFile(MCP_SERVERS_FILE, servers);
+  writeJsonFile(getMcpServersFilePath(), servers);
   return servers;
 }
 

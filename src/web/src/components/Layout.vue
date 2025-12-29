@@ -14,10 +14,10 @@
     <header class="header">
       <div class="logo-section" @click="goHome">
         <div class="logo-wrapper">
-          <img src="/logo.png" alt="Coding Tool Logo" class="logo-image" />
+          <img src="/logo.png" alt="CCToolbox Logo" class="logo-image" />
         </div>
         <div class="title-group">
-          <h1 class="title-main">Coding-Tool</h1>
+          <h1 class="title-main">CCToolbox</h1>
           <span class="title-sub">Vibe Coding增强工作助手</span>
         </div>
       </div>
@@ -577,7 +577,7 @@
           </div>
 
           <p style="color: #18a058; font-size: 12px; margin-top: 8px">
-            💡 提示：配置开机自启后，重启电脑时 Coding-Tool
+            💡 提示：配置开机自启后，重启电脑时 CCToolbox
             会自动启动，无需手动运行命令。
           </p>
         </div>

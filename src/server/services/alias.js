@@ -1,14 +1,20 @@
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
+const { getAppDir } = require('../../utils/app-path-manager');
 
-const ALIAS_DIR = path.join(os.homedir(), '.claude', 'cc-tool');
-const ALIAS_FILE = path.join(ALIAS_DIR, 'aliases.json');
+function getAliasFilePath() {
+  const appDir = getAppDir();
+  if (!fs.existsSync(appDir)) {
+    fs.mkdirSync(appDir, { recursive: true });
+  }
+  return path.join(appDir, 'aliases.json');
+}
 
 // Ensure alias directory exists
 function ensureAliasDir() {
-  if (!fs.existsSync(ALIAS_DIR)) {
-    fs.mkdirSync(ALIAS_DIR, { recursive: true });
+  const aliasDir = path.dirname(getAliasFilePath());
+  if (!fs.existsSync(aliasDir)) {
+    fs.mkdirSync(aliasDir, { recursive: true });
   }
 }
 
@@ -16,12 +22,13 @@ function ensureAliasDir() {
 function loadAliases() {
   ensureAliasDir();
 
-  if (!fs.existsSync(ALIAS_FILE)) {
+  const aliasFile = getAliasFilePath();
+  if (!fs.existsSync(aliasFile)) {
     return {};
   }
 
   try {
-    const content = fs.readFileSync(ALIAS_FILE, 'utf8');
+    const content = fs.readFileSync(aliasFile, 'utf8');
     return JSON.parse(content);
   } catch (error) {
     console.error('Error loading aliases:', error);
@@ -34,7 +41,7 @@ function saveAliases(aliases) {
   ensureAliasDir();
 
   try {
-    fs.writeFileSync(ALIAS_FILE, JSON.stringify(aliases, null, 2), 'utf8');
+    fs.writeFileSync(getAliasFilePath(), JSON.stringify(aliases, null, 2), 'utf8');
   } catch (error) {
     console.error('Error saving aliases:', error);
     throw error;

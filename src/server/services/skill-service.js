@@ -13,6 +13,7 @@ const http = require('http');
 const { createWriteStream } = require('fs');
 const { pipeline } = require('stream/promises');
 const AdmZip = require('adm-zip');
+const { getAppDir } = require('../../utils/app-path-manager');
 
 // 默认仓库源 - 只预设官方仓库，其他由用户手动添加
 const DEFAULT_REPOS = [
@@ -25,7 +26,7 @@ const CACHE_TTL = 5 * 60 * 1000;
 class SkillService {
   constructor() {
     this.installDir = path.join(os.homedir(), '.claude', 'skills');
-    this.configDir = path.join(os.homedir(), '.claude', 'cc-tool');
+    this.configDir = getAppDir();
     this.reposConfigPath = path.join(this.configDir, 'skill-repos.json');
     this.cachePath = path.join(this.configDir, 'skills-cache.json');
 

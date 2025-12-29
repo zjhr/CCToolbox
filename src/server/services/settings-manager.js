@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { getBackupPath: getAppBackupPath } = require('../../utils/app-path-manager');
 
 // Claude Code 配置文件路径
 function getSettingsPath() {
@@ -9,7 +10,7 @@ function getSettingsPath() {
 
 // 备份文件路径
 function getBackupPath() {
-  return path.join(os.homedir(), '.claude', 'settings.json.cc-tool-backup');
+  return getAppBackupPath('claude-settings');
 }
 
 // 检查配置文件是否存在

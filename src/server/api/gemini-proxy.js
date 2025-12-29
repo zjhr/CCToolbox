@@ -14,9 +14,9 @@ const {
   hasBackup
 } = require('../services/gemini-settings-manager');
 const { getChannels, getEnabledChannels } = require('../services/gemini-channels');
+const { getAppDir } = require('../../utils/app-path-manager');
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 
 function sanitizeChannel(channel) {
   if (!channel) return null;
@@ -26,7 +26,7 @@ function sanitizeChannel(channel) {
 
 // 保存激活渠道ID
 function saveActiveChannelId(channelId) {
-  const dir = path.join(os.homedir(), '.claude', 'cc-tool');
+  const dir = getAppDir();
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
@@ -127,7 +127,7 @@ router.post('/stop', async (req, res) => {
       console.log('[Gemini Proxy] Restored settings from backup');
 
       // 删除 gemini-active-channel.json
-      const activeChannelPath = path.join(os.homedir(), '.claude', 'cc-tool', 'gemini-active-channel.json');
+      const activeChannelPath = path.join(getAppDir(), 'gemini-active-channel.json');
       if (fs.existsSync(activeChannelPath)) {
         fs.unlinkSync(activeChannelPath);
         console.log('[Gemini Proxy] Removed gemini-active-channel.json');
