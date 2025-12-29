@@ -26,7 +26,7 @@ cd ../..
 
 # 链接到全局
 echo "🔗 链接到全局..."
-npm link
+npm link --force
 
 echo ""
 echo "✅ 安装完成！"
