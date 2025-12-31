@@ -1,7 +1,8 @@
 import { ref, watch, nextTick } from 'vue'
 import { useOpenSpecStore } from '../stores/openspec'
 
-export function useOpenSpecEditor() {
+export function useOpenSpecEditor(options = {}) {
+  const { autoSave = true } = options
   const store = useOpenSpecStore()
   const draft = ref('')
   const saving = ref(false)
@@ -27,12 +28,13 @@ export function useOpenSpecEditor() {
     if (syncing.value || !store.currentFile) return
     if (value === store.currentFile.content) return
     dirty.value = true
-    if (!store.conflict) {
+    if (autoSave && !store.conflict) {
       scheduleSave()
     }
   })
 
   function scheduleSave() {
+    if (!autoSave) return
     if (debounceTimer) {
       clearTimeout(debounceTimer)
     }
@@ -44,7 +46,7 @@ export function useOpenSpecEditor() {
   function updateDraft(value) {
     draft.value = value
     dirty.value = true
-    if (!store.conflict) {
+    if (autoSave && !store.conflict) {
       scheduleSave()
     }
   }
@@ -65,6 +67,15 @@ export function useOpenSpecEditor() {
     store.closeEditor()
   }
 
+  function resetDraft() {
+    syncing.value = true
+    draft.value = store.currentFile?.content || ''
+    dirty.value = false
+    nextTick(() => {
+      syncing.value = false
+    })
+  }
+
   function clearTimers() {
     if (debounceTimer) {
       clearTimeout(debounceTimer)
@@ -79,6 +90,7 @@ export function useOpenSpecEditor() {
     updateDraft,
     save,
     closeEditor,
+    resetDraft,
     clearTimers
   }
 }

@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, reactive } from 'vue'
+import { computed, ref, reactive } from 'vue'
 import {
   getDashboard,
   getProjects,
@@ -15,6 +15,7 @@ import {
   resolveConflict as resolveConflictApi
 } from '../api/openspec'
 import { LRUCache } from '../utils/fileCache'
+import { filterBySearchQuery } from '../components/openspecui/composables/useSearch'
 
 const DEFAULT_TAB = 'dashboard'
 
@@ -27,6 +28,9 @@ export const useOpenSpecStore = defineStore('openspec', () => {
   const syncStatus = ref('idle')
   const lastUpdated = ref(null)
   const loading = ref(false)
+  const searchQuery = ref('')
+  const editMode = ref(false)
+  const hasUnsavedChanges = ref(false)
   const tabLoading = reactive({
     dashboard: false,
     projects: false,
@@ -53,6 +57,18 @@ export const useOpenSpecStore = defineStore('openspec', () => {
   const conflict = ref(null)
   const detailRefreshKey = ref(0)
 
+  const filteredChanges = computed(() => {
+    return filterBySearchQuery(data.changes || [], searchQuery.value, {
+      fields: ['name', 'path']
+    })
+  })
+
+  const filteredArchives = computed(() => {
+    return filterBySearchQuery(data.archives || [], searchQuery.value, {
+      fields: ['name', 'path']
+    })
+  })
+
   function setContext({ name, path, source }) {
     const changed = projectPath.value && projectPath.value !== path
     projectName.value = name || ''
@@ -65,6 +81,9 @@ export const useOpenSpecStore = defineStore('openspec', () => {
       conflict.value = null
       data.tools = []
       data.cli = null
+      searchQuery.value = ''
+      editMode.value = false
+      hasUnsavedChanges.value = false
     }
   }
 
@@ -74,6 +93,18 @@ export const useOpenSpecStore = defineStore('openspec', () => {
 
   function setActiveTab(tab) {
     activeTab.value = tab || DEFAULT_TAB
+  }
+
+  function setSearchQuery(value) {
+    searchQuery.value = String(value || '')
+  }
+
+  function setEditMode(value) {
+    editMode.value = !!value
+  }
+
+  function setHasUnsavedChanges(value) {
+    hasUnsavedChanges.value = !!value
   }
 
   async function refreshAll() {
@@ -192,6 +223,14 @@ export const useOpenSpecStore = defineStore('openspec', () => {
     }
   }
 
+  async function saveContent(filePath, content, etag) {
+    const result = await writeFile(filePath, content, etag)
+    if (result?.conflict) return result
+    hasUnsavedChanges.value = false
+    editMode.value = false
+    return result
+  }
+
   async function resolveConflict(filePath, resolution, content) {
     if (!projectPath.value) return null
     const result = await resolveConflictApi(projectPath.value, filePath, resolution, content)
@@ -294,13 +333,22 @@ export const useOpenSpecStore = defineStore('openspec', () => {
     editorOpen,
     conflict,
     detailRefreshKey,
+    searchQuery,
+    editMode,
+    hasUnsavedChanges,
+    filteredChanges,
+    filteredArchives,
     setContext,
     setDrawerOpen,
     setActiveTab,
+    setSearchQuery,
+    setEditMode,
+    setHasUnsavedChanges,
     refreshAll,
     refreshTab,
     readFile,
     writeFile,
+    saveContent,
     resolveConflict,
     updateFromRemote,
     closeEditor,

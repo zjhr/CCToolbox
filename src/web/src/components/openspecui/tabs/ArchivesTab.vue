@@ -1,14 +1,24 @@
 <template>
   <div class="archives-tab" :class="{ 'archives-tab--detail': !!activeArchive }">
     <div v-if="!activeArchive" key="list">
+      <SearchBar v-model="searchQuery" placeholder="搜索归档..." :loading="searchLoading" />
       <div v-if="archives.length === 0" class="empty">
         <n-empty description="暂无归档" />
       </div>
       <div v-else class="archive-list">
         <div v-for="item in archives" :key="item.path" class="archive-card" @click="openArchive(item)">
           <div class="archive-info">
-            <div class="archive-title">{{ archiveTitle(item) }}</div>
-            <div class="archive-meta">{{ archiveSubtitle(item) }}</div>
+            <div class="archive-title" v-html="highlightText(item.displayTitle)" />
+            <div v-if="searchQuery && snippetFor(item)" class="archive-snippet" v-html="highlightText(snippetFor(item))" />
+            <div class="archive-meta">{{ item.displaySubtitle }}</div>
+          </div>
+          <div class="archive-progress-slot">
+            <TaskProgress
+              class="archive-progress"
+              :percentage="progressFor(item).percentage"
+              :done="progressFor(item).done"
+              :total="progressFor(item).total"
+            />
           </div>
           <n-tag size="small" :bordered="false" type="warning">归档</n-tag>
         </div>
@@ -24,19 +34,25 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { NEmpty, NTag } from 'naive-ui'
 import { useOpenSpecStore } from '../../../stores/openspec'
 import { readFile as readFileApi } from '../../../api/openspec'
 import ChangeDetail from '../components/ChangeDetail.vue'
+import SearchBar from '../components/SearchBar.vue'
+import TaskProgress from '../components/TaskProgress.vue'
+import { filterBySearchQuery, getSearchSnippet, highlightMatches } from '../composables/useSearch'
+import { useTaskProgress } from '../composables/useTaskProgress'
 
 const store = useOpenSpecStore()
 
 const activeArchive = ref(null)
 const archiveTitles = ref({})
 const archiveLoading = ref({})
+const archiveContents = reactive({})
+const archiveContentLoading = reactive({})
 
-const archives = computed(() => {
+const rawArchives = computed(() => {
   return (store.data.archives || []).filter(node => node.type === 'directory')
 })
 
@@ -57,6 +73,33 @@ const archiveSubtitle = computed(() => {
   }
 })
 
+const archiveItems = computed(() => {
+  return rawArchives.value.map(item => ({
+    ...item,
+    displayTitle: archiveTitle.value(item),
+    displaySubtitle: archiveSubtitle.value(item)
+  }))
+})
+
+const searchQuery = computed({
+  get: () => store.searchQuery,
+  set: value => store.setSearchQuery(value)
+})
+
+const archives = computed(() => {
+  return filterBySearchQuery(archiveItems.value, searchQuery.value, {
+    getSearchText: (item) => {
+      return `${item.displayTitle} ${item.displaySubtitle} ${item.path} ${item.name} ${archiveContents[item.path] || ''}`
+    }
+  })
+})
+
+const { loadProgress, getProgress } = useTaskProgress()
+const searchLoading = computed(() => {
+  if (!searchQuery.value) return false
+  return Object.values(archiveContentLoading).some(Boolean)
+})
+
 watch(
   () => store.projectPath,
   () => {
@@ -66,7 +109,7 @@ watch(
 )
 
 watch(
-  archives,
+  rawArchives,
   (items) => {
     if (!store.projectPath) return
     items.forEach((item) => {
@@ -91,6 +134,35 @@ watch(
   { immediate: true }
 )
 
+watch(
+  () => archives.value,
+  (items) => {
+    items.forEach(item => loadProgress(item))
+  },
+  { immediate: true }
+)
+
+watch(
+  [() => searchQuery.value, rawArchives],
+  ([query, items]) => {
+    if (!query) return
+    items.forEach(item => loadArchiveContent(item))
+  },
+  { immediate: true }
+)
+
+function progressFor(item) {
+  return getProgress(item)
+}
+
+function snippetFor(item) {
+  return getSearchSnippet(archiveContents[item.path] || '', searchQuery.value)
+}
+
+function highlightText(text) {
+  return highlightMatches(text, searchQuery.value)
+}
+
 function openArchive(item) {
   activeArchive.value = item
 }
@@ -98,11 +170,6 @@ function openArchive(item) {
 function closeArchive() {
   activeArchive.value = null
   store.closeEditor()
-}
-
-function formatTime(ts) {
-  if (!ts) return '未知时间'
-  return new Date(ts).toLocaleString()
 }
 
 function formatRelativeTime(ts) {
@@ -127,6 +194,31 @@ function joinPath(base, file) {
   if (!base) return file
   return `${base.replace(/\/$/, '')}/${file}`
 }
+
+async function loadArchiveContent(item) {
+  if (!store.projectPath || !item?.path) return
+  if (archiveContents[item.path] || archiveContentLoading[item.path]) return
+  archiveContentLoading[item.path] = true
+  const proposalPath = joinPath(item.path, 'proposal.md')
+  const tasksPath = joinPath(item.path, 'tasks.md')
+  const designPath = joinPath(item.path, 'design.md')
+  try {
+    const results = await Promise.allSettled([
+      readFileApi(store.projectPath, proposalPath),
+      readFileApi(store.projectPath, tasksPath),
+      readFileApi(store.projectPath, designPath)
+    ])
+    const content = results
+      .filter(result => result.status === 'fulfilled')
+      .map(result => result.value?.content || '')
+      .join('\n')
+    archiveContents[item.path] = content
+  } catch (err) {
+    archiveContents[item.path] = ''
+  } finally {
+    archiveContentLoading[item.path] = false
+  }
+}
 </script>
 
 <style scoped>
@@ -148,9 +240,9 @@ function joinPath(base, file) {
 }
 
 .archive-card {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
   padding: 12px;
   border: 1px solid var(--border-primary);
@@ -179,6 +271,29 @@ function joinPath(base, file) {
 .archive-meta {
   font-size: 12px;
   color: #666;
+}
+
+.archive-snippet {
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.5;
+}
+
+.archive-snippet :deep(.search-highlight),
+.archive-title :deep(.search-highlight) {
+  background: #fde68a;
+  color: #7a4a1f;
+  padding: 0 2px;
+  border-radius: 4px;
+}
+
+.archive-progress-slot {
+  display: flex;
+  justify-content: center;
+}
+
+.archive-progress {
+  width: min(240px, 100%);
 }
 
 </style>

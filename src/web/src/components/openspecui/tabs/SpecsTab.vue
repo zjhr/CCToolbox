@@ -1,19 +1,21 @@
 <template>
   <div class="specs-tab" :class="{ 'specs-tab--detail': !!activeSpec }">
     <div v-if="!activeSpec" key="list">
-      <div v-if="specItems.length === 0" class="empty">
+      <SearchBar v-model="searchQuery" placeholder="搜索规范..." :loading="searchLoading" />
+      <div v-if="displaySpecs.length === 0" class="empty">
         <n-empty description="暂无规范文件" />
       </div>
         <div v-else class="spec-list">
           <div
-            v-for="item in specItems"
+            v-for="item in displaySpecs"
             :key="item.path"
             class="spec-card"
             :class="{ disabled: !item.filePath }"
             @click="openSpec(item)"
           >
             <div class="spec-info">
-              <div class="spec-title">{{ item.name }}</div>
+              <div class="spec-title" v-html="highlightText(item.name)" />
+              <div v-if="searchQuery && snippetFor(item)" class="spec-snippet" v-html="highlightText(snippetFor(item))" />
               <div class="spec-meta">
                 {{ item.fileName || '未找到 spec.md' }}
                 <span v-if="item.mtime"> · {{ formatTime(item.mtime) }}</span>
@@ -62,12 +64,14 @@
 </template>
 
 <script setup>
-import { computed, ref, nextTick, watch } from 'vue'
+import { computed, reactive, ref, nextTick, watch } from 'vue'
 import { NButton, NEmpty, NIcon, NSpin } from 'naive-ui'
 import { ContractOutline, ExpandOutline } from '@vicons/ionicons5'
 import { useOpenSpecStore } from '../../../stores/openspec'
 import { readFile as readFileApi } from '../../../api/openspec'
 import MarkdownViewer from '../components/MarkdownViewer.vue'
+import SearchBar from '../components/SearchBar.vue'
+import { filterBySearchQuery, getSearchSnippet, highlightMatches } from '../composables/useSearch'
 import message from '../../../utils/message'
 
 const store = useOpenSpecStore()
@@ -77,6 +81,8 @@ const loading = ref(false)
 const isFullscreen = ref(false)
 const requirementCounts = ref({})
 const requirementLoading = ref({})
+const specContents = reactive({})
+const specContentLoading = reactive({})
 
 const specItems = computed(() => {
   return (store.data.specs || [])
@@ -100,6 +106,24 @@ const specItems = computed(() => {
         mtime: node.mtime
       }
     })
+})
+
+const searchQuery = computed({
+  get: () => store.searchQuery,
+  set: value => store.setSearchQuery(value)
+})
+
+const displaySpecs = computed(() => {
+  return filterBySearchQuery(specItems.value, searchQuery.value, {
+    getSearchText: (item) => {
+      return `${item.name} ${item.path} ${item.fileName} ${item.filePath} ${specContents[item.filePath] || ''}`
+    }
+  })
+})
+
+const searchLoading = computed(() => {
+  if (!searchQuery.value) return false
+  return Object.values(specContentLoading).some(Boolean)
 })
 
 const specEditorId = computed(() => {
@@ -158,6 +182,16 @@ watch(
   { immediate: true }
 )
 
+watch(
+  [() => searchQuery.value, specItems],
+  ([query, items]) => {
+    if (!query) return
+    items.forEach(item => loadSpecContent(item))
+  },
+  { immediate: true }
+)
+
+
 async function openSpec(item) {
   if (!item?.filePath || !store.projectPath) {
     message.warning('未找到规范文件')
@@ -210,6 +244,29 @@ function countRequirements(content) {
   const text = String(content || '')
   const matches = text.match(/^#{2,4}\s+Requirement:/gm)
   return matches ? matches.length : 0
+}
+
+function snippetFor(item) {
+  if (!item?.filePath) return ''
+  return getSearchSnippet(specContents[item.filePath] || '', searchQuery.value)
+}
+
+function highlightText(text) {
+  return highlightMatches(text, searchQuery.value)
+}
+
+async function loadSpecContent(item) {
+  if (!store.projectPath || !item?.filePath) return
+  if (specContents[item.filePath] || specContentLoading[item.filePath]) return
+  specContentLoading[item.filePath] = true
+  try {
+    const result = await readFileApi(store.projectPath, item.filePath)
+    specContents[item.filePath] = result?.content || ''
+  } catch (err) {
+    specContents[item.filePath] = ''
+  } finally {
+    specContentLoading[item.filePath] = false
+  }
 }
 </script>
 
@@ -269,6 +326,20 @@ function countRequirements(content) {
 .spec-meta {
   font-size: 12px;
   color: #666;
+}
+
+.spec-snippet {
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.5;
+}
+
+.spec-snippet :deep(.search-highlight),
+.spec-title :deep(.search-highlight) {
+  background: #fde68a;
+  color: #7a4a1f;
+  padding: 0 2px;
+  border-radius: 4px;
 }
 
 .spec-count {

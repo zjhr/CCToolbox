@@ -6,6 +6,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- 🧭 **OpenSpec UI 增强** - 变更/归档进度条、任务折叠描述、项目预览/编辑切换、列表关键词搜索
+
+### Fixed
+
+- 🧱 **全屏层级修复** - 修复 OpenSpec 详情页全屏遮罩层级问题
+
 ### Changed
 
 - 🏷️ **品牌升级** - 项目品牌统一为 CCToolbox
