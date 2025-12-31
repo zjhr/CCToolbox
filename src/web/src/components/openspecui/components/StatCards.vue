@@ -137,10 +137,15 @@ async function loadRequirements() {
 
 async function loadTasks() {
   if (!store.projectPath) return
-  const changeDirs = collectChangeDirs(store.data.changes || [])
+  const taskPaths = collectTaskPaths(store.data.changes || [])
   tasksLoading.value = true
-  const counts = await Promise.all(changeDirs.map(async (dirPath) => {
-    const filePath = joinPath(dirPath, 'tasks.md')
+  if (taskPaths.length === 0) {
+    tasksDone.value = 0
+    tasksTotal.value = 0
+    tasksLoading.value = false
+    return
+  }
+  const counts = await Promise.all(taskPaths.map(async (filePath) => {
     if (tasksCache.value[filePath]) {
       return tasksCache.value[filePath]
     }
@@ -173,10 +178,27 @@ function collectSpecFiles(nodes, output = []) {
   return output
 }
 
-function collectChangeDirs(nodes) {
-  return (nodes || [])
+function collectTaskPaths(nodes, output = []) {
+  (nodes || [])
     .filter(node => node.type === 'directory' && node.name !== 'archive')
-    .map(node => node.path)
+    .forEach((node) => {
+      const found = findTasksPath(node)
+      if (found) output.push(found)
+    })
+  return output
+}
+
+function findTasksPath(node) {
+  if (!node) return ''
+  const direct = (node.children || []).find(child => child.type === 'file' && child.name === 'tasks.md')
+  if (direct) return direct.path
+  for (const child of node.children || []) {
+    if (child.type === 'directory') {
+      const found = findTasksPath(child)
+      if (found) return found
+    }
+  }
+  return ''
 }
 
 function countRequirements(content) {

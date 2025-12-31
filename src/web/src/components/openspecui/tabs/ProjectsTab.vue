@@ -1,11 +1,11 @@
 <template>
   <div class="projects-tab">
     <div v-if="!activeFile" key="list">
-      <div v-if="store.data.projects.length === 0" class="empty">
+      <div v-if="sortedProjects.length === 0" class="empty">
         <n-empty description="暂无 OpenSpec 项目文件" />
       </div>
       <div v-else class="file-list">
-        <div v-for="file in store.data.projects" :key="file.path" class="file-card" @click="openFile(file.path)">
+        <div v-for="file in sortedProjects" :key="file.path" class="file-card" @click="openFile(file.path)">
           <div class="file-info">
             <div class="file-name">{{ file.name }}</div>
             <div class="file-meta">{{ formatSize(file.size) }} · {{ formatTime(file.mtime) }}</div>
@@ -108,6 +108,10 @@ const previewContent = computed(() => {
   return store.currentFile?.content || ''
 })
 
+const sortedProjects = computed(() => {
+  return sortByMtimeDesc(store.data.projects || [])
+})
+
 const fullscreenLabel = computed(() => {
   return isFullscreen.value ? '还原' : '放大'
 })
@@ -138,6 +142,10 @@ function formatSize(size = 0) {
 function formatTime(ts) {
   if (!ts) return '未知时间'
   return new Date(ts).toLocaleString()
+}
+
+function sortByMtimeDesc(items) {
+  return [...items].sort((a, b) => (b?.mtime || 0) - (a?.mtime || 0))
 }
 
 async function openFile(filePath) {

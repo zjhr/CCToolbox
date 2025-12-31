@@ -184,17 +184,22 @@ async function loadOverview() {
   try {
     const designPath = joinPath(props.entry.path, 'design.md')
     const proposalPath = joinPath(props.entry.path, 'proposal.md')
-    const [designResult, proposalResult] = await Promise.allSettled([
-      readFileApi(store.projectPath, designPath),
-      readFileApi(store.projectPath, proposalPath)
-    ])
+    const targets = [
+      { name: 'design.md', path: designPath, enabled: hasChildFile(props.entry, 'design.md') },
+      { name: 'proposal.md', path: proposalPath, enabled: hasChildFile(props.entry, 'proposal.md') }
+    ].filter(target => target.enabled)
+    if (targets.length === 0) {
+      overviewContent.value = ''
+      return
+    }
+    const results = await Promise.allSettled(
+      targets.map(target => readFileApi(store.projectPath, target.path))
+    )
     const sections = []
-    if (designResult.status === 'fulfilled' && designResult.value?.content) {
-      sections.push(`## design.md\n\n${designResult.value.content}`)
-    }
-    if (proposalResult.status === 'fulfilled' && proposalResult.value?.content) {
-      sections.push(`## proposal.md\n\n${proposalResult.value.content}`)
-    }
+    results.forEach((result, index) => {
+      if (result.status !== 'fulfilled' || !result.value?.content) return
+      sections.push(`## ${targets[index].name}\n\n${result.value.content}`)
+    })
     overviewContent.value = sections.join('\n\n---\n\n')
   } catch (err) {
     overviewContent.value = ''
@@ -208,6 +213,15 @@ async function loadTasks() {
   const filePath = joinPath(props.entry.path, 'tasks.md')
   tasksLoading.value = true
   try {
+    if (!hasChildFile(props.entry, 'tasks.md')) {
+      tasks.value = []
+      taskGroups.value = []
+      taskLines.value = []
+      tasksPath.value = ''
+      tasksEtag.value = ''
+      initialExpandedGroups.value = []
+      return
+    }
     const result = await readFileApi(store.projectPath, filePath)
     const parsed = parseTasks(result.content || '')
     tasks.value = parsed.items
@@ -310,6 +324,10 @@ function toggleFullscreen() {
 function joinPath(base, file) {
   if (!base) return file
   return `${base.replace(/\/$/, '')}/${file}`
+}
+
+function hasChildFile(item, fileName) {
+  return (item?.children || []).some(child => child.type === 'file' && child.name === fileName)
 }
 
 function getTaskScrollTop() {

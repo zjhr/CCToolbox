@@ -96,6 +96,10 @@ function joinPath(base, file) {
   return `${base.replace(/\/$/, '')}/${file}`
 }
 
+function hasChildFile(item, fileName) {
+  return (item?.children || []).some(child => child.type === 'file' && child.name === fileName)
+}
+
 export function useTaskProgress() {
   const store = useOpenSpecStore()
   const progressMap = reactive({})
@@ -111,7 +115,13 @@ export function useTaskProgress() {
 
   async function loadProgress(item) {
     if (!store.projectPath || !item?.path) return
-    if (progressMap[item.path] || loadingMap[item.path]) return
+    const hasTasksFile = hasChildFile(item, 'tasks.md')
+    const existing = progressMap[item.path]
+    if (!hasTasksFile) {
+      progressMap[item.path] = { total: 0, done: 0, percentage: 0, missing: true }
+      return
+    }
+    if ((existing && !existing.missing) || loadingMap[item.path]) return
     loadingMap[item.path] = true
     const filePath = joinPath(item.path, 'tasks.md')
     try {

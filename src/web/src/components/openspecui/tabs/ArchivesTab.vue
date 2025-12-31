@@ -53,7 +53,8 @@ const archiveContents = reactive({})
 const archiveContentLoading = reactive({})
 
 const rawArchives = computed(() => {
-  return (store.data.archives || []).filter(node => node.type === 'directory')
+  const items = (store.data.archives || []).filter(node => node.type === 'directory')
+  return sortByMtimeDesc(items)
 })
 
 const archiveTitle = computed(() => {
@@ -116,6 +117,10 @@ watch(
       if (!item?.path) return
       if (archiveTitles.value[item.path]) return
       if (archiveLoading.value[item.path]) return
+      if (!hasChildFile(item, 'proposal.md')) {
+        archiveTitles.value = { ...archiveTitles.value, [item.path]: item.name }
+        return
+      }
       archiveLoading.value = { ...archiveLoading.value, [item.path]: true }
       const filePath = joinPath(item.path, 'proposal.md')
       readFileApi(store.projectPath, filePath)
@@ -163,6 +168,14 @@ function highlightText(text) {
   return highlightMatches(text, searchQuery.value)
 }
 
+function sortByMtimeDesc(items) {
+  return [...items].sort((a, b) => (b?.mtime || 0) - (a?.mtime || 0))
+}
+
+function hasChildFile(item, fileName) {
+  return (item?.children || []).some(child => child.type === 'file' && child.name === fileName)
+}
+
 function openArchive(item) {
   activeArchive.value = item
 }
@@ -198,15 +211,22 @@ function joinPath(base, file) {
 async function loadArchiveContent(item) {
   if (!store.projectPath || !item?.path) return
   if (archiveContents[item.path] || archiveContentLoading[item.path]) return
-  archiveContentLoading[item.path] = true
   const proposalPath = joinPath(item.path, 'proposal.md')
   const tasksPath = joinPath(item.path, 'tasks.md')
   const designPath = joinPath(item.path, 'design.md')
+  const filePaths = [
+    hasChildFile(item, 'proposal.md') ? proposalPath : '',
+    hasChildFile(item, 'tasks.md') ? tasksPath : '',
+    hasChildFile(item, 'design.md') ? designPath : ''
+  ].filter(Boolean)
+  if (filePaths.length === 0) {
+    archiveContents[item.path] = ''
+    return
+  }
+  archiveContentLoading[item.path] = true
   try {
     const results = await Promise.allSettled([
-      readFileApi(store.projectPath, proposalPath),
-      readFileApi(store.projectPath, tasksPath),
-      readFileApi(store.projectPath, designPath)
+      ...filePaths.map(filePath => readFileApi(store.projectPath, filePath))
     ])
     const content = results
       .filter(result => result.status === 'fulfilled')

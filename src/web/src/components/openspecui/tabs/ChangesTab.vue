@@ -50,7 +50,9 @@ const changeContents = reactive({})
 const changeLoading = reactive({})
 
 const rawChanges = computed(() => {
-  return (store.data.changes || []).filter(node => node.type === 'directory' && node.name !== 'archive')
+  const items = (store.data.changes || [])
+    .filter(node => node.type === 'directory' && node.name !== 'archive')
+  return sortByMtimeDesc(items)
 })
 
 const searchQuery = computed({
@@ -101,18 +103,33 @@ function highlightText(text) {
   return highlightMatches(text, searchQuery.value)
 }
 
+function hasChildFile(item, fileName) {
+  return (item?.children || []).some(child => child.type === 'file' && child.name === fileName)
+}
+
+function sortByMtimeDesc(items) {
+  return [...items].sort((a, b) => (b?.mtime || 0) - (a?.mtime || 0))
+}
+
 async function loadChangeContent(item) {
   if (!store.projectPath || !item?.path) return
   if (changeContents[item.path] || changeLoading[item.path]) return
-  changeLoading[item.path] = true
   const proposalPath = joinPath(item.path, 'proposal.md')
   const tasksPath = joinPath(item.path, 'tasks.md')
   const designPath = joinPath(item.path, 'design.md')
+  const filePaths = [
+    hasChildFile(item, 'proposal.md') ? proposalPath : '',
+    hasChildFile(item, 'tasks.md') ? tasksPath : '',
+    hasChildFile(item, 'design.md') ? designPath : ''
+  ].filter(Boolean)
+  if (filePaths.length === 0) {
+    changeContents[item.path] = ''
+    return
+  }
+  changeLoading[item.path] = true
   try {
     const results = await Promise.allSettled([
-      readFileApi(store.projectPath, proposalPath),
-      readFileApi(store.projectPath, tasksPath),
-      readFileApi(store.projectPath, designPath)
+      ...filePaths.map(filePath => readFileApi(store.projectPath, filePath))
     ])
     const content = results
       .filter(result => result.status === 'fulfilled')

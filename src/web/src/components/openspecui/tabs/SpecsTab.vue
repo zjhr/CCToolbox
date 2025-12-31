@@ -85,7 +85,7 @@ const specContents = reactive({})
 const specContentLoading = reactive({})
 
 const specItems = computed(() => {
-  return (store.data.specs || [])
+  const items = (store.data.specs || [])
     .filter(node => node.type === 'directory' || node.type === 'file')
     .map(node => {
       if (node.type === 'file') {
@@ -106,6 +106,7 @@ const specItems = computed(() => {
         mtime: node.mtime
       }
     })
+  return sortByMtimeDesc(items)
 })
 
 const searchQuery = computed({
@@ -238,6 +239,10 @@ function findSpecFile(node) {
 function formatTime(ts) {
   if (!ts) return ''
   return new Date(ts).toLocaleString()
+}
+
+function sortByMtimeDesc(items) {
+  return [...items].sort((a, b) => (b?.mtime || 0) - (a?.mtime || 0))
 }
 
 function countRequirements(content) {
