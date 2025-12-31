@@ -51,6 +51,7 @@ export const useOpenSpecStore = defineStore('openspec', () => {
   const currentFile = ref(null)
   const editorOpen = ref(false)
   const conflict = ref(null)
+  const detailRefreshKey = ref(0)
 
   function setContext({ name, path, source }) {
     const changed = projectPath.value && projectPath.value !== path
@@ -240,6 +241,10 @@ export const useOpenSpecStore = defineStore('openspec', () => {
     editorOpen.value = false
   }
 
+  function triggerDetailRefresh() {
+    detailRefreshKey.value++
+  }
+
   async function saveSettings(settings) {
     if (!projectPath.value) return null
     const result = await saveSettingsApi(projectPath.value, settings)
@@ -288,6 +293,7 @@ export const useOpenSpecStore = defineStore('openspec', () => {
     currentFile,
     editorOpen,
     conflict,
+    detailRefreshKey,
     setContext,
     setDrawerOpen,
     setActiveTab,
@@ -298,6 +304,7 @@ export const useOpenSpecStore = defineStore('openspec', () => {
     resolveConflict,
     updateFromRemote,
     closeEditor,
+    triggerDetailRefresh,
     saveSettings,
     createSpec,
     createChange

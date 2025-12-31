@@ -126,7 +126,7 @@ async function startServer(port) {
   const claudeHooks = require('./api/claude-hooks');
   app.use('/api/claude/hooks', claudeHooks);
 
-  // 初始化 Claude hooks 默认配置（自动开启任务完成通知）
+  // 初始化 Claude hooks 配置（仅在用户明确启用时写入）
   claudeHooks.initDefaultHooks();
 
   // Serve static files in production

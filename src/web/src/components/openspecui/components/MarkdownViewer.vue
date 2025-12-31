@@ -188,6 +188,14 @@ watch(
   overflow-x: auto;
   overflow-y: hidden;
   white-space: pre;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.preview-pane :deep(.md-editor-preview .md-editor-code pre) {
+  display: flex;
+  align-items: flex-start;
 }
 
 .preview-pane :deep(.md-editor-preview pre code) {
@@ -197,6 +205,11 @@ watch(
   word-break: normal;
   overflow-x: auto;
   overflow-y: hidden;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
 .preview-pane :deep(.md-editor-preview .md-editor-code pre code .md-editor-code-block) {
@@ -211,6 +224,13 @@ watch(
   border-radius: 4px;
   color: #7a4a1f;
   padding: 1px 4px;
+}
+
+.preview-pane :deep(.md-editor-preview pre code) {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
 }
 
 .preview-pane :deep(.md-editor-preview .md-editor-code .md-editor-code-head),
@@ -228,6 +248,18 @@ watch(
 .preview-pane :deep(.md-editor-preview .md-editor-code .md-editor-code-head) {
   border-top-left-radius: 10px;
   border-top-right-radius: 10px;
+}
+
+.preview-pane :deep(.md-editor-preview .md-editor-code .md-editor-code-flag) {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.preview-pane :deep(.md-editor-preview .md-editor-code pre code > span[rn-wrapper]) {
+  top: 0 !important;
+  margin-top: 0 !important;
+  padding-top: 0 !important;
 }
 
 .preview-pane :deep(.md-editor-preview .md-editor-code .md-editor-code-head *),
@@ -327,5 +359,49 @@ watch(
 
 .viewer-empty {
   padding: 12px 0;
+}
+
+/* 修复代码块行号和文本对齐问题 */
+.preview-pane :deep(.md-editor-code-block) {
+  display: flex;
+  align-items: flex-start;
+}
+
+.preview-pane :deep(.md-editor-code-block-row) {
+  display: flex;
+  align-items: flex-start;
+  line-height: 1.6;
+}
+
+.preview-pane :deep(.md-editor-code-block-row-line) {
+  line-height: 1.6;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 14px;
+  margin: 0 !important;
+  min-width: 2.5em;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  padding-right: 1em;
+  text-align: right;
+  user-select: none;
+  flex-shrink: 0;
+  align-self: flex-start;
+}
+
+.preview-pane :deep(.md-editor-code-block-row-code) {
+  line-height: 1.6;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 14px;
+  margin: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  flex: 1;
+  white-space: pre;
+}
+
+.preview-pane :deep(.md-editor-preview .md-editor-code-flag),
+.preview-pane :deep(.md-editor-preview .md-editor-code-flag li) {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
 }
 </style>

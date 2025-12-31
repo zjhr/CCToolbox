@@ -368,18 +368,23 @@ function writeCodexConfigForMultiChannel(allChannels) {
   }
 
   for (const channel of allChannels) {
-    config.model_providers[channel.providerKey] = {
+    const providerConfig = {
       name: channel.name,
       base_url: channel.baseUrl,
       wire_api: channel.wireApi,
-      env_key: channel.envKey,
       requires_openai_auth: channel.requiresOpenaiAuth !== false
     };
 
+    if (channel.envKey && channel.envKey !== 'OPENAI_API_KEY') {
+      providerConfig.env_key = channel.envKey;
+    }
+
     // 添加额外查询参数(如 Azure 的 api-version)
     if (channel.queryParams && Object.keys(channel.queryParams).length > 0) {
-      config.model_providers[channel.providerKey].query_params = channel.queryParams;
+      providerConfig.query_params = channel.queryParams;
     }
+
+    config.model_providers[channel.providerKey] = providerConfig;
   }
 
   // 使用 TOML 序列化写入配置（保留注释和格式）
@@ -544,18 +549,23 @@ function applyChannelToSettings(channelId) {
   }
 
   // 添加/更新当前渠道的 provider 配置
-  config.model_providers[channel.providerKey] = {
+  const providerConfig = {
     name: channel.name,
     base_url: channel.baseUrl,
     wire_api: channel.wireApi || 'responses',
-    env_key: channel.envKey,
     requires_openai_auth: channel.requiresOpenaiAuth !== false
   };
 
+  if (channel.envKey && channel.envKey !== 'OPENAI_API_KEY') {
+    providerConfig.env_key = channel.envKey;
+  }
+
   // 添加额外查询参数(如 Azure 的 api-version)
   if (channel.queryParams && Object.keys(channel.queryParams).length > 0) {
-    config.model_providers[channel.providerKey].query_params = channel.queryParams;
+    providerConfig.query_params = channel.queryParams;
   }
+
+  config.model_providers[channel.providerKey] = providerConfig;
 
   // 使用 TOML 序列化写入配置
   try {

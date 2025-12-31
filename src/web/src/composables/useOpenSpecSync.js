@@ -38,6 +38,8 @@ export function useOpenSpecSync() {
               store.readFile(data.path)
             }
           }
+          // 触发详情页刷新，让已打开的详情页组件重新加载内容
+          store.triggerDetailRefresh()
         } catch (err) {
           console.error('OpenSpec WS 消息解析失败:', err)
         }

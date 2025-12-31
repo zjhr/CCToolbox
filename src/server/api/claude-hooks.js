@@ -325,6 +325,12 @@ function initDefaultHooks() {
       return;
     }
 
+    // 未明确启用过通知时不自动写入 Claude hooks
+    if (uiConfig.claudeNotificationEnabledByUser !== true) {
+      console.log('[Claude Hooks] 未检测到用户启用记录，跳过自动初始化');
+      return;
+    }
+
     const settings = readClaudeSettings();
     const currentStatus = parseStopHookStatus(settings);
 
@@ -386,16 +392,19 @@ router.post('/', (req, res) => {
     // 更新用户关闭标记
     const uiConfig = readUIConfig();
     if (systemNotification.enabled || feishuConfig.enabled) {
-      // 用户开启了通知，清除关闭标记
+      // 用户开启了通知，清除关闭标记并记录已启用
+      uiConfig.claudeNotificationEnabledByUser = true;
       if (uiConfig.claudeNotificationDisabledByUser) {
         delete uiConfig.claudeNotificationDisabledByUser;
-        writeUIConfig(uiConfig);
       }
     } else {
       // 用户关闭了所有通知
       uiConfig.claudeNotificationDisabledByUser = true;
-      writeUIConfig(uiConfig);
+      if (uiConfig.claudeNotificationEnabledByUser) {
+        delete uiConfig.claudeNotificationEnabledByUser;
+      }
     }
+    writeUIConfig(uiConfig);
 
     if (updateStopHook(systemNotification, feishuConfig)) {
       res.json({

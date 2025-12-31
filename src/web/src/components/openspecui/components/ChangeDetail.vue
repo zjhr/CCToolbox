@@ -167,6 +167,16 @@ watch(
   { immediate: true }
 )
 
+// 监听详情页刷新触发器，当文件被外部修改时重新加载
+watch(
+  () => store.detailRefreshKey,
+  async () => {
+    if (!props.entry?.path || !store.projectPath) return
+    // 静默刷新，不改变当前标签和滚动位置
+    await Promise.all([loadOverview(), loadTasks()])
+  }
+)
+
 async function loadOverview() {
   if (!props.entry?.path || !store.projectPath) return
   overviewLoading.value = true
