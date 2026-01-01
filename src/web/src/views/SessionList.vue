@@ -933,6 +933,7 @@ onUnmounted(() => {
   // 【暂时移除】清理事件监听
   // document.removeEventListener('visibilitychange', handleVisibilityChange)
   // window.removeEventListener('focus', handleWindowFocus)
+  store.exitSelectionMode()
 })
 </script>
 
