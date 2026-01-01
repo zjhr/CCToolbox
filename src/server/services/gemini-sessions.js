@@ -439,10 +439,34 @@ function deleteSession(sessionId) {
 
   try {
     fs.unlinkSync(session.filePath);
+    cleanupGeminiForkRelations(sessionId);
+    const { cleanupSessionRelations } = require('./sessions');
+    cleanupSessionRelations(sessionId);
     return { success: true, sessionId };
   } catch (err) {
     throw new Error('Failed to delete session: ' + err.message);
   }
+}
+
+// 清理 Gemini 会话的 fork 关系（父会话被删除后）
+function cleanupGeminiForkRelations(sessionId) {
+  if (!sessionId) return;
+  const allSessions = getAllSessions();
+  const now = new Date().toISOString();
+
+  allSessions
+    .filter(session => session.forkedFrom === sessionId)
+    .forEach(session => {
+      const fullSession = readSessionFull(session.filePath);
+      if (!fullSession) return;
+      fullSession.forkedFrom = null;
+      fullSession.lastUpdated = now;
+      try {
+        fs.writeFileSync(session.filePath, JSON.stringify(fullSession, null, 2), 'utf8');
+      } catch (err) {
+        console.error('[Gemini Sessions] Failed to clear fork relation:', err.message);
+      }
+    });
 }
 
 /**
@@ -685,5 +709,6 @@ module.exports = {
   saveSessionOrder,
   forkSession,
   getProjectPath,
+  cleanupGeminiForkRelations,
   getProjectAndSessionCounts
 };

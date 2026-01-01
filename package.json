@@ -8,7 +8,7 @@
   },
   "scripts": {
     "start": "node bin/ct.js",
-    "test": "node tests/utils/app-path-manager.test.js",
+    "test": "node tests/utils/app-path-manager.test.js && node tests/trash-service.test.js",
     "build:web": "cd src/web && npm run build",
     "dev:web": "cd src/web && npm run dev",
     "dev:server": "nodemon"

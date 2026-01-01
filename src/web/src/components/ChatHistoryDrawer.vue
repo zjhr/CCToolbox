@@ -87,6 +87,7 @@ import { useResponsiveDrawer } from '../composables/useResponsiveDrawer'
 import { Chatbubbles as ChatbubblesIcon, GitBranch as GitBranchIcon, ChevronUp as ChevronUpIcon, ArrowDown as ArrowDownIcon, Close as CloseIcon } from '@vicons/ionicons5'
 import ChatMessage from './ChatMessage.vue'
 import { getSessionMessages } from '../api/sessions'
+import { getTrashMessages } from '../api/trash'
 
 const props = defineProps({
   show: {
@@ -102,6 +103,10 @@ const props = defineProps({
     required: true
   },
   sessionAlias: {
+    type: String,
+    default: ''
+  },
+  trashId: {
     type: String,
     default: ''
   },
@@ -136,7 +141,9 @@ async function loadMessages(page = 1) {
 
   try {
     loading.value = true
-    const response = await getSessionMessages(props.projectName, props.sessionId, page, 20, 'desc', props.channel)
+    const response = props.trashId
+      ? await getTrashMessages(props.projectName, props.trashId, page, 20, 'desc', props.channel)
+      : await getSessionMessages(props.projectName, props.sessionId, page, 20, 'desc', props.channel)
 
     const { messages: newMessages, metadata: meta, pagination } = response
 

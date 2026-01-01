@@ -9,6 +9,13 @@ import {
   forkSession as forkSessionApi,
   saveSessionOrder as saveSessionOrderApi
 } from '../api/sessions'
+import {
+  batchDeleteSessions,
+  getTrashList,
+  restoreSessions,
+  permanentDeleteSession,
+  emptyTrash as emptyTrashApi
+} from '../api/trash'
 
 const PROJECTS_CACHE_TTL = 30 * 1000
 const SESSIONS_CACHE_TTL = 20 * 1000
@@ -87,6 +94,10 @@ export const useSessionsStore = defineStore('sessions', () => {
   const loading = ref(false)
   const error = ref(null)
   const currentChannel = ref('claude') // 当前渠道
+  const selectionMode = ref(false)
+  const selectedSessions = ref(new Set())
+  const trashItems = ref([])
+  const trashLoading = ref(false)
 
   // Computed
   const sessionsWithAlias = computed(() => {
@@ -190,6 +201,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     try {
       await deleteSessionApi(currentProject.value, sessionId, currentChannel.value)
       sessions.value = sessions.value.filter(s => s.sessionId !== sessionId)
+      totalSize.value = sessions.value.reduce((sum, session) => sum + (session.size || 0), 0)
       if (aliases.value[sessionId]) {
         delete aliases.value[sessionId]
       }
@@ -273,6 +285,118 @@ export const useSessionsStore = defineStore('sessions', () => {
     }
   }
 
+  function enterSelectionMode() {
+    selectionMode.value = true
+    selectedSessions.value = new Set()
+  }
+
+  function exitSelectionMode() {
+    selectionMode.value = false
+    selectedSessions.value = new Set()
+  }
+
+  function toggleSelection(sessionId, checked = null) {
+    const next = new Set(selectedSessions.value)
+    if (checked === null) {
+      if (next.has(sessionId)) {
+        next.delete(sessionId)
+      } else {
+        next.add(sessionId)
+      }
+    } else if (checked) {
+      next.add(sessionId)
+    } else {
+      next.delete(sessionId)
+    }
+    selectedSessions.value = next
+  }
+
+  async function batchDelete(sessionIds = null) {
+    try {
+      const ids = sessionIds && sessionIds.length ? sessionIds : Array.from(selectedSessions.value)
+      if (!ids.length) return { success: false, deleted: 0 }
+      const result = await batchDeleteSessions(currentProject.value, ids, currentChannel.value)
+      sessions.value = sessions.value.filter(session => !ids.includes(session.sessionId))
+      totalSize.value = sessions.value.reduce((sum, session) => sum + (session.size || 0), 0)
+      ids.forEach(id => {
+        if (aliases.value[id]) {
+          delete aliases.value[id]
+        }
+      })
+      setCachedSessions(currentChannel.value, currentProject.value, {
+        sessions: sessions.value,
+        aliases: aliases.value,
+        totalSize: totalSize.value,
+        projectInfo: currentProjectInfo.value
+      })
+      selectedSessions.value = new Set()
+      selectionMode.value = false
+      return result
+    } catch (err) {
+      error.value = err.message
+      throw err
+    }
+  }
+
+  async function fetchTrash(projectName = null) {
+    trashLoading.value = true
+    try {
+      const targetProject = projectName || currentProject.value
+      if (!targetProject) {
+        trashItems.value = []
+        return { items: [], stats: { total: 0, totalSize: 0 } }
+      }
+      const data = await getTrashList(targetProject, currentChannel.value)
+      trashItems.value = data.items || []
+      return data
+    } catch (err) {
+      error.value = err.message
+      throw err
+    } finally {
+      trashLoading.value = false
+    }
+  }
+
+  async function restoreFromTrash(trashIds, aliasStrategy = null) {
+    try {
+      const result = await restoreSessions(currentProject.value, trashIds, currentChannel.value, aliasStrategy)
+      if (result.restored > 0) {
+        await fetchSessions(currentProject.value, { force: true })
+        await fetchTrash()
+      }
+      return result
+    } catch (err) {
+      error.value = err.message
+      throw err
+    }
+  }
+
+  async function deleteTrashItem(trashId) {
+    try {
+      const result = await permanentDeleteSession(currentProject.value, trashId, currentChannel.value)
+      if (result.success) {
+        trashItems.value = trashItems.value.filter(item => item.trashId !== trashId)
+      }
+      return result
+    } catch (err) {
+      error.value = err.message
+      throw err
+    }
+  }
+
+  async function emptyTrash() {
+    try {
+      const result = await emptyTrashApi(currentProject.value, currentChannel.value)
+      if (result.success) {
+        trashItems.value = []
+      }
+      return result
+    } catch (err) {
+      error.value = err.message
+      throw err
+    }
+  }
+
   return {
     projects,
     currentProject,
@@ -283,6 +407,10 @@ export const useSessionsStore = defineStore('sessions', () => {
     loading,
     error,
     currentChannel,
+    selectionMode,
+    selectedSessions,
+    trashItems,
+    trashLoading,
     sessionsWithAlias,
     setChannel,
     fetchProjects,
@@ -293,6 +421,14 @@ export const useSessionsStore = defineStore('sessions', () => {
     forkSession,
     saveProjectOrder,
     saveSessionOrder,
-    deleteProject
+    deleteProject,
+    enterSelectionMode,
+    exitSelectionMode,
+    toggleSelection,
+    batchDelete,
+    fetchTrash,
+    restoreFromTrash,
+    deleteTrashItem,
+    emptyTrash
   }
 })

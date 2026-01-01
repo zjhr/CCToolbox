@@ -500,29 +500,8 @@ function deleteSession(sessionId) {
   // 删除会话文件
   fs.unlinkSync(targetFile.filePath);
 
-  // 清理 fork 关系
-  const { getForkRelations, saveForkRelations } = require('./sessions');
-  const forkRelations = getForkRelations();
-
-  // 删除作为源的 fork 关系
-  delete forkRelations[sessionId];
-
-  // 删除所有指向该会话的 fork 关系
-  Object.keys(forkRelations).forEach(key => {
-    if (forkRelations[key] === sessionId) {
-      delete forkRelations[key];
-    }
-  });
-
-  saveForkRelations(forkRelations);
-
-  // 清理别名
-  const { deleteAlias } = require('./alias');
-  try {
-    deleteAlias(sessionId);
-  } catch (err) {
-    // 忽略别名不存在的错误
-  }
+  const { cleanupSessionRelations } = require('./sessions');
+  cleanupSessionRelations(sessionId);
 
   return { success: true };
 }

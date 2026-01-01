@@ -35,6 +35,18 @@
             </template>
             使用 openspec init 初始化项目
           </n-tooltip>
+          <n-dropdown
+            :options="clearMenuOptions"
+            trigger="click"
+            @select="handleClearMenuSelect"
+          >
+            <n-button size="small" secondary>
+              <template #icon>
+                <n-icon><TrashOutline /></n-icon>
+              </template>
+              清除历史
+            </n-button>
+          </n-dropdown>
         </div>
 
         <!-- Search Bar -->
@@ -59,7 +71,7 @@
     </div>
 
     <!-- Scrollable Content -->
-    <div class="content" ref="contentEl">
+    <div class="content" :class="{ 'selection-active': store.selectionMode }" ref="contentEl">
       <!-- Loading -->
       <div v-if="store.loading" class="loading-container">
         <n-spin size="large">
@@ -74,148 +86,193 @@
         {{ store.error }}
       </n-alert>
 
-      <!-- Sessions List with Draggable -->
-      <draggable
-      v-else-if="filteredSessions.length > 0"
-      v-model="orderedSessions"
-      item-key="sessionId"
-      handle=".drag-handle"
-      ghost-class="ghost"
-      chosen-class="chosen"
-      animation="200"
-      @end="handleDragEnd"
-    >
-      <template #item="{ element: session }">
-        <div
-          class="session-item"
-          @mouseenter="hoveredSession = session.sessionId"
-          @mouseleave="hoveredSession = null"
-          @click="handleViewChatHistory(session)"
-        >
-          <!-- Drag Handle -->
-          <div class="drag-handle">
-            <n-icon size="16" color="#999">
-              <ReorderThreeOutline />
-            </n-icon>
-          </div>
+      <template v-else>
+        <!-- Selection Bar -->
+        <div v-if="store.selectionMode" class="selection-bar">
+          <n-space align="center">
+            <n-button size="small" @click="handleExitSelection">取消</n-button>
+            <n-text depth="3">已选 {{ selectedCount }}/{{ store.sessions.length }}</n-text>
+            <n-checkbox
+              :checked="allSelected"
+              :indeterminate="indeterminate"
+              @update:checked="handleSelectAll"
+            >
+              全选
+            </n-checkbox>
+            <n-button size="small" secondary @click="clearSelection">清空选择</n-button>
+            <n-button
+              size="small"
+              type="error"
+              :disabled="selectedCount === 0"
+              @click="handleBatchDelete"
+            >
+              删除选中 ({{ selectedCount }})
+            </n-button>
+          </n-space>
+        </div>
 
-          <!-- Left Content -->
-          <div class="session-left">
-            <div class="session-icon">
-              <n-icon size="24" color="#18a058">
-                <ChatbubbleEllipsesOutline />
+        <!-- Sessions List with Draggable -->
+        <draggable
+        v-if="filteredSessions.length > 0"
+        v-model="orderedSessions"
+        item-key="sessionId"
+        handle=".drag-handle"
+        ghost-class="ghost"
+        chosen-class="chosen"
+        animation="200"
+        :disabled="store.selectionMode"
+        @end="handleDragEnd"
+      >
+        <template #item="{ element: session }">
+          <div
+            class="session-item"
+            :class="{ selected: isSelected(session.sessionId) }"
+            @mouseenter="hoveredSession = session.sessionId"
+            @mouseleave="hoveredSession = null"
+            @click="handleSessionClick(session)"
+          >
+            <div v-if="store.selectionMode" class="select-box">
+              <n-checkbox
+                :checked="isSelected(session.sessionId)"
+                @click.stop
+                @update:checked="(val) => handleSelectSession(session.sessionId, val)"
+              />
+            </div>
+            <!-- Drag Handle -->
+            <div v-if="!store.selectionMode" class="drag-handle">
+              <n-icon size="16" color="#999">
+                <ReorderThreeOutline />
               </n-icon>
             </div>
 
-            <div class="session-info">
-              <div class="session-header">
-                <div class="session-title-row">
-                  <span class="session-title">
-                    {{ session.alias ? `${session.alias} (${session.sessionId.substring(0, 8)})` : session.sessionId }}
-                  </span>
-                  <n-tooltip v-if="session.forkedFrom" placement="top">
-                    <template #trigger>
-                      <n-tag size="small" type="warning" :bordered="false" style="margin-left: 8px; cursor: help;">
-                        <template #icon>
-                          <n-icon><GitBranchOutline /></n-icon>
-                        </template>
-                        Fork
-                      </n-tag>
-                    </template>
-                    Fork 自: {{ session.forkedFrom }}
-                  </n-tooltip>
+            <!-- Left Content -->
+            <div class="session-left">
+              <div class="session-icon">
+                <n-icon size="24" color="#18a058">
+                  <ChatbubbleEllipsesOutline />
+                </n-icon>
+              </div>
+
+              <div class="session-info">
+                <div class="session-header">
+                  <div class="session-title-row">
+                    <span class="session-title">
+                      {{ session.alias ? `${session.alias} (${session.sessionId.substring(0, 8)})` : session.sessionId }}
+                    </span>
+                    <n-tooltip v-if="session.forkedFrom" placement="top">
+                      <template #trigger>
+                        <n-tag size="small" type="warning" :bordered="false" style="margin-left: 8px; cursor: help;">
+                          <template #icon>
+                            <n-icon><GitBranchOutline /></n-icon>
+                          </template>
+                          Fork
+                        </n-tag>
+                      </template>
+                      Fork 自: {{ session.forkedFrom }}
+                    </n-tooltip>
+                    <n-tag
+                      v-if="session.forkedFrom && isParentInTrash(session.forkedFrom)"
+                      size="small"
+                      type="error"
+                      :bordered="false"
+                      class="trash-tag"
+                      @click.stop="handleOpenTrashFromFork"
+                    >
+                      已在回收站
+                    </n-tag>
+                  </div>
                 </div>
+
+                <div class="session-meta">
+                  <n-text depth="3">{{ formatTime(session.mtime) }}</n-text>
+                  <n-text depth="3">•</n-text>
+                  <n-tag size="small" :bordered="false">{{ formatSize(session.size) }}</n-tag>
+                </div>
+
+                <n-text depth="3" class="session-message" v-if="session.firstMessage">
+                  {{ truncateText(session.firstMessage, 80) }}
+                </n-text>
+                <n-text depth="3" class="session-message session-message-empty" v-else-if="!session.gitBranch && !session.summary">
+                  暂未读取到对话内容
+                </n-text>
               </div>
-
-              <div class="session-meta">
-                <n-text depth="3">{{ formatTime(session.mtime) }}</n-text>
-                <n-text depth="3">•</n-text>
-                <n-tag size="small" :bordered="false">{{ formatSize(session.size) }}</n-tag>
-              </div>
-
-              <n-text depth="3" class="session-message" v-if="session.firstMessage">
-                {{ truncateText(session.firstMessage, 80) }}
-              </n-text>
-              <n-text depth="3" class="session-message session-message-empty" v-else-if="!session.gitBranch && !session.summary">
-                暂未读取到对话内容
-              </n-text>
-            </div>
-          </div>
-
-          <!-- Right Content (上下布局) -->
-          <div class="session-right">
-            <!-- 上部：分支标签区域 -->
-            <div class="session-tags-area">
-              <n-tag v-if="session.gitBranch" size="small" type="info" :bordered="false">
-                <template #icon>
-                  <n-icon><GitBranchOutline /></n-icon>
-                </template>
-                {{ session.gitBranch }}
-              </n-tag>
             </div>
 
-            <!-- 下部：操作按钮 -->
-            <div class="session-actions">
-              <n-space>
-                <n-button
-                  v-show="hoveredSession === session.sessionId"
-                  size="small"
-                  type="error"
-                  @click.stop="handleDelete(session.sessionId)"
-                >
-                  <template #icon>
-                    <n-icon><TrashOutline /></n-icon>
-                  </template>
-                  删除
-                </n-button>
-                <n-button size="small" @click.stop="handleSetAlias(session)">
-                  <template #icon>
-                    <n-icon><CreateOutline /></n-icon>
-                  </template>
-                  别名
-                </n-button>
-                <n-button
-                  size="small"
-                  :type="isFavorite(currentChannel, projectName, session.sessionId) ? 'warning' : 'default'"
-                  @click.stop="handleToggleFavorite(session)"
-                >
-                  <template #icon>
-                    <n-icon>
-                      <Star v-if="isFavorite(currentChannel, projectName, session.sessionId)" />
-                      <StarOutline v-else />
-                    </n-icon>
-                  </template>
-                  {{ isFavorite(currentChannel, projectName, session.sessionId) ? '已收藏' : '收藏' }}
-                </n-button>
-                <n-button size="small" @click.stop="handleFork(session.sessionId)">
+            <!-- Right Content (上下布局) -->
+            <div class="session-right">
+              <!-- 上部：分支标签区域 -->
+              <div class="session-tags-area">
+                <n-tag v-if="session.gitBranch" size="small" type="info" :bordered="false">
                   <template #icon>
                     <n-icon><GitBranchOutline /></n-icon>
                   </template>
-                  Fork
-                </n-button>
-                <n-button size="small" type="primary" @click.stop="handleLaunchTerminal(session.sessionId)">
-                  <template #icon>
-                    <n-icon><TerminalOutline /></n-icon>
-                  </template>
-                  使用对话
-                </n-button>
-              </n-space>
+                  {{ session.gitBranch }}
+                </n-tag>
+              </div>
+
+              <!-- 下部：操作按钮 -->
+              <div v-if="!store.selectionMode" class="session-actions">
+                <n-space>
+                  <n-button
+                    v-show="hoveredSession === session.sessionId"
+                    size="small"
+                    type="error"
+                    @click.stop="handleDelete(session.sessionId)"
+                  >
+                    <template #icon>
+                      <n-icon><TrashOutline /></n-icon>
+                    </template>
+                    删除
+                  </n-button>
+                  <n-button size="small" @click.stop="handleSetAlias(session)">
+                    <template #icon>
+                      <n-icon><CreateOutline /></n-icon>
+                    </template>
+                    别名
+                  </n-button>
+                  <n-button
+                    size="small"
+                    :type="isFavorite(currentChannel, projectName, session.sessionId) ? 'warning' : 'default'"
+                    @click.stop="handleToggleFavorite(session)"
+                  >
+                    <template #icon>
+                      <n-icon>
+                        <Star v-if="isFavorite(currentChannel, projectName, session.sessionId)" />
+                        <StarOutline v-else />
+                      </n-icon>
+                    </template>
+                    {{ isFavorite(currentChannel, projectName, session.sessionId) ? '已收藏' : '收藏' }}
+                  </n-button>
+                  <n-button size="small" @click.stop="handleFork(session.sessionId)">
+                    <template #icon>
+                      <n-icon><GitBranchOutline /></n-icon>
+                    </template>
+                    Fork
+                  </n-button>
+                  <n-button size="small" type="primary" @click.stop="handleLaunchTerminal(session.sessionId)">
+                    <template #icon>
+                      <n-icon><TerminalOutline /></n-icon>
+                    </template>
+                    使用对话
+                  </n-button>
+                </n-space>
+              </div>
             </div>
           </div>
-        </div>
-      </template>
-    </draggable>
-
-      <!-- Empty State -->
-      <n-empty
-        v-else
-        description="没有找到会话"
-        style="margin-top: 60px;"
-      >
-        <template #icon>
-          <n-icon><DocumentTextOutline /></n-icon>
         </template>
-      </n-empty>
+      </draggable>
+
+        <!-- Empty State -->
+        <n-empty
+          v-else
+          description="没有找到会话"
+          style="margin-top: 60px;"
+        >
+          <template #icon>
+            <n-icon><DocumentTextOutline /></n-icon>
+          </template>
+        </n-empty>
+      </template>
     </div>
 
     <!-- Alias Dialog -->
@@ -232,6 +289,29 @@
         </n-space>
       </template>
     </n-modal>
+
+    <DeleteConfirmModal
+      v-model:visible="showDeleteConfirm"
+      :sessions="pendingDeleteSessions"
+      @confirm="confirmBatchDelete"
+      @cancel="handleCancelBatchDelete"
+    />
+
+    <TrashModal
+      v-model:visible="showTrashModal"
+      :items="store.trashItems"
+      :loading="store.trashLoading"
+      @restore="handleRestoreTrash"
+      @permanent-delete="handlePermanentDelete"
+      @view="handleViewTrashItem"
+      @empty-trash="handleEmptyTrash"
+    />
+
+    <AliasConflictModal
+      v-model:visible="showAliasConflictModal"
+      :conflicts="aliasConflicts"
+      @resolve="handleAliasConflictResolve"
+    />
 
     <!-- Search Results Dialog -->
     <n-modal v-model:show="showSearchResults" preset="card" title="搜索结果" style="width: 1200px;">
@@ -275,6 +355,7 @@
       :project-name="props.projectName"
       :session-id="selectedSessionId"
       :session-alias="selectedSessionAlias"
+      :trash-id="selectedTrashId"
       :channel="currentChannel"
       @error="handleChatHistoryError"
     />
@@ -290,16 +371,17 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick, h } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
   NButton, NIcon, NH2, NText, NInput, NSpin, NAlert, NEmpty,
-  NTag, NSpace, NModal, NTooltip
+  NTag, NSpace, NModal, NTooltip, NDropdown, NCheckbox
 } from 'naive-ui'
 import {
   ArrowBackOutline, SearchOutline, DocumentTextOutline,
   ChatbubbleEllipsesOutline, GitBranchOutline, CreateOutline, TrashOutline,
-  ReorderThreeOutline, TerminalOutline, StarOutline, Star
+  ReorderThreeOutline, TerminalOutline, StarOutline, Star, TimeOutline,
+  CheckmarkCircleOutline, ArchiveOutline
 } from '@vicons/ionicons5'
 import draggable from 'vuedraggable'
 import { useSessionsStore } from '../stores/sessions'
@@ -308,6 +390,9 @@ import message, { dialog } from '../utils/message'
 import { searchSessions as searchSessionsApi, launchTerminal } from '../api/sessions'
 import ChatHistoryDrawer from '../components/ChatHistoryDrawer.vue'
 import OpenSpecDrawer from '../components/openspecui/OpenSpecDrawer.vue'
+import TrashModal from '../components/TrashModal.vue'
+import DeleteConfirmModal from '../components/DeleteConfirmModal.vue'
+import AliasConflictModal from '../components/AliasConflictModal.vue'
 
 const props = defineProps({
   projectName: {
@@ -335,6 +420,13 @@ const showSearchResults = ref(false)
 const contentEl = ref(null)
 const searching = ref(false)
 const showOpenSpecDrawer = ref(false)
+const showTrashModal = ref(false)
+const showDeleteConfirm = ref(false)
+const pendingDeleteSessions = ref([])
+const showAliasConflictModal = ref(false)
+const aliasConflicts = ref([])
+const pendingRestoreTrashIds = ref([])
+const selectedTrashId = ref('')
 
 // Chat history drawer state
 const showChatHistory = ref(false)
@@ -356,6 +448,11 @@ const hasOpenSpec = computed(() => {
   return Boolean(store.currentProjectInfo?.hasOpenSpec)
 })
 
+function renderIcon(icon) {
+  return () => h(NIcon, null, { default: () => h(icon) })
+}
+
+
 // Sync with store
 watch(() => store.sessionsWithAlias, (newSessions) => {
   orderedSessions.value = [...newSessions]
@@ -375,6 +472,44 @@ const filteredSessions = computed(() => {
   })
 })
 
+const selectedCount = computed(() => store.selectedSessions.size)
+const allSelected = computed(() => {
+  if (filteredSessions.value.length === 0) return false
+  return store.selectedSessions.size === filteredSessions.value.length
+})
+const indeterminate = computed(() => {
+  return store.selectedSessions.size > 0 && store.selectedSessions.size < filteredSessions.value.length
+})
+const trashCount = computed(() => store.trashItems.length)
+const trashSessionIds = computed(() => new Set(store.trashItems.map(item => item.sessionId)))
+
+const clearMenuOptions = computed(() => ([
+  {
+    label: '选择模式',
+    key: 'select',
+    icon: renderIcon(CheckmarkCircleOutline)
+  },
+  {
+    label: '清理30天前',
+    key: 'clear-30',
+    icon: renderIcon(TimeOutline)
+  },
+  {
+    label: '清空所有会话',
+    key: 'clear',
+    icon: renderIcon(TrashOutline)
+  },
+  { type: 'divider' },
+  {
+    label: () => h('span', { class: 'trash-option' }, [
+      h('span', null, `回收站 (${trashCount.value})`),
+      trashCount.value > 0 ? h('span', { class: 'trash-option-dot' }) : null
+    ]),
+    key: 'trash',
+    icon: renderIcon(ArchiveOutline)
+  }
+]))
+
 function goBack() {
   const channel = route.meta.channel || 'claude'
   router.push({ name: `${channel}-projects` })
@@ -383,6 +518,45 @@ function goBack() {
 function handleOpenSpec() {
   if (!hasOpenSpec.value) return
   showOpenSpecDrawer.value = true
+}
+
+async function handleClearMenuSelect(key) {
+  if (key === 'select') {
+    store.enterSelectionMode()
+    return
+  }
+  if (key === 'clear-30') {
+    handleClearOlderThan(30)
+    return
+  }
+  if (key === 'clear') {
+    if (store.sessions.length === 0) {
+      message.info('当前没有可清理的会话')
+      return
+    }
+    pendingDeleteSessions.value = [...store.sessionsWithAlias]
+    showDeleteConfirm.value = true
+    return
+  }
+  if (key === 'trash') {
+    await openTrashModal()
+  }
+}
+
+function handleClearOlderThan(days) {
+  const threshold = Date.now() - days * 24 * 60 * 60 * 1000
+  const targets = store.sessionsWithAlias.filter(session => {
+    const time = new Date(session.mtime).getTime()
+    return Number.isFinite(time) && time < threshold
+  })
+
+  if (targets.length === 0) {
+    message.info(`没有超过 ${days} 天的会话`)
+    return
+  }
+
+  pendingDeleteSessions.value = targets
+  showDeleteConfirm.value = true
 }
 
 async function handleSearch() {
@@ -404,6 +578,30 @@ async function handleSearch() {
 async function handleDragEnd() {
   const order = orderedSessions.value.map(s => s.sessionId)
   await store.saveSessionOrder(order)
+}
+
+function handleExitSelection() {
+  store.exitSelectionMode()
+}
+
+function handleSelectSession(sessionId, checked) {
+  store.toggleSelection(sessionId, checked)
+}
+
+function handleSelectAll(checked) {
+  if (checked) {
+    store.selectedSessions = new Set(filteredSessions.value.map(session => session.sessionId))
+  } else {
+    store.selectedSessions = new Set()
+  }
+}
+
+function clearSelection() {
+  store.selectedSessions = new Set()
+}
+
+function isSelected(sessionId) {
+  return store.selectedSessions.has(sessionId)
 }
 
 function handleSetAlias(session) {
@@ -441,10 +639,19 @@ async function handleFork(sessionId) {
   }
 }
 
+function handleSessionClick(session) {
+  if (store.selectionMode) {
+    store.toggleSelection(session.sessionId)
+    return
+  }
+  handleViewChatHistory(session)
+}
+
 // View chat history
 function handleViewChatHistory(session) {
   selectedSessionId.value = session.sessionId
   selectedSessionAlias.value = session.alias || ''
+  selectedTrashId.value = ''
   showChatHistory.value = true
   nextTick(() => {
     chatHistoryRef.value?.open()
@@ -470,17 +677,139 @@ async function handleLaunchTerminal(sessionId) {
 }
 
 function handleDelete(sessionId) {
+  const target = store.sessionsWithAlias.find(session => session.sessionId === sessionId)
+  if (!target) return
+  pendingDeleteSessions.value = [target]
+  showDeleteConfirm.value = true
+}
+
+function handleBatchDelete() {
+  if (store.selectedSessions.size === 0) return
+  const selectedIds = new Set(store.selectedSessions)
+  pendingDeleteSessions.value = store.sessionsWithAlias.filter(session => selectedIds.has(session.sessionId))
+  showDeleteConfirm.value = true
+}
+
+function handleCancelBatchDelete() {
+  showDeleteConfirm.value = false
+  pendingDeleteSessions.value = []
+}
+
+async function confirmBatchDelete() {
+  const ids = pendingDeleteSessions.value.map(session => session.sessionId)
+  if (ids.length === 0) return
+  try {
+    const result = await store.batchDelete(ids)
+    await store.fetchTrash()
+    if (result.failed) {
+      message.warning(`部分会话删除失败：成功 ${result.deleted}，失败 ${result.failed}`)
+    } else {
+      message.success('会话已移入回收站')
+    }
+    showDeleteConfirm.value = false
+    pendingDeleteSessions.value = []
+  } catch (err) {
+    message.error('删除失败: ' + err.message)
+  }
+}
+
+async function openTrashModal() {
+  showTrashModal.value = true
+  try {
+    await store.fetchTrash(props.projectName)
+  } catch (err) {
+    message.error('回收站加载失败: ' + err.message)
+  }
+}
+
+function handleOpenTrashFromFork() {
+  openTrashModal()
+}
+
+function isParentInTrash(sessionId) {
+  return trashSessionIds.value.has(sessionId)
+}
+
+function handleViewTrashItem(trashId) {
+  const target = store.trashItems.find(item => item.trashId === trashId)
+  if (!target) {
+    message.error('未找到回收站会话')
+    return
+  }
+  selectedSessionId.value = target.sessionId
+  selectedSessionAlias.value = target.alias || ''
+  selectedTrashId.value = trashId
+  showChatHistory.value = true
+  nextTick(() => {
+    chatHistoryRef.value?.open()
+  })
+}
+
+async function handleRestoreTrash(trashIds) {
+  try {
+    const result = await store.restoreFromTrash(trashIds)
+    if (result.conflicts && result.conflicts.length > 0) {
+      aliasConflicts.value = result.conflicts
+      pendingRestoreTrashIds.value = result.conflicts.map(conflict => conflict.trashId)
+      showAliasConflictModal.value = true
+      return
+    }
+    message.success('会话已恢复')
+  } catch (err) {
+    message.error('恢复失败: ' + err.message)
+  }
+}
+
+async function handleAliasConflictResolve(strategy) {
+  try {
+    const result = await store.restoreFromTrash(pendingRestoreTrashIds.value, strategy)
+    if (result.success) {
+      message.success('会话已恢复')
+    } else {
+      message.warning('仍有别名冲突未解决')
+    }
+  } catch (err) {
+    message.error('恢复失败: ' + err.message)
+  } finally {
+    showAliasConflictModal.value = false
+    aliasConflicts.value = []
+    pendingRestoreTrashIds.value = []
+  }
+}
+
+function handlePermanentDelete(trashId) {
   dialog.warning({
-    title: '删除会话',
-    content: '确定要删除这个会话吗？此操作不可恢复！',
+    title: '永久删除',
+    content: '确定要永久删除该会话吗？此操作不可恢复。',
     positiveText: '确定删除',
     negativeText: '取消',
     onPositiveClick: async () => {
       try {
-        await store.deleteSession(sessionId)
-        message.success('会话已删除')
+        const result = await store.deleteTrashItem(trashId)
+        if (result.success) {
+          message.success('已永久删除')
+        } else {
+          message.warning('删除失败')
+        }
       } catch (err) {
         message.error('删除失败: ' + err.message)
+      }
+    }
+  })
+}
+
+function handleEmptyTrash() {
+  dialog.warning({
+    title: '清空回收站',
+    content: '确定要清空回收站吗？此操作不可恢复。',
+    positiveText: '确定清空',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await store.emptyTrash()
+        message.success('回收站已清空')
+      } catch (err) {
+        message.error('清空失败: ' + err.message)
       }
     }
   })
@@ -576,10 +905,23 @@ async function refreshDataWithScrollPreservation() {
 // }
 
 // 监听 channel 变化
-watch(currentChannel, (newChannel) => {
+watch(currentChannel, async (newChannel) => {
   store.setChannel(newChannel)
-  store.fetchSessions(props.projectName)
+  try {
+    await store.fetchSessions(props.projectName)
+    await store.fetchTrash(props.projectName)
+  } catch (err) {
+    // 由 store.error 统一处理
+  }
 }, { immediate: true })
+
+watch(() => props.projectName, (newProject) => {
+  if (!newProject) return
+  store.fetchSessions(newProject, { force: true }).then(() => {
+    store.fetchTrash(newProject).catch(() => {})
+  }).catch(() => {})
+  store.exitSelectionMode()
+})
 
 onMounted(() => {
   // 【暂时移除】添加事件监听 - 每次切换回来就刷新，体验不好
@@ -614,6 +956,10 @@ onUnmounted(() => {
   flex: 1;
   overflow-y: auto;
   padding: 16px 24px 24px 24px;
+}
+
+.content.selection-active {
+  padding-top: 0;
 }
 
 .back-button {
@@ -664,6 +1010,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   flex-shrink: 0;
+  gap: 8px;
 }
 
 .openspec-button-wrapper {
@@ -682,6 +1029,28 @@ onUnmounted(() => {
   min-height: 400px;
 }
 
+.selection-bar {
+  padding: 10px 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  margin-bottom: 12px;
+  position: sticky;
+  top: 8px;
+  z-index: 5;
+}
+
+.selection-bar::before {
+  content: '';
+  position: absolute;
+  top: -9px;
+  left: -1px;
+  right: -1px;
+  height: 8px;
+  background: var(--bg-primary);
+  pointer-events: none;
+}
+
 /* Session Item */
 .session-item {
   display: flex;
@@ -694,6 +1063,17 @@ onUnmounted(() => {
   margin-bottom: 8px;
   transition: all 0.2s;
   cursor: pointer;
+}
+
+.session-item.selected {
+  border-color: #4f7cff;
+  background: #f6f8ff;
+}
+
+.select-box {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
 }
 
 .session-item:hover {
@@ -748,6 +1128,24 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.trash-tag {
+  margin-left: 6px;
+  cursor: pointer;
+}
+
+.trash-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.trash-option-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #f0a020;
 }
 
 .session-title {

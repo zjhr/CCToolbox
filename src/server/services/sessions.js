@@ -4,7 +4,7 @@ const os = require('os');
 const crypto = require('crypto');
 const { getAllSessions, parseSessionInfoFast } = require('../../utils/session');
 const { getAppDir } = require('../../utils/app-path-manager');
-const { loadAliases } = require('./alias');
+const { loadAliases, deleteAlias } = require('./alias');
 const {
   getCachedProjects,
   setCachedProjects,
@@ -494,6 +494,7 @@ function deleteSession(config, projectName, sessionId) {
   }
 
   fs.unlinkSync(sessionFile);
+  cleanupSessionRelations(sessionId);
   invalidateProjectsCache(config);
   return { success: true };
 }
@@ -735,6 +736,65 @@ function searchSessionsAcrossProjects(config, keyword, contextLength = 35) {
   return allResults;
 }
 
+// 清理会话关联数据：别名、Fork 关系、排序
+function cleanupSessionRelations(sessionId) {
+  if (!sessionId) return;
+
+  // 清理 fork 关系
+  const forkRelations = getForkRelations();
+  let forkRelationsModified = false;
+
+  if (forkRelations[sessionId]) {
+    delete forkRelations[sessionId];
+    forkRelationsModified = true;
+  }
+
+  Object.keys(forkRelations).forEach(key => {
+    if (forkRelations[key] === sessionId) {
+      delete forkRelations[key];
+      forkRelationsModified = true;
+    }
+  });
+
+  if (forkRelationsModified) {
+    saveForkRelations(forkRelations);
+  }
+
+  // 清理别名
+  try {
+    deleteAlias(sessionId);
+  } catch (err) {
+    // 忽略别名不存在或读取失败
+  }
+
+  // 清理会话排序
+  const orderFile = getSessionOrderFilePath();
+  if (!fs.existsSync(orderFile)) {
+    return;
+  }
+
+  try {
+    const raw = fs.readFileSync(orderFile, 'utf8');
+    const allOrders = JSON.parse(raw) || {};
+    let orderModified = false;
+
+    Object.keys(allOrders).forEach(projectKey => {
+      const order = Array.isArray(allOrders[projectKey]) ? allOrders[projectKey] : [];
+      const filtered = order.filter(id => id !== sessionId);
+      if (filtered.length !== order.length) {
+        allOrders[projectKey] = filtered;
+        orderModified = true;
+      }
+    });
+
+    if (orderModified) {
+      fs.writeFileSync(orderFile, JSON.stringify(allOrders, null, 2), 'utf8');
+    }
+  } catch (err) {
+    // 忽略排序文件异常
+  }
+}
+
 module.exports = {
   getProjects,
   getProjectsWithStats,
@@ -750,6 +810,7 @@ module.exports = {
   parseRealProjectPath,
   searchSessions,
   searchSessionsAcrossProjects,
+  cleanupSessionRelations,
   getForkRelations,
   saveForkRelations,
   hasActualMessages,

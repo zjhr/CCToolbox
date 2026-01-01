@@ -14,6 +14,7 @@ const { startProxyServer } = require('./proxy-server');
 const { startCodexProxyServer } = require('./codex-proxy-server');
 const { startGeminiProxyServer } = require('./gemini-proxy-server');
 const { getAppDir } = require('../utils/app-path-manager');
+const { startTrashCleanup } = require('./services/trash');
 
 async function startServer(port) {
   const config = loadConfig();
@@ -123,11 +124,13 @@ async function startServer(port) {
   app.use('/api/env', require('./api/env'));
   app.use('/api/skills', require('./api/skills'));
   app.use('/api/openspec', require('./api/openspec')());
+  app.use('/api/trash', require('./api/trash')(config));
   const claudeHooks = require('./api/claude-hooks');
   app.use('/api/claude/hooks', claudeHooks);
 
   // 初始化 Claude hooks 配置（仅在用户明确启用时写入）
   claudeHooks.initDefaultHooks();
+  startTrashCleanup();
 
   // Serve static files in production
   const distPath = path.join(__dirname, '../../dist/web');
