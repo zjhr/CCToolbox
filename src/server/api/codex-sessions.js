@@ -127,6 +127,9 @@ module.exports = (config) => {
       const hasOpenSpec = projectMeta?.fullPath && path.isAbsolute(projectMeta.fullPath)
         ? fs.existsSync(path.join(projectMeta.fullPath, 'openspec'))
         : false;
+      const hasSerena = projectMeta?.fullPath && path.isAbsolute(projectMeta.fullPath)
+        ? fs.existsSync(path.join(projectMeta.fullPath, '.serena'))
+        : false;
 
       res.json({
         sessions,
@@ -136,7 +139,8 @@ module.exports = (config) => {
           name: projectName,
           fullPath,
           displayName: projectName,
-          hasOpenSpec
+          hasOpenSpec,
+          hasSerena
         }
       });
     } catch (err) {

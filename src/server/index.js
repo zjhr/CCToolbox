@@ -124,6 +124,7 @@ async function startServer(port) {
   app.use('/api/env', require('./api/env'));
   app.use('/api/skills', require('./api/skills'));
   app.use('/api/openspec', require('./api/openspec')());
+  app.use('/api/serena', require('./api/serena')());
   app.use('/api/trash', require('./api/trash')(config));
   const claudeHooks = require('./api/claude-hooks');
   app.use('/api/claude/hooks', claudeHooks);

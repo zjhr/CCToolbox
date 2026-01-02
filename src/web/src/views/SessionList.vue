@@ -35,6 +35,19 @@
             </template>
             使用 openspec init 初始化项目
           </n-tooltip>
+          <n-tooltip :disabled="hasSerena">
+            <template #trigger>
+              <span class="serena-button-wrapper">
+                <n-button size="small" secondary :disabled="!hasSerena" @click="handleOpenSerena">
+                  <template #icon>
+                    <n-icon><SparklesOutline /></n-icon>
+                  </template>
+                  Serena
+                </n-button>
+              </span>
+            </template>
+            使用 serena init 初始化项目
+          </n-tooltip>
           <n-dropdown
             :options="clearMenuOptions"
             trigger="click"
@@ -367,6 +380,14 @@
       :project-path="store.currentProjectInfo?.fullPath || ''"
       :channel="currentChannel"
     />
+
+    <!-- Serena Drawer -->
+    <SerenaDrawer
+      v-model:show="showSerenaDrawer"
+      :project-name="projectDisplayName"
+      :project-path="store.currentProjectInfo?.fullPath || ''"
+      :channel="currentChannel"
+    />
   </div>
 </template>
 
@@ -381,7 +402,7 @@ import {
   ArrowBackOutline, SearchOutline, DocumentTextOutline,
   ChatbubbleEllipsesOutline, GitBranchOutline, CreateOutline, TrashOutline,
   ReorderThreeOutline, TerminalOutline, StarOutline, Star, TimeOutline,
-  CheckmarkCircleOutline, ArchiveOutline
+  CheckmarkCircleOutline, ArchiveOutline, SparklesOutline
 } from '@vicons/ionicons5'
 import draggable from 'vuedraggable'
 import { useSessionsStore } from '../stores/sessions'
@@ -390,6 +411,7 @@ import message, { dialog } from '../utils/message'
 import { searchSessions as searchSessionsApi, launchTerminal } from '../api/sessions'
 import ChatHistoryDrawer from '../components/ChatHistoryDrawer.vue'
 import OpenSpecDrawer from '../components/openspecui/OpenSpecDrawer.vue'
+import SerenaDrawer from '../components/serenaui/SerenaDrawer.vue'
 import TrashModal from '../components/TrashModal.vue'
 import DeleteConfirmModal from '../components/DeleteConfirmModal.vue'
 import AliasConflictModal from '../components/AliasConflictModal.vue'
@@ -420,6 +442,7 @@ const showSearchResults = ref(false)
 const contentEl = ref(null)
 const searching = ref(false)
 const showOpenSpecDrawer = ref(false)
+const showSerenaDrawer = ref(false)
 const showTrashModal = ref(false)
 const showDeleteConfirm = ref(false)
 const pendingDeleteSessions = ref([])
@@ -446,6 +469,10 @@ const displayProjectPath = computed(() => {
 
 const hasOpenSpec = computed(() => {
   return Boolean(store.currentProjectInfo?.hasOpenSpec)
+})
+
+const hasSerena = computed(() => {
+  return Boolean(store.currentProjectInfo?.hasSerena)
 })
 
 function renderIcon(icon) {
@@ -518,6 +545,11 @@ function goBack() {
 function handleOpenSpec() {
   if (!hasOpenSpec.value) return
   showOpenSpecDrawer.value = true
+}
+
+function handleOpenSerena() {
+  if (!hasSerena.value) return
+  showSerenaDrawer.value = true
 }
 
 async function handleClearMenuSelect(key) {
@@ -1015,6 +1047,10 @@ onUnmounted(() => {
 }
 
 .openspec-button-wrapper {
+  display: inline-flex;
+}
+
+.serena-button-wrapper {
   display: inline-flex;
 }
 

@@ -30,6 +30,7 @@ build/
 .gemini-home
 openspec
 CLAUDE.md
+__pycache__
 
 # Temporary files
 tmp/

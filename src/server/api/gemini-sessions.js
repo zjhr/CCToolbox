@@ -97,6 +97,7 @@ module.exports = (config) => {
       const displayName = realPath ? path.basename(realPath) : `Project ${projectHash.substring(0, 8)}`;
       const fullPath = realPath || projectHash;
       const hasOpenSpec = realPath ? fs.existsSync(path.join(realPath, 'openspec')) : false;
+      const hasSerena = realPath ? fs.existsSync(path.join(realPath, '.serena')) : false;
 
       res.json({
         sessions,
@@ -107,7 +108,8 @@ module.exports = (config) => {
           fullPath,
           path: fullPath,
           displayName,
-          hasOpenSpec
+          hasOpenSpec,
+          hasSerena
         }
       });
     } catch (err) {
