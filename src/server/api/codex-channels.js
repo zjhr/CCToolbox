@@ -7,7 +7,9 @@ const {
   deleteChannel,
   getEnabledChannels,
   saveChannelOrder,
-  applyChannelToSettings
+  applyChannelToSettings,
+  writeCodexConfigForSingleChannel,
+  getCurrentChannel
 } = require('../services/codex-channels');
 const { getSchedulerState } = require('../services/channel-scheduler');
 const { getChannelHealthStatus, resetChannelHealth } = require('../services/channel-health');
@@ -53,7 +55,7 @@ module.exports = (config) => {
         return res.status(404).json({ error: 'Codex CLI not installed' });
       }
 
-      const { name, providerKey, baseUrl, apiKey, websiteUrl, enabled, weight, maxConcurrency } = req.body;
+      const { name, providerKey, baseUrl, apiKey, websiteUrl, enabled, weight, maxConcurrency, modelName } = req.body;
 
       if (!name || !providerKey || !baseUrl || !apiKey) {
         return res.status(400).json({ error: 'Missing required fields' });
@@ -64,7 +66,8 @@ module.exports = (config) => {
         websiteUrl,
         enabled,
         weight,
-        maxConcurrency
+        maxConcurrency,
+        modelName
       });
       res.json(channel);
       broadcastSchedulerState('codex', getSchedulerState('codex'));
@@ -155,6 +158,46 @@ module.exports = (config) => {
     } catch (err) {
       console.error('[Codex Channels API] Failed to get enabled channels:', err);
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  /**
+   * POST /api/codex/channels/:channelId/write-config
+   * 写入单个渠道配置
+   */
+  router.post('/:channelId/write-config', (req, res) => {
+    try {
+      if (!isCodexInstalled()) {
+        return res.status(404).json({ error: 'Codex CLI not installed' });
+      }
+
+      const { channelId } = req.params;
+      const channel = writeCodexConfigForSingleChannel(channelId);
+      res.json({
+        message: `已将 (${channel.name}) 渠道写入配置文件中`,
+        channel
+      });
+    } catch (error) {
+      console.error('[Codex Channels API] Error writing channel config:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  /**
+   * GET /api/codex/channels/current
+   * 获取当前使用渠道
+   */
+  router.get('/current', (req, res) => {
+    try {
+      if (!isCodexInstalled()) {
+        return res.json({ channel: null });
+      }
+
+      const channel = getCurrentChannel();
+      res.json({ channel });
+    } catch (error) {
+      console.error('[Codex Channels API] Error fetching current channel:', error);
+      res.status(500).json({ error: error.message });
     }
   });
 

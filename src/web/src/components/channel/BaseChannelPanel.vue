@@ -173,7 +173,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import {
   NButton,
   NIcon,
@@ -203,7 +203,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['open-website'])
+const emit = defineEmits(['open-website', 'clear-config-state'])
 
 const configFactory = channelPanelFactories[props.type] || channelPanelFactories.claude
 const config = configFactory()
@@ -282,6 +282,10 @@ const searchResultText = computed(() => {
   if (!hasSearchQuery.value) return ''
   return `已找到 ${filteredChannels.value.length} 个渠道`
 })
+const canClearConfig = computed(() => Boolean(state.currentChannelId))
+watch(canClearConfig, (value) => {
+  emit('clear-config-state', value)
+}, { immediate: true })
 
 // 预设选项（仅 Claude 有）
 const presetOptions = computed(() => {
@@ -356,6 +360,7 @@ function getValidationMessage(key) {
 
 const helpers = {
   getChannelInflight,
+  getCurrentChannelId: () => state.currentChannelId,
   formatFreeze: (remaining) => `冻结 ${remaining || 0}s`,
   maskApiKey: (key) => {
     if (!key) return '(未设置)'
@@ -414,7 +419,9 @@ function buildFieldProps(field) {
 defineExpose({
   openAddDialog: actions.openAddDialog,
   refresh: actions.loadChannels,
-  toggleAllCollapse: actions.toggleAllCollapse
+  toggleAllCollapse: actions.toggleAllCollapse,
+  clearConfig: actions.handleClearConfig,
+  canClearConfig: () => canClearConfig.value
 })
 </script>
 

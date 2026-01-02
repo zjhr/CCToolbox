@@ -11,6 +11,11 @@ export async function getCurrentChannel() {
   return response.data
 }
 
+export async function getCurrentClaudeChannel() {
+  const response = await client.get('/channels/current')
+  return response.data
+}
+
 export async function createChannel(name, baseUrl, apiKey, websiteUrl, extra = {}) {
   const payload = {
     name,
@@ -96,6 +101,16 @@ export async function applyCodexChannelToSettings(channelId) {
   return response.data
 }
 
+export async function writeCodexConfig(channelId) {
+  const response = await client.post(`/codex/channels/${channelId}/write-config`)
+  return response.data
+}
+
+export async function getCurrentCodexChannel() {
+  const response = await client.get('/codex/channels/current')
+  return response.data
+}
+
 export async function resetCodexChannelHealth(channelId) {
   const response = await client.post(`/codex/channels/${channelId}/reset-health`)
   return response.data
@@ -146,6 +161,21 @@ export async function saveGeminiChannelOrder(order) {
 
 export async function resetGeminiChannelHealth(channelId) {
   const response = await client.post(`/gemini/channels/${channelId}/reset-health`)
+  return response.data
+}
+
+export async function writeGeminiConfig(channelId) {
+  const response = await client.post(`/gemini/channels/${channelId}/write-config`)
+  return response.data
+}
+
+export async function clearGeminiConfig() {
+  const response = await client.post('/gemini/channels/clear-config')
+  return response.data
+}
+
+export async function getCurrentGeminiChannel() {
+  const response = await client.get('/gemini/channels/current')
   return response.data
 }
 

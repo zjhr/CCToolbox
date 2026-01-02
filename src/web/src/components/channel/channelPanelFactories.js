@@ -4,6 +4,7 @@ import {
   updateChannel as updateClaudeChannel,
   deleteChannel as deleteClaudeChannel,
   applyChannelToSettings,
+  getCurrentClaudeChannel,
   resetChannelHealth,
   testClaudeChannelSpeed,
   testCodexChannelSpeed,
@@ -19,7 +20,8 @@ import {
   createCodexChannel,
   updateCodexChannel,
   deleteCodexChannel,
-  applyCodexChannelToSettings,
+  writeCodexConfig,
+  getCurrentCodexChannel,
   resetCodexChannelHealth,
 } from "../../api/channels";
 import {
@@ -27,6 +29,9 @@ import {
   createGeminiChannel,
   updateGeminiChannel,
   deleteGeminiChannel,
+  writeGeminiConfig,
+  clearGeminiConfig,
+  getCurrentGeminiChannel,
   resetGeminiChannelHealth,
 } from "../../api/channels";
 
@@ -74,6 +79,21 @@ function validateProviderKey(value) {
     return "字母、数字、短横线组合，例如 openai";
   }
   return "";
+}
+
+function buildActiveTag(channel, helpers) {
+  const currentChannelId = typeof helpers.getCurrentChannelId === "function"
+    ? helpers.getCurrentChannelId()
+    : null;
+  if (currentChannelId && channel.id === currentChannelId) {
+    return {
+      text: "✓ 正在使用",
+      type: "success",
+      color: { color: "#18a058", textColor: "#ffffff" },
+      ariaLabel: "当前正在使用的渠道",
+    };
+  }
+  return null;
 }
 
 const baseSections = {
@@ -292,6 +312,9 @@ const channelPanelFactories = {
         const data = await fetchClaudeChannels();
         return data.channels || [];
       },
+      getCurrentChannel: async () => {
+        return getCurrentClaudeChannel();
+      },
       create: async (form) => {
         await createClaudeChannel(
           form.name,
@@ -335,6 +358,10 @@ const channelPanelFactories = {
     },
     getHeaderTags: (channel, helpers) => {
       const tags = [];
+      const activeTag = buildActiveTag(channel, helpers);
+      if (activeTag) {
+        tags.push(activeTag);
+      }
       if (channel.health?.status === "frozen") {
         tags.push({
           text: helpers.formatFreeze(channel.health.freezeRemaining),
@@ -427,16 +454,31 @@ const channelPanelFactories = {
         ],
       },
       {
+        title: "模型配置",
+        fields: [
+          {
+            key: "modelName",
+            label: "模型名称",
+            type: "text",
+            required: true,
+            placeholder: "请输入模型名称",
+            validate: (value) => validateRequired("模型名称", value),
+          },
+        ],
+      },
+      {
         title: "调度配置",
         fields: baseSections.schedule,
       },
     ],
+    applyConfirmContent: "写入配置会同步当前渠道配置到 config.toml，是否继续？",
     getInitialForm: () => ({
       name: "",
       providerKey: "",
       baseUrl: "",
       apiKey: "",
       websiteUrl: "",
+      modelName: "gpt-5.2-codex",
       maxConcurrency: null,
       weight: 1,
       enabled: true,
@@ -447,6 +489,7 @@ const channelPanelFactories = {
       baseUrl: channel.baseUrl || "",
       apiKey: channel.apiKey || "",
       websiteUrl: channel.websiteUrl || "",
+      modelName: channel.modelName || "gpt-5.2-codex",
       maxConcurrency: channel.maxConcurrency ?? null,
       weight: channel.weight || 1,
       enabled: channel.enabled !== false,
@@ -456,6 +499,9 @@ const channelPanelFactories = {
       fetch: async () => {
         const data = await getCodexChannels();
         return data.channels || [];
+      },
+      getCurrentChannel: async () => {
+        return getCurrentCodexChannel();
       },
       create: async (form) => {
         await createCodexChannel(
@@ -468,6 +514,7 @@ const channelPanelFactories = {
             maxConcurrency: normalizeConcurrency(form.maxConcurrency),
             weight: normalizeWeight(form.weight),
             enabled: form.enabled,
+            modelName: form.modelName,
           }
         );
       },
@@ -480,13 +527,14 @@ const channelPanelFactories = {
           maxConcurrency: normalizeConcurrency(form.maxConcurrency),
           weight: normalizeWeight(form.weight),
           enabled: form.enabled,
+          modelName: form.modelName,
         });
       },
       toggle: async (channel, enabled) =>
         updateCodexChannel(channel.id, { enabled }),
       remove: deleteCodexChannel,
       applyToSettings: async (channel) => {
-        return applyCodexChannelToSettings(channel.id);
+        return writeCodexConfig(channel.id);
       },
       resetHealth: async (channel) => {
         return resetCodexChannelHealth(channel.id);
@@ -494,6 +542,10 @@ const channelPanelFactories = {
     },
     getHeaderTags: (channel, helpers) => {
       const tags = [];
+      const activeTag = buildActiveTag(channel, helpers);
+      if (activeTag) {
+        tags.push(activeTag);
+      }
       if (channel.health?.status === "frozen") {
         tags.push({
           text: helpers.formatFreeze(channel.health.freezeRemaining),
@@ -536,7 +588,9 @@ const channelPanelFactories = {
     emptyActionText: "添加 Gemini 渠道",
     modalWidth: 520,
     formLabelWidth: 90,
-    showApplyButton: false,
+    showApplyButton: true,
+    showClearButton: true,
+    applyConfirmContent: "仅写入配置，不会改变渠道启用状态，是否继续？",
     formSections: [
       {
         title: "基本信息",
@@ -612,6 +666,9 @@ const channelPanelFactories = {
         const data = await getGeminiChannels();
         return data.channels || [];
       },
+      getCurrentChannel: async () => {
+        return getCurrentGeminiChannel();
+      },
       create: async (form) => {
         await createGeminiChannel(
           form.name,
@@ -641,12 +698,22 @@ const channelPanelFactories = {
       toggle: async (channel, enabled) =>
         updateGeminiChannel(channel.id, { enabled }),
       remove: deleteGeminiChannel,
+      applyToSettings: async (channel) => {
+        return writeGeminiConfig(channel.id);
+      },
+      clearConfig: async () => {
+        return clearGeminiConfig();
+      },
       resetHealth: async (channel) => {
         return resetGeminiChannelHealth(channel.id);
       },
     },
     getHeaderTags: (channel, helpers) => {
       const tags = [];
+      const activeTag = buildActiveTag(channel, helpers);
+      if (activeTag) {
+        tags.push(activeTag);
+      }
       if (channel.health?.status === "frozen") {
         tags.push({
           text: helpers.formatFreeze(channel.health.freezeRemaining),

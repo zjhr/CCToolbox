@@ -47,7 +47,8 @@ function loadChannels() {
         ...ch,
         enabled: ch.enabled !== false, // 默认启用
         weight: ch.weight || 1,
-        maxConcurrency: ch.maxConcurrency || null
+        maxConcurrency: ch.maxConcurrency || null,
+        modelName: ch.modelName || 'gpt-5.2-codex'
       }));
     }
     return data;
@@ -106,6 +107,7 @@ function initializeFromConfig() {
           requiresOpenaiAuth: providerConfig.requires_openai_auth !== false,
           queryParams: providerConfig.query_params || null,
           enabled: config.model_provider === providerKey, // 当前激活的渠道启用
+          modelName: config.model || 'gpt-5.2-codex',
           weight: 1,
           maxConcurrency: null,
           createdAt: Date.now(),
@@ -175,6 +177,7 @@ function createChannel(name, providerKey, baseUrl, apiKey, wireApi = 'responses'
     enabled: extraConfig.enabled !== false, // 默认启用
     weight: extraConfig.weight || 1,
     maxConcurrency: extraConfig.maxConcurrency || null,
+    modelName: extraConfig.modelName || 'gpt-5.2-codex',
     createdAt: Date.now(),
     updatedAt: Date.now()
   };
@@ -542,6 +545,7 @@ function applyChannelToSettings(channelId) {
 
   // 设置当前渠道为 model_provider
   config.model_provider = channel.providerKey;
+  config.model = channel.modelName || config.model || 'gpt-5.2-codex';
 
   // 确保 model_providers 对象存在
   if (!config.model_providers) {
@@ -611,6 +615,33 @@ ${tomlContent}`;
   return channel;
 }
 
+// 写入单个渠道配置到 config.toml
+function writeCodexConfigForSingleChannel(channelId) {
+  return applyChannelToSettings(channelId);
+}
+
+// 获取当前使用的渠道
+function getCurrentChannel() {
+  const configPath = path.join(getCodexDir(), 'config.toml');
+  if (!fs.existsSync(configPath)) {
+    return null;
+  }
+
+  try {
+    const content = fs.readFileSync(configPath, 'utf8');
+    const config = toml.parse(content);
+    if (!config.model_provider) {
+      return null;
+    }
+
+    const data = loadChannels();
+    return data.channels.find(ch => ch.providerKey === config.model_provider) || null;
+  } catch (err) {
+    console.error('[Codex Channels] Failed to read current channel:', err);
+    return null;
+  }
+}
+
 // 服务启动时自动同步环境变量（静默执行，不影响其他功能）
 try {
   const data = loadChannels();
@@ -631,5 +662,7 @@ module.exports = {
   saveChannelOrder,
   syncAllChannelEnvVars,
   writeCodexConfigForMultiChannel,
-  applyChannelToSettings
+  writeCodexConfigForSingleChannel,
+  applyChannelToSettings,
+  getCurrentChannel
 };

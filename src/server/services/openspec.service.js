@@ -294,7 +294,7 @@ function buildTree(baseDir, relativeDir = '') {
     if (a.type !== b.type) {
       return a.type === 'directory' ? -1 : 1;
     }
-    return a.name.localeCompare(b.name, 'zh-CN');
+    return (b.mtime || 0) - (a.mtime || 0);
   });
 }
 

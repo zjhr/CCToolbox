@@ -89,6 +89,18 @@
             </template>
             添加渠道
           </n-button>
+
+          <n-button
+            v-if="currentChannel === 'gemini'"
+            size="small"
+            type="error"
+            secondary
+            :disabled="!geminiCanClearConfig"
+            :aria-disabled="!geminiCanClearConfig"
+            @click="handleClearGeminiConfig"
+          >
+            清空配置
+          </n-button>
         </div>
       </div>
 
@@ -103,7 +115,11 @@
           <CodexChannelPanel ref="codexPanelRef" @open-website="openWebsite" />
         </template>
         <template v-else-if="currentChannel === 'gemini'">
-          <GeminiChannelPanel ref="geminiPanelRef" @open-website="openWebsite" />
+          <GeminiChannelPanel
+            ref="geminiPanelRef"
+            @open-website="openWebsite"
+            @clear-config-state="handleGeminiClearState"
+          />
         </template>
       </div>
     </div>
@@ -169,6 +185,7 @@ const currentChannel = computed(() => route.meta.channel || 'claude')
 const claudePanelRef = ref(null)
 const codexPanelRef = ref(null)
 const geminiPanelRef = ref(null)
+const geminiCanClearConfig = ref(false)
 const showSkillsDrawer = ref(false)
 const installedSkillsCount = ref(0)
 
@@ -210,6 +227,14 @@ function handleToggleAllCollapse() {
   channelRefs[currentChannel.value]?.value?.toggleAllCollapse?.()
 }
 
+function handleClearGeminiConfig() {
+  geminiPanelRef.value?.clearConfig?.()
+}
+
+function handleGeminiClearState(value) {
+  geminiCanClearConfig.value = Boolean(value)
+}
+
 // 处理代理切换
 function handleProxyToggle(value) {
   emit('proxy-toggle', value)
@@ -241,6 +266,11 @@ function refreshChannel(channel) {
 }
 
 watch(() => currentChannel.value, refreshChannel)
+watch(() => currentChannel.value, (value) => {
+  if (value !== 'gemini') {
+    geminiCanClearConfig.value = false
+  }
+})
 </script>
 
 <style scoped>

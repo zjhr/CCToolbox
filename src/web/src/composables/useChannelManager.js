@@ -30,6 +30,8 @@ export default function useChannelManager(config) {
   const state = reactive({
     channels: [],
     loading: false,
+    currentChannel: null,
+    currentChannelId: null,
     collapsed: getLocalCollapse(config.storageKeys.localCollapse),
     showDialog: false,
     editingChannel: null,
@@ -63,6 +65,7 @@ export default function useChannelManager(config) {
     try {
       const list = await config.api.fetch()
       state.channels = Array.isArray(list) ? [...list] : []
+      await loadCurrentChannel()
       await applyChannelOrder()
       // 应用实时健康状态
       updateChannelHealth()
@@ -70,6 +73,23 @@ export default function useChannelManager(config) {
       message.error(resolveError(error, `${config.displayName} 渠道加载失败`))
     } finally {
       state.loading = false
+    }
+  }
+
+  async function loadCurrentChannel() {
+    if (typeof config.api.getCurrentChannel !== 'function') {
+      state.currentChannel = null
+      state.currentChannelId = null
+      return
+    }
+    try {
+      const data = await config.api.getCurrentChannel()
+      const channel = data?.channel || null
+      state.currentChannel = channel
+      state.currentChannelId = channel?.id || null
+    } catch (error) {
+      state.currentChannel = null
+      state.currentChannelId = null
     }
   }
 
@@ -285,15 +305,40 @@ export default function useChannelManager(config) {
 
   function handleApplyToSettings(channel) {
     if (typeof config.api.applyToSettings !== 'function') return
+    const content =
+      config.applyConfirmContent ||
+      '写入配置后会关闭动态切换并默认使用该渠道，是否继续？'
+    const title = config.applyConfirmTitle || '写入配置'
     dialog.warning({
-      title: '写入配置',
-      content: '写入配置后会关闭动态切换并默认使用该渠道，是否继续？',
+      title,
+      content,
       positiveText: '确定',
       negativeText: '取消',
       onPositiveClick: async () => {
         try {
           await config.api.applyToSettings(channel)
           message.success('已将渠道写入配置文件')
+          await loadChannels()
+        } catch (error) {
+          message.error(resolveError(error))
+        }
+      }
+    })
+  }
+
+  function handleClearConfig() {
+    if (typeof config.api.clearConfig !== 'function') return
+    dialog.warning({
+      title: '确认清空',
+      content: '确定要清空渠道配置吗?',
+      positiveText: '确定清空',
+      negativeText: '取消',
+      role: 'alertdialog',
+      positiveButtonProps: { type: 'error' },
+      onPositiveClick: async () => {
+        try {
+          await config.api.clearConfig()
+          message.success('渠道配置已清空')
           await loadChannels()
         } catch (error) {
           message.error(resolveError(error))
@@ -339,6 +384,7 @@ export default function useChannelManager(config) {
       handleDelete,
       handleToggleEnabled,
       handleApplyToSettings,
+      handleClearConfig,
       handleResetHealth,
       handleDragEnd
     }

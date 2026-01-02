@@ -26,11 +26,19 @@
             <span v-else>{{ segment.text }}</span>
           </template>
         </span>
-        <template v-for="tag in headerTags" :key="tag.text">
-          <n-tag size="tiny" :type="tag.type || 'default'" :bordered="false">
-            {{ tag.text }}
-          </n-tag>
-        </template>
+        <div class="channel-tags">
+          <template v-for="tag in headerTags" :key="tag.text">
+            <n-tag
+              size="tiny"
+              :type="tag.type || 'default'"
+              :bordered="false"
+              :color="tag.color"
+              :aria-label="tag.ariaLabel"
+            >
+              {{ tag.text }}
+            </n-tag>
+          </template>
+        </div>
       </div>
       <div class="channel-actions">
         <n-button

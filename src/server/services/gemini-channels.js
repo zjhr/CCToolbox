@@ -176,14 +176,6 @@ function createChannel(name, baseUrl, apiKey, model = 'gemini-2.5-pro', extraCon
     updatedAt: Date.now()
   };
 
-  if (newChannel.enabled) {
-    // Gemini 渠道单选：新启用时关闭其他渠道
-    data.channels = data.channels.map(ch => ({
-      ...ch,
-      enabled: false
-    }));
-  }
-
   data.channels.push(newChannel);
   saveChannels(data);
 
@@ -220,18 +212,14 @@ function updateChannel(channelId, updates) {
     updatedAt: Date.now()
   };
 
-  if (updates.enabled === true) {
-    // Gemini 渠道单选：启用当前渠道时关闭其他渠道
-    data.channels = data.channels.map(ch => ({
-      ...ch,
-      enabled: ch.id === channelId
-    }));
-  }
-
   saveChannels(data);
 
-  // 更新 Gemini 配置文件
-  writeGeminiConfigForMultiChannel(data.channels);
+  const shouldWriteConfig = ['baseUrl', 'apiKey', 'model']
+    .some((key) => Object.prototype.hasOwnProperty.call(updates, key));
+  if (shouldWriteConfig) {
+    // 仅在关键配置变更时同步 .env
+    writeGeminiConfigForMultiChannel(data.channels);
+  }
 
   return data.channels[index];
 }
@@ -312,6 +300,126 @@ GEMINI_MODEL=${defaultChannel.model}
   fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf8');
 }
 
+// 清空 Gemini .env 配置
+function clearGeminiConfig() {
+  const geminiDir = getGeminiDir();
+  const envPath = path.join(geminiDir, '.env');
+
+  if (!fs.existsSync(envPath)) {
+    return { success: true, cleared: false };
+  }
+
+  const envContent = fs.readFileSync(envPath, 'utf8');
+  const lines = envContent.split('\n');
+  const filteredLines = lines.filter(line => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) {
+      return true;
+    }
+    return !(
+      trimmed.startsWith('GOOGLE_GEMINI_BASE_URL=') ||
+      trimmed.startsWith('GEMINI_API_KEY=') ||
+      trimmed.startsWith('GEMINI_MODEL=')
+    );
+  });
+
+  const cleanedContent = filteredLines.join('\n').trim();
+  const finalContent = cleanedContent ? `${cleanedContent}\n` : '# Gemini Configuration\n';
+
+  fs.writeFileSync(envPath, finalContent, 'utf8');
+  if (process.platform !== 'win32') {
+    fs.chmodSync(envPath, 0o600);
+  }
+
+  return { success: true, cleared: true };
+}
+
+// 写入单个渠道配置到 .env
+function writeGeminiConfigForSingleChannel(channelId) {
+  const data = loadChannels();
+  const channel = data.channels.find(ch => ch.id === channelId);
+
+  if (!channel) {
+    throw new Error('Channel not found');
+  }
+
+  const geminiDir = getGeminiDir();
+
+  if (!fs.existsSync(geminiDir)) {
+    fs.mkdirSync(geminiDir, { recursive: true });
+  }
+
+  const envPath = path.join(geminiDir, '.env');
+  const envContent = `GOOGLE_GEMINI_BASE_URL=${channel.baseUrl}\nGEMINI_API_KEY=${channel.apiKey}\nGEMINI_MODEL=${channel.model}\n`;
+
+  fs.writeFileSync(envPath, envContent, 'utf8');
+  if (process.platform !== 'win32') {
+    fs.chmodSync(envPath, 0o600);
+  }
+
+  const settingsPath = path.join(geminiDir, 'settings.json');
+  let settings = {};
+
+  if (fs.existsSync(settingsPath)) {
+    try {
+      settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    } catch (err) {
+      console.warn('[Gemini Channels] Failed to read settings.json, creating new');
+    }
+  }
+
+  settings.security = settings.security || {};
+  settings.security.auth = settings.security.auth || {};
+  settings.security.auth.selectedType = 'gemini-api-key';
+
+  fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf8');
+
+  return channel;
+}
+
+// 获取当前使用的渠道
+function getCurrentChannel() {
+  const envPath = path.join(getGeminiDir(), '.env');
+  if (!fs.existsSync(envPath)) {
+    return null;
+  }
+
+  try {
+    const envContent = fs.readFileSync(envPath, 'utf8');
+    const env = {};
+
+    envContent.split('\n').forEach(line => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) return;
+
+      const match = trimmed.match(/^([^=]+)=(.*)$/);
+      if (match) {
+        env[match[1].trim()] = match[2].trim();
+      }
+    });
+
+    if (!env.GOOGLE_GEMINI_BASE_URL || !env.GEMINI_API_KEY) {
+      return null;
+    }
+
+    const data = loadChannels();
+    const channel = data.channels.find(ch => {
+      if (ch.baseUrl !== env.GOOGLE_GEMINI_BASE_URL || ch.apiKey !== env.GEMINI_API_KEY) {
+        return false;
+      }
+      if (env.GEMINI_MODEL) {
+        return ch.model === env.GEMINI_MODEL;
+      }
+      return true;
+    });
+
+    return channel || null;
+  } catch (err) {
+    console.error('[Gemini Channels] Failed to read current channel:', err);
+    return null;
+  }
+}
+
 // 获取所有启用的渠道（供调度器使用）
 function getEnabledChannels() {
   const data = loadChannels();
@@ -350,5 +458,8 @@ module.exports = {
   getEnabledChannels,
   saveChannelOrder,
   isProxyConfig,
-  getGeminiDir
+  getGeminiDir,
+  clearGeminiConfig,
+  writeGeminiConfigForSingleChannel,
+  getCurrentChannel
 };

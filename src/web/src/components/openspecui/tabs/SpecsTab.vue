@@ -103,7 +103,7 @@ const specItems = computed(() => {
         path: node.path,
         filePath: specFile?.path || '',
         fileName: specFile?.name || '',
-        mtime: node.mtime
+        mtime: specFile?.mtime || node.mtime
       }
     })
   return sortByMtimeDesc(items)
