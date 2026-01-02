@@ -289,19 +289,12 @@
     </div>
 
     <!-- Alias Dialog -->
-    <n-modal v-model:show="showAliasDialog" preset="dialog" title="设置别名">
-      <n-input
-        v-model:value="editingAlias"
-        placeholder="输入别名（留空删除）"
-        @keyup.enter="confirmAlias"
-      />
-      <template #action>
-        <n-space>
-          <n-button @click="showAliasDialog = false">取消</n-button>
-          <n-button type="primary" @click="confirmAlias">确定</n-button>
-        </n-space>
-      </template>
-    </n-modal>
+    <AliasModal
+      v-model:visible="showAliasModal"
+      :session="editingSession"
+      :project-name="props.projectName"
+      @saved="handleAliasSaved"
+    />
 
     <DeleteConfirmModal
       v-model:visible="showDeleteConfirm"
@@ -412,6 +405,7 @@ import { searchSessions as searchSessionsApi, launchTerminal } from '../api/sess
 import ChatHistoryDrawer from '../components/ChatHistoryDrawer.vue'
 import OpenSpecDrawer from '../components/openspecui/OpenSpecDrawer.vue'
 import SerenaDrawer from '../components/serenaui/SerenaDrawer.vue'
+import AliasModal from '../components/AliasModal.vue'
 import TrashModal from '../components/TrashModal.vue'
 import DeleteConfirmModal from '../components/DeleteConfirmModal.vue'
 import AliasConflictModal from '../components/AliasConflictModal.vue'
@@ -432,9 +426,8 @@ const { addFavorite, removeFavorite, isFavorite } = useFavorites()
 const currentChannel = computed(() => route.meta.channel || 'claude')
 
 const searchQuery = ref('')
-const showAliasDialog = ref(false)
+const showAliasModal = ref(false)
 const editingSession = ref(null)
-const editingAlias = ref('')
 const hoveredSession = ref(null)
 const orderedSessions = ref([])
 const searchResults = ref(null)
@@ -638,27 +631,18 @@ function isSelected(sessionId) {
 
 function handleSetAlias(session) {
   editingSession.value = session
-  editingAlias.value = session.alias || ''
-  showAliasDialog.value = true
+  showAliasModal.value = true
 }
 
-async function confirmAlias() {
-  if (!editingSession.value) return
-
+async function handleAliasSaved({ sessionId, title }) {
   try {
-    const sessionId = editingSession.value.sessionId
-    if (editingAlias.value) {
-      await store.setAlias(sessionId, editingAlias.value)
-      message.success('别名设置成功')
+    if (title) {
+      await store.setAlias(sessionId, title)
     } else {
       await store.deleteAlias(sessionId)
-      message.success('别名已删除')
     }
-    showAliasDialog.value = false
-    editingSession.value = null
-    editingAlias.value = ''
   } catch (err) {
-    message.error('操作失败: ' + err.message)
+    message.error('同步别名失败: ' + err.message)
   }
 }
 

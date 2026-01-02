@@ -105,6 +105,8 @@ async function startServer(port) {
   app.use('/api/gemini/channels', require('./api/gemini-channels')(config));
   app.use('/api/gemini/proxy', require('./api/gemini-proxy'));
 
+  app.use('/api/ai-config', require('./api/ai-config'));
+  app.use('/api/ai-assistant', require('./api/ai-assistant'));
   app.use('/api/aliases', require('./api/aliases')());
   app.use('/api/favorites', require('./api/favorites'));
   app.use('/api/ui-config', require('./api/ui-config'));

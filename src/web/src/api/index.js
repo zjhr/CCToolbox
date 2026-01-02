@@ -9,6 +9,7 @@ import * as favoritesApi from './favorites'
 import * as uiConfigApi from './ui-config'
 import * as pm2Api from './pm2'
 import * as dashboardApi from './dashboard'
+import * as aiApi from './ai'
 
 const api = {
   ...projectApi,
@@ -21,7 +22,8 @@ const api = {
   ...favoritesApi,
   ...uiConfigApi,
   ...pm2Api,
-  ...dashboardApi
+  ...dashboardApi,
+  ...aiApi
 }
 
 export default api

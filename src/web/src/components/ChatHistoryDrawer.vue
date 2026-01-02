@@ -32,6 +32,15 @@
 
       <!-- Body -->
       <div class="drawer-body">
+        <!-- Session Summary -->
+        <div v-if="!trashId && sessionId" class="summary-container">
+          <SessionSummaryCard
+            ref="summaryCardRef"
+            :project-name="projectName"
+            :session-id="sessionId"
+          />
+        </div>
+
         <!-- Loading state -->
         <div v-if="loading && messages.length === 0" class="loading-container">
           <n-spin size="medium">
@@ -86,6 +95,7 @@ import { NDrawer, NIcon, NTag, NSpin, NEmpty, NButton } from 'naive-ui'
 import { useResponsiveDrawer } from '../composables/useResponsiveDrawer'
 import { Chatbubbles as ChatbubblesIcon, GitBranch as GitBranchIcon, ChevronUp as ChevronUpIcon, ArrowDown as ArrowDownIcon, Close as CloseIcon } from '@vicons/ionicons5'
 import ChatMessage from './ChatMessage.vue'
+import SessionSummaryCard from './SessionSummaryCard.vue'
 import { getSessionMessages } from '../api/sessions'
 import { getTrashMessages } from '../api/trash'
 
@@ -134,6 +144,7 @@ const totalMessages = ref(0)
 const hasMore = ref(false)
 const messagesContainer = ref(null)
 const showScrollButton = ref(false)
+const summaryCardRef = ref(null)
 
 // Load messages
 async function loadMessages(page = 1) {
@@ -205,6 +216,10 @@ function scrollToBottom(smooth = true) {
   })
 }
 
+function generateSummary() {
+  summaryCardRef.value?.summarize?.()
+}
+
 // Handle scroll
 function handleScroll(e) {
   const target = e.target
@@ -232,7 +247,10 @@ function open() {
   loadMessages(1)
 }
 
-defineExpose({ open })
+defineExpose({
+  generateSummary,
+  open
+})
 </script>
 
 <style scoped>
@@ -288,6 +306,13 @@ defineExpose({ open })
   flex: 1;
   min-height: 0;
   position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.summary-container {
+  flex-shrink: 0;
+  padding: 12px 20px 0;
 }
 
 .loading-container,

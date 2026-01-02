@@ -130,6 +130,99 @@
             </div>
           </div>
 
+          <!-- AI 配置面板 -->
+          <div v-show="activeMenu === 'ai'" class="settings-panel">
+            <div class="panel-header">
+              <div class="panel-title-row">
+                <n-icon size="24" color="#18a058">
+                  <SparklesOutline />
+                </n-icon>
+                <div>
+                  <h3 class="panel-title">AI 配置</h3>
+                  <n-text depth="3" class="panel-subtitle">配置用于增强功能的 AI 模型提供商</n-text>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel-body">
+              <div class="setting-group">
+                <div class="setting-item">
+                  <div class="setting-label">
+                    <n-text strong>模型提供商</n-text>
+                    <n-text depth="3" style="font-size: 13px; margin-top: 4px;">
+                      选择您首选的 AI 模型服务
+                    </n-text>
+                  </div>
+                  <n-radio-group v-model:value="aiProvider" name="aiProvider">
+                    <n-space>
+                      <n-radio value="ollama">Ollama (推荐)</n-radio>
+                      <n-radio value="openai">OpenAI / 自定义</n-radio>
+                      <n-radio value="gemini">Google Gemini</n-radio>
+                    </n-space>
+                  </n-radio-group>
+                </div>
+
+                <n-divider />
+
+                <n-form
+                  label-placement="top"
+                  :model="aiConfig[aiProvider]"
+                  class="ai-form"
+                >
+                  <n-form-item label="Base URL">
+                    <n-input
+                      v-model:value="aiConfig[aiProvider].baseUrl"
+                      :placeholder="aiProvider === 'ollama' ? 'http://localhost:11434' : 'https://api.openai.com/v1'"
+                    />
+                  </n-form-item>
+                  <n-form-item label="模型名称">
+                    <n-input
+                      v-model:value="aiConfig[aiProvider].modelName"
+                      :placeholder="aiProvider === 'ollama' ? 'qwen2.5-coder:7b' : 'gpt-4o'"
+                    />
+                  </n-form-item>
+                  <n-form-item v-if="aiProvider !== 'ollama'" label="API Key">
+                    <n-input
+                      v-model:value="aiConfig[aiProvider].apiKey"
+                      type="password"
+                      show-password-on="click"
+                      placeholder="输入您的 API Key"
+                    />
+                  </n-form-item>
+                  <n-form-item label="预设标签">
+                    <n-dynamic-tags v-model:value="aiTags" />
+                  </n-form-item>
+                </n-form>
+
+                <n-alert v-if="aiProvider === 'ollama'" type="info" :bordered="false">
+                  使用 Ollama 可以获得完全本地化的隐私体验。请确保您的 Ollama 已经启动。
+                </n-alert>
+              </div>
+            </div>
+
+            <div class="panel-footer">
+              <n-space justify="end">
+                <n-button
+                  secondary
+                  @click="handleTestAIConnection"
+                  :loading="testingConnection"
+                >
+                  测试连接
+                </n-button>
+                <n-button
+                  type="primary"
+                  @click="handleSaveAIConfig"
+                  :loading="savingAI"
+                >
+                  <template #icon>
+                    <n-icon><SaveOutline /></n-icon>
+                  </template>
+                  保存配置
+                </n-button>
+              </n-space>
+            </div>
+          </div>
+
           <!-- 外观设置面板 -->
           <div v-show="activeMenu === 'appearance'" class="settings-panel">
             <div class="panel-header">
@@ -851,6 +944,11 @@
       </div>
     </n-drawer-content>
   </n-drawer>
+
+  <privacy-consent-modal
+    v-model:show="showPrivacyModal"
+    @accepted="handlePrivacyAccepted"
+  />
 </template>
 
 <script setup>
@@ -858,7 +956,7 @@ import { ref, computed, watch, onMounted, markRaw } from 'vue'
 import {
   NDrawer, NDrawerContent, NSpace, NText, NSelect, NButton, NAlert,
   NIcon, NBadge, NSpin, NDivider, NTag, NEmpty, NSwitch, NInputNumber,
-  NRadio, NRadioGroup, NInput
+  NRadio, NRadioGroup, NInput, NForm, NFormItem, NDynamicTags
 } from 'naive-ui'
 import { useResponsiveDrawer } from '../composables/useResponsiveDrawer'
 
@@ -866,11 +964,13 @@ const { drawerWidth, isMobile } = useResponsiveDrawer(680)
 import {
   SettingsOutline, TerminalOutline, ColorPaletteOutline, OptionsOutline,
   SaveOutline, CheckmarkCircleOutline, StarOutline, WarningOutline,
-  SunnyOutline, MoonOutline, NotificationsOutline
+  SunnyOutline, MoonOutline, NotificationsOutline, SparklesOutline
 } from '@vicons/ionicons5'
 import { getAvailableTerminals, saveTerminalConfig } from '../api/terminal'
 import { getUIConfig, updateNestedUIConfig } from '../api/ui-config'
 import { getAutoStartStatus, enableAutoStart, disableAutoStart } from '../api/pm2'
+import { getAIConfig, saveAIConfig, testConnection } from '../api/ai'
+import PrivacyConsentModal from './PrivacyConsentModal.vue'
 import message from '../utils/message'
 import { useTheme } from '../composables/useTheme'
 
@@ -964,6 +1064,19 @@ const originalNotificationSettings = ref({
 const savingNotification = ref(false)
 const notificationPlatform = ref('')  // 'darwin' | 'win32' | 'linux'
 
+// AI 配置
+const aiProvider = ref('ollama')
+const aiConfig = ref({
+  ollama: { baseUrl: '', modelName: '' },
+  openai: { baseUrl: '', modelName: '', apiKey: '' },
+  gemini: { baseUrl: '', modelName: '', apiKey: '' }
+})
+const aiTags = ref([])
+const privacyAccepted = ref(false)
+const showPrivacyModal = ref(false)
+const testingConnection = ref(false)
+const savingAI = ref(false)
+
 const pricingSettings = ref({
   claude: {
     mode: 'auto',
@@ -1003,6 +1116,11 @@ const menuItems = ref([
     key: 'terminal',
     label: '终端工具',
     icon: markRaw(TerminalOutline)
+  },
+  {
+    key: 'ai',
+    label: 'AI 配置',
+    icon: markRaw(SparklesOutline)
   },
   {
     key: 'appearance',
@@ -1385,9 +1503,118 @@ async function handleDisableAutoStart() {
   }
 }
 
+// 加载 AI 配置
+async function loadAIConfig() {
+  try {
+    const data = await getAIConfig()
+    if (data?.config) {
+      const config = data.config
+      aiProvider.value = config.defaultProvider || 'ollama'
+      privacyAccepted.value = !!config.privacyAccepted
+
+      // 合并配置，确保每个 provider 都有结构
+      if (config.providers) {
+        Object.keys(config.providers).forEach(provider => {
+          if (aiConfig.value[provider]) {
+            aiConfig.value[provider] = {
+              ...aiConfig.value[provider],
+              ...config.providers[provider]
+            }
+          }
+        })
+      }
+      aiTags.value = config.presetTags || []
+    }
+  } catch (err) {
+    console.error('Failed to load AI config:', err)
+  }
+}
+
+// 检查隐私同意
+function checkPrivacy() {
+  if (!privacyAccepted.value) {
+    showPrivacyModal.value = true
+    return false
+  }
+  return true
+}
+
+function handlePrivacyAccepted() {
+  privacyAccepted.value = true
+  showPrivacyModal.value = false
+}
+
+// 保存 AI 配置
+async function handleSaveAIConfig() {
+  if (!checkPrivacy()) return
+
+  savingAI.value = true
+  try {
+    const providerKey = aiProvider.value
+    const providers = {
+      ...aiConfig.value,
+      [providerKey]: {
+        ...aiConfig.value[providerKey],
+        enabled: true
+      }
+    }
+    const response = await saveAIConfig({
+      defaultProvider: providerKey,
+      providers,
+      presetTags: aiTags.value,
+      privacyAccepted: privacyAccepted.value
+    }, providerKey)
+    if (response?.warning?.message) {
+      message.warning(`配置已保存，但连接测试失败：${response.warning.message}`)
+    } else {
+      message.success('AI 配置已保存')
+    }
+  } catch (err) {
+    message.error('保存失败：' + (err.message || '未知错误'))
+  } finally {
+    savingAI.value = false
+  }
+}
+
+// 测试 AI 连接
+async function handleTestAIConnection() {
+  if (!checkPrivacy()) return
+
+  testingConnection.value = true
+  try {
+    const providerKey = aiProvider.value
+    const result = await testConnection(providerKey, {
+      providers: {
+        [providerKey]: {
+          ...aiConfig.value[providerKey],
+          enabled: true
+        }
+      }
+    })
+    if (result?.success) {
+      const modelName = result.result?.model ? `（${result.result.model}）` : ''
+      message.success(`连接测试成功${modelName}`)
+    } else {
+      message.error('连接测试失败：' + (result?.error || '未知错误'))
+    }
+  } catch (err) {
+    message.error('连接测试失败：' + (err.message || '未知错误'))
+  } finally {
+    testingConnection.value = false
+  }
+}
+
 // 加载设置
 onMounted(() => {
   loadPanelSettings()
+  loadAIConfig()
+})
+
+// 监听菜单切换
+watch(activeMenu, (newVal) => {
+  if (newVal === 'ai') {
+    checkPrivacy()
+  }
 })
 
 // 监听抽屉打开，加载数据
@@ -1398,6 +1625,7 @@ watch(show, (newVal) => {
     loadPortsConfig()
     loadAutoStartStatus()
     loadNotificationSettings()
+    loadAIConfig()
   }
 })
 </script>
