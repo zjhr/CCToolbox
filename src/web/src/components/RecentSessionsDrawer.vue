@@ -31,20 +31,28 @@
       </n-empty>
     </n-drawer-content>
   </n-drawer>
+
+  <AliasModal
+    v-model:visible="showAliasModal"
+    :session="editingSession"
+    :project-name="aliasProjectName"
+    @saved="handleAliasSaved"
+  />
 </template>
 
 <script setup>
-import { ref, computed, watch, h } from 'vue'
-import { NDrawer, NDrawerContent, NSpin, NEmpty, NIcon, NInput } from 'naive-ui'
+import { ref, computed, watch } from 'vue'
+import { NDrawer, NDrawerContent, NSpin, NEmpty, NIcon } from 'naive-ui'
 import { ChatbubblesOutline } from '@vicons/ionicons5'
 import SessionCard from './SessionCard.vue'
+import AliasModal from './AliasModal.vue'
 import {
   getRecentSessions,
   setAlias as setAliasApi,
   deleteAlias as deleteAliasApi,
   launchTerminal
 } from '../api/sessions'
-import message, { dialog } from '../utils/message'
+import message from '../utils/message'
 import { useResponsiveDrawer } from '../composables/useResponsiveDrawer'
 
 const { drawerWidth } = useResponsiveDrawer(800, 700)
@@ -65,9 +73,10 @@ const emit = defineEmits(['update:visible'])
 const show = ref(false)
 const sessions = ref([])
 const loading = ref(false)
+const showAliasModal = ref(false)
+const editingSession = ref(null)
 
-// 为了在 template 中使用
-const channel = computed(() => props.channel)
+const aliasProjectName = computed(() => editingSession.value?.projectName || '')
 
 // 获取渠道标题
 function getChannelTitle() {
@@ -110,50 +119,9 @@ watch(() => props.channel, () => {
   }
 })
 
-async function handleSetAlias(session) {
-  const currentAlias = session.alias || ''
-  let inputValue = currentAlias
-
-  // Create a simple prompt dialog
-  const newAlias = await new Promise((resolve) => {
-    const d = dialog.create({
-      title: '设置别名',
-      content: () => h(NInput, {
-        defaultValue: currentAlias,
-        placeholder: '请输入会话别名',
-        'onUpdate:value': (v) => { inputValue = v },
-        onKeyup: (e) => {
-          if (e.key === 'Enter') {
-            d.destroy()
-            resolve(inputValue.trim())
-          }
-        }
-      }),
-      positiveText: '确定',
-      negativeText: '取消',
-      onPositiveClick: () => {
-        resolve(inputValue.trim())
-      },
-      onNegativeClick: () => {
-        resolve(null)
-      }
-    })
-  })
-
-  if (newAlias === null) return
-
-  try {
-    if (newAlias) {
-      await setAliasApi(session.sessionId, newAlias)
-      message.success('别名设置成功')
-    } else {
-      await deleteAliasApi(session.sessionId)
-      message.success('别名已删除')
-    }
-    await loadSessions()
-  } catch (err) {
-    message.error('操作失败: ' + err.message)
-  }
+function handleSetAlias(session) {
+  editingSession.value = session
+  showAliasModal.value = true
 }
 
 async function handleLaunchSession(session) {
@@ -166,6 +134,21 @@ async function handleLaunchSession(session) {
     }
   } catch (err) {
     message.error('启动失败: ' + err.message)
+  }
+}
+
+async function handleAliasSaved({ sessionId, title }) {
+  try {
+    if (title) {
+      await setAliasApi(sessionId, title)
+      message.success('别名设置成功')
+    } else {
+      await deleteAliasApi(sessionId)
+      message.success('别名已删除')
+    }
+    await loadSessions()
+  } catch (err) {
+    message.error('操作失败: ' + err.message)
   }
 }
 </script>
