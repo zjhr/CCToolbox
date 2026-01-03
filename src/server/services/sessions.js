@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const { getAllSessions, parseSessionInfoFast } = require('../../utils/session');
 const { getAppDir } = require('../../utils/app-path-manager');
 const { loadAliases, deleteAlias } = require('./alias');
+const { getAllMetadata } = require('./session-metadata');
 const {
   getCachedProjects,
   setCachedProjects,
@@ -588,8 +589,68 @@ function deleteProject(config, projectName) {
   return { success: true };
 }
 
+function parseTagKeyword(keyword) {
+  if (!keyword) return null;
+  const trimmed = keyword.trim();
+  if (!trimmed.toLowerCase().startsWith('tag:')) return null;
+  const tagPart = trimmed.slice(4).trim();
+  if (!tagPart) return '';
+  return tagPart.split(/\s+/)[0];
+}
+
+function searchSessionsByTag(config, projectName, tagKeyword) {
+  const projectDir = path.join(config.projectsDir, projectName);
+
+  if (!fs.existsSync(projectDir)) {
+    return [];
+  }
+
+  const results = [];
+  const files = fs.readdirSync(projectDir);
+  const jsonlFiles = files.filter(f => f.endsWith('.jsonl') && !f.startsWith('agent-'));
+  const aliases = loadAliases();
+  const allMetadata = getAllMetadata();
+  const lowerKeyword = tagKeyword.toLowerCase();
+
+  for (const file of jsonlFiles) {
+    const sessionId = file.replace('.jsonl', '');
+    const filePath = path.join(projectDir, file);
+
+    if (!hasActualMessages(filePath)) {
+      continue;
+    }
+
+    const metadata = allMetadata[sessionId] || {};
+    const tags = Array.isArray(metadata.tags) ? metadata.tags : [];
+    const matchedTags = tags.filter(tag => String(tag).toLowerCase().includes(lowerKeyword));
+
+    if (matchedTags.length > 0) {
+      results.push({
+        sessionId,
+        alias: aliases[sessionId] || null,
+        matchCount: matchedTags.length,
+        matches: matchedTags.slice(0, 5).map(tag => ({
+          role: 'tag',
+          context: `tag:${tag}`,
+          position: 0
+        }))
+      });
+    }
+  }
+
+  results.sort((a, b) => b.matchCount - a.matchCount);
+
+  return results;
+}
+
 // Search sessions for keyword
 function searchSessions(config, projectName, keyword, contextLength = 15) {
+  const tagKeyword = parseTagKeyword(keyword);
+  if (tagKeyword !== null) {
+    if (!tagKeyword) return [];
+    return searchSessionsByTag(config, projectName, tagKeyword);
+  }
+
   const projectDir = path.join(config.projectsDir, projectName);
 
   if (!fs.existsSync(projectDir)) {

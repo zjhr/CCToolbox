@@ -23,6 +23,7 @@
           tag
           clearable
           placeholder="选择或输入标签"
+          :max-tag-count="MAX_TAG_COUNT"
           :options="presetTagsOptions"
         />
       </n-form-item>
@@ -52,6 +53,8 @@ import {
   getPresetTags
 } from '../api/ai'
 import message from '../utils/message'
+
+const MAX_TAG_COUNT = 4
 
 const props = defineProps({
   visible: Boolean,
@@ -118,6 +121,13 @@ watch(() => props.visible, (newVal) => {
   }
 })
 
+watch(() => metadata.value.tags, (tags) => {
+  if (!Array.isArray(tags)) return
+  if (tags.length <= MAX_TAG_COUNT) return
+  metadata.value.tags = tags.slice(0, MAX_TAG_COUNT)
+  message.warning(`最多只能添加 ${MAX_TAG_COUNT} 个标签`)
+}, { deep: true })
+
 const handleGenerate = async () => {
   if (!props.session?.sessionId || !props.projectName) return
 
@@ -157,6 +167,9 @@ const handleSave = async () => {
 
     if (res.success) {
       message.success('保存成功')
+      if (res.warning) {
+        message.warning(res.warning)
+      }
       emit('saved', { sessionId: props.session.sessionId, title, tags })
       updateVisible(false)
     } else {

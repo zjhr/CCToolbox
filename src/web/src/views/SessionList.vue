@@ -20,66 +20,82 @@
           <n-text depth="3" class="project-path">{{ displayProjectPath }}</n-text>
         </div>
 
-        <!-- Search Actions -->
-        <div class="search-actions">
-          <n-tooltip :disabled="hasOpenSpec">
-            <template #trigger>
-              <span class="openspec-button-wrapper">
-                <n-button size="small" secondary :disabled="!hasOpenSpec" @click="handleOpenSpec">
-                  <template #icon>
-                    <n-icon><DocumentTextOutline /></n-icon>
-                  </template>
-                  OpenSpec
-                </n-button>
-              </span>
-            </template>
-            使用 openspec init 初始化项目
-          </n-tooltip>
-          <n-tooltip :disabled="hasSerena">
-            <template #trigger>
-              <span class="serena-button-wrapper">
-                <n-button size="small" secondary :disabled="!hasSerena" @click="handleOpenSerena">
-                  <template #icon>
-                    <n-icon><SparklesOutline /></n-icon>
-                  </template>
-                  Serena
-                </n-button>
-              </span>
-            </template>
-            使用 serena init 初始化项目
-          </n-tooltip>
-          <n-dropdown
-            :options="clearMenuOptions"
-            trigger="click"
-            @select="handleClearMenuSelect"
-          >
-            <n-button size="small" secondary>
-              <template #icon>
-                <n-icon><TrashOutline /></n-icon>
+        <div class="header-controls">
+          <!-- Search Bar -->
+          <div class="search-bar">
+            <n-input
+              v-model:value="searchQuery"
+              placeholder="搜索会话..."
+              clearable
+              class="search-input"
+              @keyup.enter="handleSearch"
+              :disabled="searching"
+            >
+              <template #prefix>
+                <n-icon><SearchOutline /></n-icon>
               </template>
-              清除历史
-            </n-button>
-          </n-dropdown>
-        </div>
+              <template #suffix>
+                <n-button text @click="handleSearch" :disabled="!searchQuery || searching" :loading="searching">
+                  搜索
+                </n-button>
+              </template>
+            </n-input>
 
-        <!-- Search Bar -->
-        <n-input
-          v-model:value="searchQuery"
-          placeholder="搜索会话..."
-          clearable
-          class="search-input"
-          @keyup.enter="handleSearch"
-          :disabled="searching"
-        >
-          <template #prefix>
-            <n-icon><SearchOutline /></n-icon>
-          </template>
-          <template #suffix>
-            <n-button text @click="handleSearch" :disabled="!searchQuery || searching" :loading="searching">
-              搜索
-            </n-button>
-          </template>
-        </n-input>
+            <n-select
+              v-model:value="selectedTags"
+              multiple
+              clearable
+              placeholder="标签筛选"
+              class="tag-filter-select"
+              :options="tagFilterOptions"
+              :max-tag-count="1"
+              :max-tag-placeholder="formatSelectedTags"
+              :disabled="tagFilterOptions.length === 0"
+            />
+          </div>
+
+          <!-- Search Actions -->
+          <div class="search-actions">
+            <n-tooltip :disabled="hasOpenSpec">
+              <template #trigger>
+                <span class="openspec-button-wrapper">
+                  <n-button size="small" secondary :disabled="!hasOpenSpec" @click="handleOpenSpec">
+                    <template #icon>
+                      <n-icon><DocumentTextOutline /></n-icon>
+                    </template>
+                    OpenSpec
+                  </n-button>
+                </span>
+              </template>
+              使用 openspec init 初始化项目
+            </n-tooltip>
+            <n-tooltip :disabled="hasSerena">
+              <template #trigger>
+                <span class="serena-button-wrapper">
+                  <n-button size="small" secondary :disabled="!hasSerena" @click="handleOpenSerena">
+                    <template #icon>
+                      <n-icon><SparklesOutline /></n-icon>
+                    </template>
+                    Serena
+                  </n-button>
+                </span>
+              </template>
+              使用 serena init 初始化项目
+            </n-tooltip>
+            <n-dropdown
+              :options="clearMenuOptions"
+              trigger="click"
+              @select="handleClearMenuSelect"
+            >
+              <n-button size="small" secondary>
+                <template #icon>
+                  <n-icon><TrashOutline /></n-icon>
+                </template>
+                清除历史
+              </n-button>
+            </n-dropdown>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -127,13 +143,13 @@
         <!-- Sessions List with Draggable -->
         <draggable
         v-if="filteredSessions.length > 0"
-        v-model="orderedSessions"
+        :list="filteredSessions"
         item-key="sessionId"
         handle=".drag-handle"
         ghost-class="ghost"
         chosen-class="chosen"
         animation="200"
-        :disabled="store.selectionMode"
+        :disabled="store.selectionMode || isFiltering"
         @end="handleDragEnd"
       >
         <template #item="{ element: session }">
@@ -193,6 +209,18 @@
                     >
                       已在回收站
                     </n-tag>
+                    <div v-if="session.tags && session.tags.length" class="session-tag-list">
+                      <n-tag
+                        v-for="(tag, index) in session.tags.slice(0, 4)"
+                        :key="`${session.sessionId}-${tag}-${index}`"
+                        size="small"
+                        :bordered="false"
+                        :color="getTagColor(tag)"
+                        class="session-tag"
+                      >
+                        {{ tag }}
+                      </n-tag>
+                    </div>
                   </div>
                 </div>
 
@@ -227,9 +255,9 @@
               <div v-if="!store.selectionMode" class="session-actions">
                 <n-space>
                   <n-button
-                    v-show="hoveredSession === session.sessionId"
                     size="small"
                     type="error"
+                    :class="['session-delete-button', { 'session-delete-button-hidden': hoveredSession !== session.sessionId }]"
                     @click.stop="handleDelete(session.sessionId)"
                   >
                     <template #icon>
@@ -342,8 +370,12 @@
             </n-button>
           </div>
           <div v-for="(match, idx) in session.matches" :key="idx" class="search-match">
-            <n-tag size="tiny" :type="match.role === 'user' ? 'info' : 'success'" :bordered="false">
-              {{ match.role === 'user' ? '用户' : '助手' }}
+            <n-tag
+              size="tiny"
+              :type="match.role === 'user' ? 'info' : (match.role === 'tag' ? 'warning' : 'success')"
+              :bordered="false"
+            >
+              {{ match.role === 'user' ? '用户' : (match.role === 'tag' ? '标签' : '助手') }}
             </n-tag>
             <n-text depth="3" class="search-match-text" v-html="highlightKeyword(match.context, searchResults.keyword)"></n-text>
           </div>
@@ -388,7 +420,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick, h } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
-  NButton, NIcon, NH2, NText, NInput, NSpin, NAlert, NEmpty,
+  NButton, NIcon, NH2, NText, NInput, NSpin, NAlert, NEmpty, NSelect,
   NTag, NSpace, NModal, NTooltip, NDropdown, NCheckbox
 } from 'naive-ui'
 import {
@@ -402,6 +434,7 @@ import { useSessionsStore } from '../stores/sessions'
 import { useFavorites } from '../composables/useFavorites'
 import message, { dialog } from '../utils/message'
 import { searchSessions as searchSessionsApi, launchTerminal } from '../api/sessions'
+import { getTagColor } from '../utils/tag-color'
 import ChatHistoryDrawer from '../components/ChatHistoryDrawer.vue'
 import OpenSpecDrawer from '../components/openspecui/OpenSpecDrawer.vue'
 import SerenaDrawer from '../components/serenaui/SerenaDrawer.vue'
@@ -426,6 +459,7 @@ const { addFavorite, removeFavorite, isFavorite } = useFavorites()
 const currentChannel = computed(() => route.meta.channel || 'claude')
 
 const searchQuery = ref('')
+const selectedTags = ref([])
 const showAliasModal = ref(false)
 const editingSession = ref(null)
 const hoveredSession = ref(null)
@@ -476,20 +510,60 @@ function renderIcon(icon) {
 // Sync with store
 watch(() => store.sessionsWithAlias, (newSessions) => {
   orderedSessions.value = [...newSessions]
+  if (!selectedTags.value.length) return
+  const available = new Set()
+  newSessions.forEach(session => {
+    (session.tags || []).forEach(tag => available.add(String(tag)))
+  })
+  selectedTags.value = selectedTags.value.filter(tag => available.has(String(tag)))
 }, { immediate: true })
 
-const filteredSessions = computed(() => {
-  if (!searchQuery.value) return orderedSessions.value
+const tagFilterOptions = computed(() => {
+  const tagSet = new Set()
+  orderedSessions.value.forEach(session => {
+    (session.tags || []).forEach(tag => {
+      const normalized = String(tag).trim()
+      if (normalized) {
+        tagSet.add(normalized)
+      }
+    })
+  })
+  return Array.from(tagSet)
+    .sort((a, b) => a.localeCompare(b, 'zh-CN'))
+    .map(tag => ({ label: tag, value: tag }))
+})
 
-  const query = searchQuery.value.toLowerCase()
-  return orderedSessions.value.filter(session => {
+const filteredSessions = computed(() => {
+  let result = orderedSessions.value
+  if (selectedTags.value.length > 0) {
+    const requiredTags = selectedTags.value
+      .map(tag => String(tag).trim().toLowerCase())
+      .filter(Boolean)
+    result = result.filter(session => {
+      const sessionTags = (session.tags || [])
+        .map(tag => String(tag).trim().toLowerCase())
+        .filter(Boolean)
+      if (sessionTags.length === 0) return false
+      return requiredTags.some(tag => sessionTags.includes(tag))
+    })
+  }
+
+  if (!searchQuery.value) return result
+
+  const query = searchQuery.value.toLowerCase().trim()
+  return result.filter(session => {
     return (
       session.sessionId.toLowerCase().includes(query) ||
       (session.alias && session.alias.toLowerCase().includes(query)) ||
       (session.firstMessage && session.firstMessage.toLowerCase().includes(query)) ||
-      (session.gitBranch && session.gitBranch.toLowerCase().includes(query))
+      (session.gitBranch && session.gitBranch.toLowerCase().includes(query)) ||
+      (session.tags && session.tags.some(tag => String(tag).toLowerCase().includes(query)))
     )
   })
+})
+
+const isFiltering = computed(() => {
+  return selectedTags.value.length > 0 || Boolean(searchQuery.value)
 })
 
 const selectedCount = computed(() => store.selectedSessions.size)
@@ -601,6 +675,7 @@ async function handleSearch() {
 }
 
 async function handleDragEnd() {
+  if (isFiltering.value) return
   const order = orderedSessions.value.map(s => s.sessionId)
   await store.saveSessionOrder(order)
 }
@@ -634,13 +709,14 @@ function handleSetAlias(session) {
   showAliasModal.value = true
 }
 
-async function handleAliasSaved({ sessionId, title }) {
+async function handleAliasSaved({ sessionId, title, tags }) {
   try {
     if (title) {
       await store.setAlias(sessionId, title)
     } else {
       await store.deleteAlias(sessionId)
     }
+    store.setMetadataCache(sessionId, { title: title || '', tags: tags || [] })
   } catch (err) {
     message.error('同步别名失败: ' + err.message)
   }
@@ -891,6 +967,11 @@ function truncateText(text, maxLength = 80) {
   return text
 }
 
+function formatSelectedTags(values) {
+  if (!values || values.length === 0) return ''
+  return `已选 ${values.length} 个`
+}
+
 // 保存和恢复滚动位置
 async function refreshDataWithScrollPreservation() {
   // Save scroll position
@@ -923,6 +1004,7 @@ async function refreshDataWithScrollPreservation() {
 // 监听 channel 变化
 watch(currentChannel, async (newChannel) => {
   store.setChannel(newChannel)
+  selectedTags.value = []
   try {
     await store.fetchSessions(props.projectName)
     await store.fetchTrash(props.projectName)
@@ -933,6 +1015,7 @@ watch(currentChannel, async (newChannel) => {
 
 watch(() => props.projectName, (newProject) => {
   if (!newProject) return
+  selectedTags.value = []
   store.fetchSessions(newProject, { force: true }).then(() => {
     store.fetchTrash(newProject).catch(() => {})
   }).catch(() => {})
@@ -986,7 +1069,7 @@ onUnmounted(() => {
 
 .title-bar {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 16px;
 }
 
@@ -1040,6 +1123,25 @@ onUnmounted(() => {
 
 .search-input {
   width: 320px;
+  flex-shrink: 0;
+}
+
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.header-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.tag-filter-select {
+  width: 200px;
   flex-shrink: 0;
 }
 
@@ -1149,6 +1251,23 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.session-delete-button-hidden {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.session-tag-list {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow: hidden;
+  min-width: 0;
+  gap: 6px;
+}
+
+.session-tag {
+  margin-left: 0;
 }
 
 .trash-tag {

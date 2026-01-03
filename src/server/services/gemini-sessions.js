@@ -3,6 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const os = require('os');
 const { getGeminiDir } = require('./gemini-config');
+const { getAllMetadata } = require('./session-metadata');
 
 // 路径映射缓存
 let pathMappingCache = null;
@@ -547,6 +548,12 @@ function getSessionById(sessionId) {
  * @returns {Array} 搜索结果数组
  */
 function searchSessions(keyword, contextLength = 35) {
+  const tagKeyword = parseTagKeyword(keyword);
+  if (tagKeyword !== null) {
+    if (!tagKeyword) return [];
+    return searchSessionsByTag(tagKeyword);
+  }
+
   const allSessions = getAllSessions();
   const results = [];
 
@@ -607,6 +614,48 @@ function searchSessions(keyword, contextLength = 35) {
   });
 
   // 按匹配数量排序
+  results.sort((a, b) => b.matchCount - a.matchCount);
+
+  return results;
+}
+
+function parseTagKeyword(keyword) {
+  if (!keyword) return null;
+  const trimmed = keyword.trim();
+  if (!trimmed.toLowerCase().startsWith('tag:')) return null;
+  const tagPart = trimmed.slice(4).trim();
+  if (!tagPart) return '';
+  return tagPart.split(/\s+/)[0];
+}
+
+function searchSessionsByTag(tagKeyword) {
+  const allSessions = getAllSessions();
+  const allMetadata = getAllMetadata();
+  const results = [];
+  const lowerKeyword = tagKeyword.toLowerCase();
+
+  allSessions.forEach(sessionMeta => {
+    const metadata = allMetadata[sessionMeta.sessionId] || {};
+    const tags = Array.isArray(metadata.tags) ? metadata.tags : [];
+    const matchedTags = tags.filter(tag => String(tag).toLowerCase().includes(lowerKeyword));
+
+    if (matchedTags.length > 0) {
+      results.push({
+        sessionId: sessionMeta.sessionId,
+        projectHash: sessionMeta.projectHash,
+        firstMessage: sessionMeta.firstMessage,
+        lastUpdated: sessionMeta.lastUpdated,
+        matches: matchedTags.slice(0, 5).map(tag => ({
+          role: 'tag',
+          context: `tag:${tag}`,
+          timestamp: sessionMeta.lastUpdated
+        })),
+        matchCount: matchedTags.length,
+        source: 'gemini'
+      });
+    }
+  });
+
   results.sort((a, b) => b.matchCount - a.matchCount);
 
   return results;

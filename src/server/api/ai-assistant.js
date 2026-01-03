@@ -247,8 +247,8 @@ router.post('/metadata', (req, res) => {
     return res.status(400).json({ error: 'sessionId is required' });
   }
   try {
-    const metadata = setMetadata(sessionId, { title, tags });
-    res.json({ success: true, data: metadata });
+    const result = setMetadata(sessionId, { title, tags });
+    res.json({ success: true, data: result.metadata, warning: result.warning });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -260,8 +260,8 @@ router.delete('/metadata/:sessionId', (req, res) => {
     return res.status(400).json({ error: 'sessionId is required' });
   }
   try {
-    const metadata = setMetadata(sessionId, {});
-    res.json({ success: true, data: metadata });
+    const result = setMetadata(sessionId, {});
+    res.json({ success: true, data: result.metadata, warning: result.warning });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

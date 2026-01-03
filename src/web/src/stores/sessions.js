@@ -9,6 +9,7 @@ import {
   forkSession as forkSessionApi,
   saveSessionOrder as saveSessionOrderApi
 } from '../api/sessions'
+import { getSessionMetadata } from '../api/ai'
 import {
   batchDeleteSessions,
   getTrashList,
@@ -90,6 +91,7 @@ export const useSessionsStore = defineStore('sessions', () => {
   const currentProjectInfo = ref(null)
   const sessions = ref([])
   const aliases = ref({})
+  const metadata = ref({})
   const totalSize = ref(0)
   const loading = ref(false)
   const error = ref(null)
@@ -103,7 +105,8 @@ export const useSessionsStore = defineStore('sessions', () => {
   const sessionsWithAlias = computed(() => {
     return sessions.value.map(session => ({
       ...session,
-      alias: aliases.value[session.sessionId] || null
+      alias: aliases.value[session.sessionId] || null,
+      tags: metadata.value[session.sessionId]?.tags || []
     }))
   })
 
@@ -150,10 +153,14 @@ export const useSessionsStore = defineStore('sessions', () => {
         if (cached) {
           sessions.value = cached.sessions || []
           aliases.value = cached.aliases || {}
+          metadata.value = cached.metadata || {}
           totalSize.value = cached.totalSize || 0
           currentProject.value = projectName
           currentProjectInfo.value = cached.projectInfo || null
           loading.value = false
+          if (!cached.metadata || Object.keys(cached.metadata).length === 0) {
+            loadMetadata(cached.sessions?.map(session => session.sessionId) || [])
+          }
           return
         }
       }
@@ -161,19 +168,77 @@ export const useSessionsStore = defineStore('sessions', () => {
       const data = await getSessions(projectName, currentChannel.value)
       sessions.value = data.sessions
       aliases.value = data.aliases
+      metadata.value = {}
       totalSize.value = data.totalSize || 0
       currentProject.value = projectName
       currentProjectInfo.value = data.projectInfo
       setCachedSessions(currentChannel.value, projectName, {
         sessions: data.sessions,
         aliases: data.aliases,
+        metadata: metadata.value,
         totalSize: data.totalSize,
         projectInfo: data.projectInfo
       })
+      loadMetadata(data.sessions.map(session => session.sessionId))
     } catch (err) {
       error.value = err.message
     } finally {
       loading.value = false
+    }
+  }
+
+  async function loadMetadata(sessionIds = []) {
+    const ids = sessionIds.length ? sessionIds : sessions.value.map(session => session.sessionId)
+    const pending = ids.filter(id => !(id in metadata.value))
+    if (pending.length === 0) return
+
+    try {
+      const results = await Promise.all(pending.map(async (sessionId) => {
+        try {
+          const res = await getSessionMetadata(sessionId)
+          if (res.success && res.data) {
+            return { sessionId, data: res.data }
+          }
+          return { sessionId, data: { tags: [] } }
+        } catch (err) {
+          return { sessionId, data: { tags: [] } }
+        }
+      }))
+
+      const next = { ...metadata.value }
+      results.forEach(({ sessionId, data }) => {
+        next[sessionId] = data || { tags: [] }
+      })
+      metadata.value = next
+
+      if (currentProject.value) {
+        setCachedSessions(currentChannel.value, currentProject.value, {
+          sessions: sessions.value,
+          aliases: aliases.value,
+          metadata: metadata.value,
+          totalSize: totalSize.value,
+          projectInfo: currentProjectInfo.value
+        })
+      }
+    } catch (err) {
+      error.value = err.message
+    }
+  }
+
+  function setMetadataCache(sessionId, data) {
+    if (!sessionId) return
+    metadata.value = {
+      ...metadata.value,
+      [sessionId]: data || { tags: [] }
+    }
+    if (currentProject.value) {
+      setCachedSessions(currentChannel.value, currentProject.value, {
+        sessions: sessions.value,
+        aliases: aliases.value,
+        metadata: metadata.value,
+        totalSize: totalSize.value,
+        projectInfo: currentProjectInfo.value
+      })
     }
   }
 
@@ -205,9 +270,13 @@ export const useSessionsStore = defineStore('sessions', () => {
       if (aliases.value[sessionId]) {
         delete aliases.value[sessionId]
       }
+      if (metadata.value[sessionId]) {
+        delete metadata.value[sessionId]
+      }
       setCachedSessions(currentChannel.value, currentProject.value, {
         sessions: sessions.value,
         aliases: aliases.value,
+        metadata: metadata.value,
         totalSize: totalSize.value,
         projectInfo: currentProjectInfo.value
       })
@@ -276,6 +345,7 @@ export const useSessionsStore = defineStore('sessions', () => {
       setCachedSessions(currentChannel.value, currentProject.value, {
         sessions: sessions.value,
         aliases: aliases.value,
+        metadata: metadata.value,
         totalSize: totalSize.value,
         projectInfo: currentProjectInfo.value
       })
@@ -322,10 +392,14 @@ export const useSessionsStore = defineStore('sessions', () => {
         if (aliases.value[id]) {
           delete aliases.value[id]
         }
+        if (metadata.value[id]) {
+          delete metadata.value[id]
+        }
       })
       setCachedSessions(currentChannel.value, currentProject.value, {
         sessions: sessions.value,
         aliases: aliases.value,
+        metadata: metadata.value,
         totalSize: totalSize.value,
         projectInfo: currentProjectInfo.value
       })
@@ -403,6 +477,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     currentProjectInfo,
     sessions,
     aliases,
+    metadata,
     totalSize,
     loading,
     error,
@@ -412,6 +487,8 @@ export const useSessionsStore = defineStore('sessions', () => {
     trashItems,
     trashLoading,
     sessionsWithAlias,
+    loadMetadata,
+    setMetadataCache,
     setChannel,
     fetchProjects,
     fetchSessions,

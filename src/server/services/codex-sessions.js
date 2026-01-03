@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { getCodexDir } = require('./codex-config');
 const { parseSession, parseSessionMeta, extractSessionMeta, readJSONL } = require('./codex-parser');
+const { getAllMetadata } = require('./session-metadata');
 
 /**
  * 获取会话目录
@@ -300,6 +301,12 @@ function getSessionById(sessionId) {
  * @returns {Array} 搜索结果
  */
 function searchSessions(keyword) {
+  const tagKeyword = parseTagKeyword(keyword);
+  if (tagKeyword !== null) {
+    if (!tagKeyword) return [];
+    return searchSessionsByTag(tagKeyword);
+  }
+
   const files = scanSessionFiles();
   const results = [];
 
@@ -345,6 +352,60 @@ function searchSessions(keyword) {
           source: 'codex'
         });
       }
+    });
+  });
+
+  return results;
+}
+
+function parseTagKeyword(keyword) {
+  if (!keyword) return null;
+  const trimmed = keyword.trim();
+  if (!trimmed.toLowerCase().startsWith('tag:')) return null;
+  const tagPart = trimmed.slice(4).trim();
+  if (!tagPart) return '';
+  return tagPart.split(/\s+/)[0];
+}
+
+function searchSessionsByTag(tagKeyword) {
+  const files = scanSessionFiles();
+  const allMetadata = getAllMetadata();
+  const results = [];
+  const lowerKeyword = tagKeyword.toLowerCase();
+
+  files.forEach(file => {
+    const metadata = allMetadata[file.sessionId] || {};
+    const tags = Array.isArray(metadata.tags) ? metadata.tags : [];
+    const matchedTags = tags.filter(tag => String(tag).toLowerCase().includes(lowerKeyword));
+
+    if (!matchedTags.length) {
+      return;
+    }
+
+    const session = parseSessionMeta(file.filePath);
+    if (!session || !session.meta) {
+      return;
+    }
+
+    let projectName;
+    if (session.meta?.git?.repositoryUrl) {
+      projectName = session.meta.git.repositoryUrl.split('/').pop().replace('.git', '');
+    } else if (session.meta?.cwd) {
+      projectName = path.basename(session.meta.cwd);
+    } else {
+      projectName = 'Unknown';
+    }
+
+    matchedTags.slice(0, 5).forEach(tag => {
+      results.push({
+        sessionId: file.sessionId,
+        projectName,
+        messageIndex: null,
+        role: 'tag',
+        context: `tag:${tag}`,
+        timestamp: session.meta.timestamp,
+        source: 'codex'
+      });
     });
   });
 

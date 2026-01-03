@@ -21,7 +21,8 @@ vi.mock('../api/ai', () => ({
 vi.mock('../utils/message', () => ({
   default: {
     success: vi.fn(),
-    error: vi.fn()
+    error: vi.fn(),
+    warning: vi.fn()
   }
 }))
 

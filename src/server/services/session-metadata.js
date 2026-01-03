@@ -4,6 +4,7 @@ const { getAppDir } = require('../../utils/app-path-manager');
 const { getAlias, setAlias, deleteAlias } = require('./alias');
 
 const METADATA_FILE_NAME = 'session-metadata.json';
+const MAX_TAG_COUNT = 4;
 
 function ensureMetadataDir() {
   const appDir = getAppDir();
@@ -44,6 +45,10 @@ function normalizeTags(tags) {
     .filter(Boolean);
 }
 
+function getAllMetadata() {
+  return loadAllMetadata();
+}
+
 function getMetadata(sessionId) {
   if (!sessionId) return null;
   const allMetadata = loadAllMetadata();
@@ -68,12 +73,17 @@ function setMetadata(sessionId, payload = {}) {
   }
   const allMetadata = loadAllMetadata();
   const title = String(payload.title || '').trim();
-  const tags = normalizeTags(payload.tags);
+  let warning = null;
+  let tags = normalizeTags(payload.tags);
+  if (tags.length > MAX_TAG_COUNT) {
+    tags = tags.slice(0, MAX_TAG_COUNT);
+    warning = `标签最多 ${MAX_TAG_COUNT} 个，已自动截断`;
+  }
   if (!title && tags.length === 0) {
     delete allMetadata[sessionId];
     saveAllMetadata(allMetadata);
     deleteAlias(sessionId);
-    return null;
+    return { metadata: null, warning };
   }
   const metadata = {
     title,
@@ -89,10 +99,11 @@ function setMetadata(sessionId, payload = {}) {
     deleteAlias(sessionId);
   }
 
-  return metadata;
+  return { metadata, warning };
 }
 
 module.exports = {
+  getAllMetadata,
   getMetadata,
   setMetadata
 };
