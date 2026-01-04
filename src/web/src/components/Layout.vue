@@ -1144,8 +1144,8 @@ onUnmounted(() => {
 }
 
 .logo-image {
-  width: 24px;
-  height: 24px;
+  width: 36px;
+  height: 36px;
   object-fit: contain;
 }
 
