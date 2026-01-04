@@ -366,6 +366,23 @@ function broadcastSchedulerState(source, schedulerState) {
   }
 }
 
+// 广播更新状态消息（不写入日志缓存）
+function broadcastUpdate(update = {}) {
+  const payload = {
+    timestamp: Date.now(),
+    ...update
+  };
+
+  if (wss && wsClients.size > 0) {
+    const message = JSON.stringify(payload);
+    wsClients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(message);
+      }
+    });
+  }
+}
+
 // 广播 OpenSpec 文件变更
 function broadcastOpenSpecChange(change = {}) {
   const payload = {
@@ -391,5 +408,6 @@ module.exports = {
   clearAllLogs,
   broadcastProxyState,
   broadcastSchedulerState,
+  broadcastUpdate,
   broadcastOpenSpecChange
 };

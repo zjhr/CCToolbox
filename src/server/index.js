@@ -15,6 +15,7 @@ const { startCodexProxyServer } = require('./codex-proxy-server');
 const { startGeminiProxyServer } = require('./gemini-proxy-server');
 const { getAppDir } = require('../utils/app-path-manager');
 const { startTrashCleanup } = require('./services/trash');
+const { startUpdateChecker } = require('./services/update-checker');
 
 async function startServer(port) {
   const config = loadConfig();
@@ -91,6 +92,7 @@ async function startServer(port) {
   });
 
   // API Routes
+  app.use('/health', require('./api/health'));
   app.use('/api/projects', require('./api/projects')(config));
   app.use('/api/sessions', require('./api/sessions')(config));
 
@@ -119,6 +121,7 @@ async function startServer(port) {
   app.use('/api/codex/statistics', require('./api/codex-statistics'));
   app.use('/api/gemini/statistics', require('./api/gemini-statistics'));
   app.use('/api/version', require('./api/version'));
+  app.use('/api/update', require('./api/update'));
   app.use('/api/pm2-autostart', require('./api/pm2-autostart')());
   app.use('/api/dashboard', require('./api/dashboard'));
   app.use('/api/mcp', require('./api/mcp'));
@@ -152,6 +155,9 @@ async function startServer(port) {
     // 附加 WebSocket 服务器到同一个端口
     attachWebSocketServer(server);
     console.log(`   ws://localhost:${port}/ws\n`);
+
+    startUpdateChecker();
+    console.log(chalk.gray('✅ 更新检查服务已启动'));
 
     // 自动恢复代理状态
     autoRestoreProxies();

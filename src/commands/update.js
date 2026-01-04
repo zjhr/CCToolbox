@@ -1,7 +1,9 @@
 const chalk = require('chalk');
 const { spawn } = require('child_process');
 const ora = require('ora');
+const path = require('path');
 const { checkForUpdates } = require('../utils/version-check');
+const { checkGitUpdate } = require('../utils/git-version');
 
 /**
  * 处理更新命令
@@ -10,11 +12,60 @@ async function handleUpdate() {
   console.log(chalk.cyan.bold('\n🔍 检查更新中...\n'));
 
   const spinner = ora('正在检查版本...').start();
+  const rootDir = path.resolve(__dirname, '../..');
+  const autoConfirm = process.argv.includes('--yes') || process.argv.includes('-y');
 
   try {
-    const result = await checkForUpdates();
+    const gitResult = await checkGitUpdate(rootDir);
 
     spinner.stop();
+
+    if (gitResult.type === 'git') {
+      if (gitResult.error) {
+        console.log(chalk.yellow('⚠️  无法检查更新（Git 检查失败）'));
+        console.log(chalk.gray(`   当前版本: ${gitResult.current || 'unknown'}\n`));
+        return;
+      }
+
+      console.log(chalk.gray(`📦 当前版本: ${chalk.white.bold(gitResult.current)}`));
+      console.log(chalk.gray(`📦 最新版本: ${chalk.white.bold(gitResult.latest)}\n`));
+
+      if (!gitResult.hasUpdate) {
+        console.log(chalk.green('✅ 已经是最新版本！\n'));
+        return;
+      }
+
+      // 发现新版本
+      console.log(chalk.green.bold('🎉 发现新版本！'));
+      console.log(chalk.cyan(`   ${gitResult.current} → ${gitResult.latest}\n`));
+
+      let confirm = autoConfirm;
+      if (!autoConfirm) {
+        const inquirer = require('inquirer');
+        const answer = await inquirer.prompt([
+          {
+            type: 'confirm',
+            name: 'confirm',
+            message: '是否立即更新？',
+            default: true
+          }
+        ]);
+        confirm = answer.confirm;
+      }
+
+      if (!confirm) {
+        console.log(chalk.yellow('\n❌ 已取消更新\n'));
+        return;
+      }
+
+      // 执行更新
+      console.log(chalk.cyan('\n⏳ 正在更新...\n'));
+
+      await performGitUpdate(rootDir);
+      return;
+    }
+
+    const result = await checkForUpdates();
 
     if (result.error) {
       console.log(chalk.yellow('⚠️  无法检查更新（网络连接失败）'));
@@ -35,15 +86,19 @@ async function handleUpdate() {
     console.log(chalk.cyan(`   ${result.current} → ${result.latest}\n`));
 
     // 询问是否更新
-    const inquirer = require('inquirer');
-    const { confirm } = await inquirer.prompt([
-      {
-        type: 'confirm',
-        name: 'confirm',
-        message: '是否立即更新？',
-        default: true
-      }
-    ]);
+    let confirm = autoConfirm;
+    if (!autoConfirm) {
+      const inquirer = require('inquirer');
+      const answer = await inquirer.prompt([
+        {
+          type: 'confirm',
+          name: 'confirm',
+          message: '是否立即更新？',
+          default: true
+        }
+      ]);
+      confirm = answer.confirm;
+    }
 
     if (!confirm) {
       console.log(chalk.yellow('\n❌ 已取消更新\n'));
@@ -53,7 +108,7 @@ async function handleUpdate() {
     // 执行更新
     console.log(chalk.cyan('\n⏳ 正在更新...\n'));
 
-    await performUpdate();
+    await performNpmUpdate();
 
   } catch (err) {
     spinner.stop();
@@ -65,7 +120,7 @@ async function handleUpdate() {
 /**
  * 执行实际的更新操作
  */
-function performUpdate() {
+function performNpmUpdate() {
   return new Promise((resolve, reject) => {
     const updateProcess = spawn('npm', ['install', '-g', 'cctoolbox@latest'], {
       stdio: 'inherit',
@@ -95,12 +150,52 @@ function performUpdate() {
 }
 
 /**
+ * 执行 Git 更新操作
+ */
+function performGitUpdate(rootDir) {
+  return new Promise((resolve, reject) => {
+    const updateProcess = spawn('python3', ['update.py'], {
+      stdio: 'inherit',
+      cwd: rootDir
+    });
+
+    updateProcess.on('close', (code) => {
+      if (code === 0) {
+        console.log(chalk.green.bold('\n✅ 更新成功！\n'));
+        resolve();
+      } else {
+        console.log(chalk.red('\n❌ 更新失败'));
+        console.log(chalk.yellow('💡 提示: 您可以尝试手动更新：'));
+        console.log(chalk.gray('   $ git pull origin main\n'));
+        reject(new Error('Update failed with code ' + code));
+      }
+    });
+
+    updateProcess.on('error', (err) => {
+      console.log(chalk.red('\n❌ 更新失败:'), err.message);
+      console.log(chalk.yellow('💡 提示: 您可以尝试手动更新：'));
+      console.log(chalk.gray('   $ git pull origin main\n'));
+      reject(err);
+    });
+  });
+}
+
+/**
  * 静默检查更新（不进行交互，仅返回结果）
  */
 async function checkUpdateSilently() {
   try {
+    const rootDir = path.resolve(__dirname, '../..');
+    const gitResult = await checkGitUpdate(rootDir);
+    if (gitResult.type === 'git') {
+      return gitResult;
+    }
+
     const result = await checkForUpdates();
-    return result;
+    return {
+      ...result,
+      type: 'npm'
+    };
   } catch (err) {
     return {
       hasUpdate: false,

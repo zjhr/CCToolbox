@@ -4,6 +4,12 @@
 
 该项目遵循 [Semantic Versioning](https://semver.org/)。
 
+## [Unreleased]
+
+### Added
+
+- 🔄 GitHub 更新检测与一键更新（支持 Web UI 徽章与 `ct update`）
+
 ## [3.0.0] - 2026-01-04
 
 ### 🎉 重大更新：品牌升级 CCToolbox

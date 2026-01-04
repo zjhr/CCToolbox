@@ -383,6 +383,9 @@ export const useGlobalStore = defineStore('global', () => {
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data)
+          if (typeof data.type === 'string' && data.type.startsWith('update-')) {
+            return
+          }
           if (data.type === 'proxy-state') {
             handleProxyStateUpdate(data)
           } else if (data.type === 'scheduler-state') {

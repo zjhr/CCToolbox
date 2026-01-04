@@ -80,8 +80,18 @@
           检测到 {{ envConflicts.length }} 个环境变量冲突，点击查看
         </n-tooltip>
 
-        <!-- Update Notification -->
-        <div v-if="updateInfo" class="update-notification">
+        <!-- Git 更新徽章 -->
+        <UpdateBadge />
+
+        <!-- 手动检测更新 -->
+        <HeaderButton
+          :icon="RefreshOutline"
+          tooltip="检测更新"
+          @click="handleManualUpdateCheck"
+        />
+
+        <!-- npm 更新通知 -->
+        <div v-if="npmUpdateInfo" class="update-notification">
           <div class="update-badge" @click="handleUpdateClick">
             <n-icon :size="18">
               <svg
@@ -620,6 +630,7 @@ import {
   ChatboxOutline,
   SpeedometerOutline,
   WarningOutline,
+  RefreshOutline,
 } from "@vicons/ionicons5";
 import RightPanel from "./RightPanel.vue";
 import RecentSessionsDrawer from "./RecentSessionsDrawer.vue";
@@ -630,12 +641,14 @@ import PromptsDrawer from "./PromptsDrawer.vue";
 import SpeedTestDrawer from "./SpeedTestDrawer.vue";
 import HeaderButton from "./HeaderButton.vue";
 import UpdateDialog from "./UpdateDialog.vue";
+import UpdateBadge from "./UpdateBadge.vue";
 import EnvConflictModal from "./EnvConflictModal.vue";
 import { updateNestedUIConfig } from "../api/ui-config";
 import {
   checkForUpdates as checkForUpdatesApi,
   getChangelog,
 } from "../api/version";
+import { checkUpdate as checkGitUpdate } from "../api/update";
 import { checkEnvConflicts } from "../api/env";
 import message, { dialog } from "../utils/message";
 import { useTheme } from "../composables/useTheme";
@@ -731,7 +744,7 @@ function handleEnvNeverRemind() {
   localStorage.setItem("envConflictNeverRemind", "true");
 }
 const globalLoading = ref(false); // 全局 loading 状态
-const updateInfo = ref(null); // 版本更新信息
+const npmUpdateInfo = ref(null); // npm 版本更新信息
 
 // 根据当前 channel 计算有效的代理状态
 const effectiveProxyRunning = computed(() => {
@@ -834,9 +847,14 @@ function handlePanelVisibilityChange(event) {
 // 检查版本更新
 async function checkForUpdates() {
   try {
+    const envResult = await checkGitUpdate();
+    if (envResult.type === "git") {
+      return;
+    }
+
     const result = await checkForUpdatesApi();
     if (result.hasUpdate && !result.error) {
-      updateInfo.value = result;
+      npmUpdateInfo.value = result;
     }
   } catch (err) {
     // 静默失败，不影响用户体验
@@ -844,14 +862,57 @@ async function checkForUpdates() {
   }
 }
 
+// 手动检测更新
+async function handleManualUpdateCheck() {
+  message.info("正在检查更新...");
+
+  try {
+    const gitResult = await checkGitUpdate();
+    if (gitResult.type === "git") {
+      if (gitResult.error) {
+        message.warning("Git 更新检查失败，请稍后重试");
+        return;
+      }
+
+      if (gitResult.hasUpdate) {
+        message.success(
+          `发现新版本：${gitResult.current} → ${gitResult.latest}`
+        );
+      } else {
+        message.success("已经是最新版本");
+      }
+
+      if (gitResult.warning) {
+        message.warning("Git 拉取失败，已使用本地缓存结果");
+      }
+      return;
+    }
+
+    const result = await checkForUpdatesApi();
+    if (result.error) {
+      message.warning("无法检查更新，请稍后再试");
+      return;
+    }
+
+    if (result.hasUpdate) {
+      npmUpdateInfo.value = result;
+      message.success(`发现新版本：${result.current} → ${result.latest}`);
+    } else {
+      message.success("已经是最新版本");
+    }
+  } catch (err) {
+    message.error("检查更新失败");
+  }
+}
+
 // 处理更新点击
 async function handleUpdateClick() {
-  if (!updateInfo.value) return;
+  if (!npmUpdateInfo.value) return;
 
   // 获取更新日志
   let changelogData = null;
   try {
-    const result = await getChangelog(updateInfo.value.latest);
+    const result = await getChangelog(npmUpdateInfo.value.latest);
     if (result.success) {
       changelogData = result.changelog;
     }
@@ -864,8 +925,8 @@ async function handleUpdateClick() {
     title: "✨ 发现新版本",
     content: () =>
       h(UpdateDialog, {
-        currentVersion: updateInfo.value.current,
-        latestVersion: updateInfo.value.latest,
+        currentVersion: npmUpdateInfo.value.current,
+        latestVersion: npmUpdateInfo.value.latest,
         changelog: changelogData,
       }),
     maskClosable: true,
