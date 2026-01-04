@@ -32,7 +32,9 @@ cp -R ~/.claude/cc-tool/* ~/.claude/cctoolbox/
 新包名为 `cctoolbox`：
 
 ```bash
-npm install -g cctoolbox
+git clone https://github.com/zjhr/coding-tool.git
+cd coding-tool
+./install.sh
 ```
 
 旧包 `coding-tool` 将逐步弃用，建议升级到新包名。
