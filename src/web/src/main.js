@@ -68,5 +68,14 @@ app.use(pinia)
 app.use(router)
 app.mount('#app')
 
+// 注册 Service Worker，满足桌面安装条件
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((error) => {
+      console.warn('Service Worker 注册失败:', error)
+    })
+  })
+}
+
 // 初始化全局状态（WebSocket 连接和状态管理）
 initializeGlobalState()

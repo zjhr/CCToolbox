@@ -83,6 +83,14 @@
         <!-- Git 更新徽章 -->
         <UpdateBadge />
 
+        <!-- 安装为桌面端 -->
+        <HeaderButton
+          v-if="canInstallPwa"
+          :icon="DownloadOutline"
+          tooltip="安装为桌面应用"
+          @click="handlePwaInstall"
+        />
+
         <!-- 手动检测更新 -->
         <HeaderButton
           :icon="RefreshOutline"
@@ -631,6 +639,7 @@ import {
   SpeedometerOutline,
   WarningOutline,
   RefreshOutline,
+  DownloadOutline,
 } from "@vicons/ionicons5";
 import RightPanel from "./RightPanel.vue";
 import RecentSessionsDrawer from "./RecentSessionsDrawer.vue";
@@ -699,6 +708,54 @@ const showHelpModal = ref(false);
 // 环境变量冲突检测
 const envConflicts = ref([]);
 const showEnvModal = ref(false);
+
+// PWA 安装提示
+const deferredInstallPrompt = ref(null);
+const canInstallPwa = ref(false);
+
+function detectPwaInstalled() {
+  if (typeof window === "undefined") return;
+  const isStandalone =
+    window.matchMedia?.("(display-mode: standalone)")?.matches || false;
+  const isIosStandalone = window.navigator?.standalone === true;
+  const isInstalled = isStandalone || isIosStandalone;
+
+  if (isInstalled) {
+    canInstallPwa.value = false;
+    deferredInstallPrompt.value = null;
+  }
+}
+
+function handleBeforeInstallPrompt(event) {
+  event.preventDefault();
+  deferredInstallPrompt.value = event;
+  canInstallPwa.value = true;
+}
+
+function handleAppInstalled() {
+  canInstallPwa.value = false;
+  deferredInstallPrompt.value = null;
+  message.success("已安装为桌面应用");
+}
+
+async function handlePwaInstall() {
+  const promptEvent = deferredInstallPrompt.value;
+  if (!promptEvent) {
+    message.warning("当前浏览器未满足安装条件");
+    return;
+  }
+
+  promptEvent.prompt();
+  const choiceResult = await promptEvent.userChoice;
+  if (choiceResult?.outcome === "accepted") {
+    message.success("安装已开始，请按提示完成");
+  } else {
+    message.info("已取消安装");
+  }
+
+  deferredInstallPrompt.value = null;
+  canInstallPwa.value = false;
+}
 
 // 检测环境变量冲突
 async function checkEnvConflictsOnLoad() {
@@ -939,6 +996,8 @@ async function handleUpdateClick() {
 }
 
 onMounted(() => {
+  detectPwaInstalled();
+
   // 加载面板可见性设置
   loadPanelSettings();
 
@@ -947,6 +1006,8 @@ onMounted(() => {
     "panel-visibility-change",
     handlePanelVisibilityChange
   );
+  window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+  window.addEventListener("appinstalled", handleAppInstalled);
 
   // 检测环境变量冲突
   checkEnvConflictsOnLoad();
@@ -975,6 +1036,8 @@ onUnmounted(() => {
     "panel-visibility-change",
     handlePanelVisibilityChange
   );
+  window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+  window.removeEventListener("appinstalled", handleAppInstalled);
 });
 </script>
 
