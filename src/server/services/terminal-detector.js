@@ -107,7 +107,7 @@ function detectMacTerminals() {
       name: 'iTerm2',
       available: true,
       isDefault: false,
-      command: 'osascript -e \'tell application "iTerm" to create window with default profile command "cd {cwd} && claude -r {sessionId}"\''
+      command: 'osascript -e "tell application \\"iTerm\\" to create window with default profile command \\"/bin/zsh -lc \'cd {cwd} && claude -r {sessionId}\'\\""'
     });
   }
 

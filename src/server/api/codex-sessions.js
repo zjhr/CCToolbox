@@ -457,24 +457,32 @@ module.exports = (config) => {
 
       // 使用配置的终端工具启动
       const { getTerminalLaunchCommand } = require('../services/terminal-config');
+      const { terminalId: requestedTerminalId, clipboardOnly } = req.body || {};
 
       try {
         // Windows 路径需要转换为反斜杠格式
         const normalizedCwd = process.platform === 'win32' ? cwd.replace(/\//g, '\\') : cwd;
 
         const codexCliCommand = `codex resume ${sessionId}`;
-        const { command, terminalId, terminalName, clipboardCommand } = getTerminalLaunchCommand(normalizedCwd, sessionId, codexCliCommand);
+        const { command, terminalId, terminalName, clipboardCommand } = getTerminalLaunchCommand(
+          normalizedCwd,
+          sessionId,
+          codexCliCommand,
+          requestedTerminalId
+        );
 
-        console.log(`[Codex] Launching terminal: ${terminalName} (${terminalId})`);
-        console.log(`[Codex] Command: ${command}`);
+        if (!clipboardOnly) {
+          console.log(`[Codex] Launching terminal: ${terminalName} (${terminalId})`);
+          console.log(`[Codex] Command: ${command}`);
 
-        // 异步执行命令，不等待结果
-        const shellOption = process.platform === 'win32' ? { shell: 'cmd.exe' } : { shell: true };
-        exec(command, shellOption, (error, stdout, stderr) => {
-          if (error) {
-            console.error(`[Codex] Failed to launch terminal ${terminalName}:`, error.message);
-          }
-        });
+          // 异步执行命令，不等待结果
+          const shellOption = process.platform === 'win32' ? { shell: 'cmd.exe' } : { shell: true };
+          exec(command, shellOption, (error, stdout, stderr) => {
+            if (error) {
+              console.error(`[Codex] Failed to launch terminal ${terminalName}:`, error.message);
+            }
+          });
+        }
 
         // 立即返回成功响应
         res.json({
@@ -484,7 +492,8 @@ module.exports = (config) => {
           terminal: terminalName,
           terminalId,
           clipboardCommand,
-          sessionId
+          sessionId,
+          clipboardOnly: Boolean(clipboardOnly)
         });
       } catch (terminalError) {
         console.error('[Codex] Failed to get terminal command:', terminalError);

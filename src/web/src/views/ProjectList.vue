@@ -130,12 +130,12 @@
               </n-text>
               <n-tag size="small" :bordered="false">{{ session.matchCount }} 个匹配</n-tag>
             </div>
-            <n-button size="small" type="primary" @click="handleLaunchTerminalFromGlobal(session.projectName, session.sessionId)">
-              <template #icon>
-                <n-icon><TerminalOutline /></n-icon>
-              </template>
-              使用对话
-            </n-button>
+            <TerminalLauncher
+              :project-name="session.projectName"
+              :session-id="session.sessionId"
+              :channel="currentChannel"
+              @launched="showGlobalSearch = false"
+            />
           </div>
           <div v-for="(match, idx) in session.matches" :key="idx" class="search-match">
             <n-tag size="tiny" :type="match.role === 'user' ? 'info' : 'success'" :bordered="false">
@@ -155,12 +155,13 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { NH2, NText, NSpin, NAlert, NEmpty, NIcon, NInput, NModal, NButton, NTag } from 'naive-ui'
-import { FolderOpenOutline, SearchOutline, TerminalOutline } from '@vicons/ionicons5'
+import { FolderOpenOutline, SearchOutline } from '@vicons/ionicons5'
 import draggable from 'vuedraggable'
 import { useSessionsStore } from '../stores/sessions'
 import ProjectCard from '../components/ProjectCard.vue'
+import TerminalLauncher from '../components/TerminalLauncher.vue'
 import message, { dialog } from '../utils/message'
-import { searchSessionsGlobally, launchTerminal } from '../api/sessions'
+import { searchSessionsGlobally } from '../api/sessions'
 
 const router = useRouter()
 const route = useRoute()
@@ -274,20 +275,6 @@ async function handleGlobalSearch() {
     message.error('搜索失败: ' + err.message)
   } finally {
     globalSearching.value = false
-  }
-}
-
-async function handleLaunchTerminalFromGlobal(projectName, sessionId) {
-  try {
-    const data = await launchTerminal(projectName, sessionId, currentChannel.value)
-    if (data?.terminalId === 'vscode') {
-      message.success('VSCode 已打开，命令已复制到剪贴板。按 Cmd+` 打开终端并粘贴执行')
-    } else {
-      message.success('已启动终端')
-    }
-    showGlobalSearch.value = false
-  } catch (err) {
-    message.error('启动失败: ' + err.message)
   }
 }
 

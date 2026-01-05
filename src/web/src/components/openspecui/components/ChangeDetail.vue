@@ -498,6 +498,7 @@ function findFirstMarkdown(nodes) {
   flex: 1;
   min-height: 0;
   overflow: auto;
+  overflow-x: hidden;
   padding: 12px 8px 16px;
   box-sizing: border-box;
 }

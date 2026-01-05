@@ -2,81 +2,27 @@ const fs = require('fs');
 const crypto = require('crypto');
 const path = require('path');
 const os = require('os');
-const { getAppDir } = require('../../utils/app-path-manager');
-const { detectAvailableTerminals, getDefaultTerminal } = require('./terminal-detector');
-
-/**
- * 获取配置文件路径
- */
-function getConfigFilePath() {
-  const appDir = getAppDir();
-  if (!fs.existsSync(appDir)) {
-    fs.mkdirSync(appDir, { recursive: true });
-  }
-  return path.join(appDir, 'terminal-config.json');
-}
-
-/**
- * 加载终端配置
- */
-function loadTerminalConfig() {
-  const configPath = getConfigFilePath();
-
-  try {
-    if (fs.existsSync(configPath)) {
-      const data = fs.readFileSync(configPath, 'utf8');
-      return JSON.parse(data);
-    }
-  } catch (err) {
-    console.error('Failed to load terminal config:', err);
-  }
-
-  // 返回默认配置
-  const defaultTerminal = getDefaultTerminal();
-  return {
-    selectedTerminal: defaultTerminal ? defaultTerminal.id : null,
-    customCommand: null
-  };
-}
-
-/**
- * 保存终端配置
- */
-function saveTerminalConfig(config) {
-  const configPath = getConfigFilePath();
-
-  try {
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
-    return { success: true };
-  } catch (err) {
-    console.error('Failed to save terminal config:', err);
-    throw new Error('Failed to save terminal config: ' + err.message);
-  }
-}
+const { detectAvailableTerminals } = require('./terminal-detector');
 
 /**
  * 获取当前选中的终端配置
  */
-function getSelectedTerminal() {
-  const config = loadTerminalConfig();
+function resolveTerminal(terminalId) {
   const availableTerminals = detectAvailableTerminals();
-
-  // 如果配置了自定义命令，返回自定义配置
-  if (config.customCommand) {
-    return {
-      id: 'custom',
-      name: 'Custom',
-      available: true,
-      isDefault: false,
-      command: config.customCommand
-    };
+  if (!availableTerminals.length) {
+    return null;
   }
 
-  // 查找选中的终端
-  const selectedTerminal = availableTerminals.find(t => t.id === config.selectedTerminal);
+  if (terminalId) {
+    const selectedTerminal = availableTerminals.find(t => t.id === terminalId);
+    if (!selectedTerminal) {
+      throw new Error(`Terminal not available: ${terminalId}`);
+    }
+    return selectedTerminal;
+  }
 
-  // 如果找到则返回，否则返回默认终端
-  return selectedTerminal || getDefaultTerminal();
+  const defaultTerminal = availableTerminals.find(t => t.isDefault);
+  return defaultTerminal || availableTerminals[0];
 }
 
 function escapeWarpYamlValue(value) {
@@ -95,6 +41,21 @@ function escapeShellDoubleQuotes(value) {
   return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
+function buildClipboardCommand(cwd, cliCommand) {
+  if (!cliCommand) {
+    return null;
+  }
+  if (!cwd) {
+    return cliCommand;
+  }
+  if (process.platform === 'win32') {
+    const escapedCwd = String(cwd).replace(/"/g, '""');
+    return `cd /d "${escapedCwd}" && ${cliCommand}`;
+  }
+  const escapedCwd = escapeShellDoubleQuotes(cwd);
+  return `cd "${escapedCwd}" && ${cliCommand}`;
+}
+
 function createWarpLaunchConfig(cwd, sessionId, customCliCommand) {
   const warpConfigDir = path.join(os.homedir(), '.warp', 'launch_configurations');
 
@@ -110,8 +71,8 @@ function createWarpLaunchConfig(cwd, sessionId, customCliCommand) {
   const command = customCliCommand || `claude -r ${sessionId}`;
   const sessionLabel = sessionId || 'custom';
   const tabTitle = sessionId ? `Session ${sessionId}` : 'Session';
-  const clipboardCmd = `cd "${cwd}" && ${command}`;
-  const escapedClipboardCmd = clipboardCmd.replace(/"/g, '\\"');
+  const clipboardCmd = buildClipboardCommand(cwd, command);
+  const escapedClipboardCmd = escapeShellDoubleQuotes(clipboardCmd);
 
   const yamlContent = `---
 name: "${escapeWarpYamlValue(configName)}"
@@ -156,7 +117,8 @@ windows:
       command: `printf '%s' "${escapedClipboardCmd}" | pbcopy && ${osascriptCommand} || open "warp://launch/${configName}"`,
       terminalId: 'warp',
       terminalName: 'Warp',
-      fallback: null
+      fallback: null,
+      clipboardCommand: clipboardCmd
     };
   } catch (err) {
     console.warn('[Terminal] Failed to create Warp config, using fallback:', err);
@@ -164,7 +126,8 @@ windows:
       command: `printf '%s' "${escapedClipboardCmd}" | pbcopy && open -a Warp "${cwd}"`,
       terminalId: 'warp',
       terminalName: 'Warp',
-      fallback: 'clipboard'
+      fallback: 'clipboard',
+      clipboardCommand: clipboardCmd
     };
   }
 }
@@ -175,19 +138,22 @@ windows:
  * @param {string} sessionId - 会话ID（用于 Claude -r 参数）
  * @param {string} customCliCommand - 自定义 CLI 命令（如 "gemini --resume latest"），如果提供则替换默认的 claude 命令
  */
-function getTerminalLaunchCommand(cwd, sessionId, customCliCommand) {
-  const terminal = getSelectedTerminal();
+function getTerminalLaunchCommand(cwd, sessionId, customCliCommand, terminalId = null) {
+  const terminal = resolveTerminal(terminalId);
+  const cliCommand = customCliCommand || (sessionId ? `claude -r ${sessionId}` : null);
+  const clipboardCommand = buildClipboardCommand(cwd, cliCommand);
 
   if (!terminal) {
     throw new Error('No terminal available');
   }
 
   if (terminal.id === 'warp') {
-    return createWarpLaunchConfig(cwd, sessionId, customCliCommand);
+    return {
+      ...createWarpLaunchConfig(cwd, sessionId, cliCommand)
+    };
   }
 
   if (terminal.id === 'vscode') {
-    const cliCommand = customCliCommand || (sessionId ? `claude -r ${sessionId}` : null);
     if (!cliCommand) {
       throw new Error('无法生成 VSCode 启动命令');
     }
@@ -204,7 +170,7 @@ function getTerminalLaunchCommand(cwd, sessionId, customCliCommand) {
       command,
       terminalId: terminal.id,
       terminalName: terminal.name,
-      clipboardCommand: cliCommand
+      clipboardCommand
     };
   }
 
@@ -227,13 +193,11 @@ function getTerminalLaunchCommand(cwd, sessionId, customCliCommand) {
   return {
     command,
     terminalId: terminal.id,
-    terminalName: terminal.name
+    terminalName: terminal.name,
+    clipboardCommand
   };
 }
 
 module.exports = {
-  loadTerminalConfig,
-  saveTerminalConfig,
-  getSelectedTerminal,
   getTerminalLaunchCommand
 };

@@ -364,20 +364,28 @@ module.exports = (config) => {
       const geminiCommand = `gemini --resume ${resumeIndex}`;
 
       try {
+        const { terminalId: requestedTerminalId, clipboardOnly } = req.body || {};
         // 获取终端启动命令
-        const { command, terminalId, terminalName, clipboardCommand } = getTerminalLaunchCommand(projectPath, null, geminiCommand);
+        const { command, terminalId, terminalName, clipboardCommand } = getTerminalLaunchCommand(
+          projectPath,
+          null,
+          geminiCommand,
+          requestedTerminalId
+        );
 
-        console.log(`[Gemini] Launching terminal: ${terminalName} (${terminalId})`);
-        console.log(`[Gemini] Resuming session: ${sessionId} (index ${resumeIndex})`);
-        console.log(`[Gemini] Command: ${command}`);
+        if (!clipboardOnly) {
+          console.log(`[Gemini] Launching terminal: ${terminalName} (${terminalId})`);
+          console.log(`[Gemini] Resuming session: ${sessionId} (index ${resumeIndex})`);
+          console.log(`[Gemini] Command: ${command}`);
 
-        // 异步执行命令，不等待结果
-        const shellOption = process.platform === 'win32' ? { shell: 'cmd.exe' } : { shell: true };
-        exec(command, shellOption, (error, stdout, stderr) => {
-          if (error) {
-            console.error(`[Gemini] Failed to launch terminal ${terminalName}:`, error.message);
-          }
-        });
+          // 异步执行命令，不等待结果
+          const shellOption = process.platform === 'win32' ? { shell: 'cmd.exe' } : { shell: true };
+          exec(command, shellOption, (error, stdout, stderr) => {
+            if (error) {
+              console.error(`[Gemini] Failed to launch terminal ${terminalName}:`, error.message);
+            }
+          });
+        }
 
         // 立即返回成功响应
         res.json({
@@ -386,7 +394,8 @@ module.exports = (config) => {
           projectPath,
           terminal: terminalName,
           terminalId,
-          clipboardCommand
+          clipboardCommand,
+          clipboardOnly: Boolean(clipboardOnly)
         });
       } catch (terminalError) {
         console.error('[Gemini] Failed to get terminal command:', terminalError);

@@ -77,16 +77,11 @@
       </n-button>
 
       <!-- Launch Button -->
-      <n-button
-        type="primary"
-        size="small"
-        @click="$emit('launch', session)"
-      >
-        <template #icon>
-          <n-icon><TerminalOutline /></n-icon>
-        </template>
-        使用对话
-      </n-button>
+      <TerminalLauncher
+        :project-name="session.projectName"
+        :session-id="session.sessionId"
+        :channel="channel"
+      />
 
       <!-- Fork Button (only show if not hideFork) -->
       <n-button
@@ -127,9 +122,9 @@ import {
   DocumentOutline,
   GitBranchOutline,
   PricetagOutline,
-  TerminalOutline,
   TrashOutline
 } from '@vicons/ionicons5'
+import TerminalLauncher from './TerminalLauncher.vue'
 
 const props = defineProps({
   session: {
@@ -147,10 +142,14 @@ const props = defineProps({
   hideDelete: {
     type: Boolean,
     default: false
+  },
+  channel: {
+    type: String,
+    default: 'claude'
   }
 })
 
-defineEmits(['set-alias', 'launch', 'fork', 'delete'])
+defineEmits(['set-alias', 'fork', 'delete'])
 
 const hovered = ref(false)
 

@@ -22,7 +22,7 @@
               hide-fork
               hide-delete
               @set-alias="handleSetAlias"
-              @launch="handleLaunch('claude', session)"
+              channel="claude"
             >
               <template #actions-extra>
                 <n-button
@@ -60,7 +60,7 @@
               hide-fork
               hide-delete
               @set-alias="handleSetAlias"
-              @launch="handleLaunch('codex', session)"
+              channel="codex"
             >
               <template #actions-extra>
                 <n-button
@@ -98,7 +98,7 @@
               hide-fork
               hide-delete
               @set-alias="handleSetAlias"
-              @launch="handleLaunch('gemini', session)"
+              channel="gemini"
             >
               <template #actions-extra>
                 <n-button
@@ -164,7 +164,6 @@ import {
 import SessionCard from './SessionCard.vue'
 import { useFavorites } from '../composables/useFavorites'
 import { useSessionsStore } from '../stores/sessions'
-import { launchTerminal } from '../api/sessions'
 import message from '../utils/message'
 import { useResponsiveDrawer } from '../composables/useResponsiveDrawer'
 
@@ -251,19 +250,6 @@ async function confirmAlias() {
     editingAlias.value = ''
   } catch (err) {
     message.error('操作失败: ' + err.message)
-  }
-}
-
-async function handleLaunch(channel, session) {
-  try {
-    const data = await launchTerminal(session.projectName, session.sessionId, channel)
-    if (data?.terminalId === 'vscode') {
-      message.success('VSCode 已打开，命令已复制到剪贴板。按 Cmd+` 打开终端并粘贴执行')
-    } else {
-      message.success('已启动终端')
-    }
-  } catch (err) {
-    message.error('启动失败: ' + err.message)
   }
 }
 

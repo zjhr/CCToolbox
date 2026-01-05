@@ -35,101 +35,6 @@
 
         <!-- 右侧内容 -->
         <div class="settings-content">
-          <!-- 终端工具设置 -->
-          <div v-show="activeMenu === 'terminal'" class="settings-panel">
-            <div class="panel-header">
-              <div class="panel-title-row">
-                <n-icon size="24" color="#18a058">
-                  <TerminalOutline />
-                </n-icon>
-                <div>
-                  <h3 class="panel-title">终端工具</h3>
-                  <n-text depth="3" class="panel-subtitle">选择启动会话时使用的终端工具</n-text>
-                </div>
-              </div>
-            </div>
-
-            <div class="panel-body">
-              <n-spin :show="loading">
-                <div class="setting-group">
-                  <div class="setting-item">
-                    <div class="setting-label">
-                      <n-text strong>选择终端</n-text>
-                      <n-text depth="3" style="font-size: 13px; margin-top: 4px;">
-                        系统将使用所选终端工具启动 ClaudeCode 会话
-                      </n-text>
-                    </div>
-
-                    <n-select
-                      v-model:value="selectedTerminal"
-                      :options="terminalOptions"
-                      placeholder="选择终端工具"
-                      size="large"
-                      @update:value="handleTerminalChange"
-                    />
-                  </div>
-
-                  <n-alert v-if="!availableTerminals.length && !loading" type="warning" :bordered="false" style="margin-top: 16px;">
-                    <template #icon>
-                      <n-icon><WarningOutline /></n-icon>
-                    </template>
-                    未检测到可用的终端工具
-                  </n-alert>
-
-                  <div v-if="selectedTerminalInfo" class="terminal-info">
-                    <n-divider style="margin: 20px 0;" />
-                    <div class="info-card">
-                      <div class="info-row">
-                        <n-text depth="3" class="info-label">当前终端：</n-text>
-                        <n-tag type="success" :bordered="false" size="medium">
-                          <template #icon>
-                            <n-icon><CheckmarkCircleOutline /></n-icon>
-                          </template>
-                          {{ selectedTerminalInfo.name }}
-                        </n-tag>
-                      </div>
-                      <div class="info-row">
-                        <n-text depth="3" class="info-label">执行命令：</n-text>
-                        <n-text code class="info-value">{{ selectedTerminalInfo.command }}</n-text>
-                      </div>
-                      <div v-if="selectedTerminalInfo.isDefault" class="info-row">
-                        <n-tag type="info" :bordered="false" size="small">
-                          <template #icon>
-                            <n-icon><StarOutline /></n-icon>
-                          </template>
-                          系统默认终端
-                        </n-tag>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </n-spin>
-            </div>
-
-            <div class="panel-footer">
-              <n-space justify="end">
-                <n-button
-                  size="large"
-                  @click="show = false"
-                >
-                  取消
-                </n-button>
-                <n-button
-                  type="primary"
-                  size="large"
-                  :loading="saving"
-                  :disabled="!selectedTerminal || selectedTerminal === originalSelectedTerminal"
-                  @click="handleSave"
-                >
-                  <template #icon>
-                    <n-icon><SaveOutline /></n-icon>
-                  </template>
-                  保存设置
-                </n-button>
-              </n-space>
-            </div>
-          </div>
-
           <!-- AI 配置面板 -->
           <div v-show="activeMenu === 'ai'" class="settings-panel">
             <div class="panel-header">
@@ -954,19 +859,18 @@
 <script setup>
 import { ref, computed, watch, onMounted, markRaw } from 'vue'
 import {
-  NDrawer, NDrawerContent, NSpace, NText, NSelect, NButton, NAlert,
-  NIcon, NBadge, NSpin, NDivider, NTag, NEmpty, NSwitch, NInputNumber,
+  NDrawer, NDrawerContent, NSpace, NText, NButton, NAlert,
+  NIcon, NBadge, NDivider, NTag, NEmpty, NSwitch, NInputNumber,
   NRadio, NRadioGroup, NInput, NForm, NFormItem, NDynamicTags
 } from 'naive-ui'
 import { useResponsiveDrawer } from '../composables/useResponsiveDrawer'
 
 const { drawerWidth, isMobile } = useResponsiveDrawer(680)
 import {
-  SettingsOutline, TerminalOutline, ColorPaletteOutline, OptionsOutline,
-  SaveOutline, CheckmarkCircleOutline, StarOutline, WarningOutline,
+  SettingsOutline, ColorPaletteOutline, OptionsOutline,
+  SaveOutline, CheckmarkCircleOutline, WarningOutline,
   SunnyOutline, MoonOutline, NotificationsOutline, SparklesOutline
 } from '@vicons/ionicons5'
-import { getAvailableTerminals, saveTerminalConfig } from '../api/terminal'
 import { getUIConfig, updateNestedUIConfig } from '../api/ui-config'
 import { getAutoStartStatus, enableAutoStart, disableAutoStart } from '../api/pm2'
 import { getAIConfig, saveAIConfig, testConnection } from '../api/ai'
@@ -987,12 +891,7 @@ const show = computed({
   set: (val) => emit('update:visible', val)
 })
 
-const loading = ref(false)
-const saving = ref(false)
-const availableTerminals = ref([])
-const selectedTerminal = ref(null)
-const originalSelectedTerminal = ref(null)
-const activeMenu = ref('terminal')
+const activeMenu = ref('ai')
 
 // 主题管理
 const { isDark, toggleTheme } = useTheme()
@@ -1113,11 +1012,6 @@ const portsChanged = computed(() => {
 // 菜单项配置
 const menuItems = ref([
   {
-    key: 'terminal',
-    label: '终端工具',
-    icon: markRaw(TerminalOutline)
-  },
-  {
     key: 'ai',
     label: 'AI 配置',
     icon: markRaw(SparklesOutline)
@@ -1139,15 +1033,6 @@ const menuItems = ref([
   }
 ])
 
-const terminalOptions = computed(() => {
-  return availableTerminals.value
-    .filter(t => t.available)
-    .map(t => ({
-      label: `${t.name}${t.isDefault ? ' (默认)' : ''}`,
-      value: t.id
-    }))
-})
-
 function normalizePrice(value, fallback) {
   if (typeof value === 'number' && !Number.isNaN(value)) {
     return value
@@ -1160,58 +1045,6 @@ function clonePricing(value) {
   return JSON.parse(JSON.stringify(value))
 }
 
-const selectedTerminalInfo = computed(() => {
-  return availableTerminals.value.find(t => t.id === selectedTerminal.value)
-})
-
-// 加载终端列表和当前配置
-async function loadTerminals() {
-  loading.value = true
-  try {
-    const data = await getAvailableTerminals()
-    availableTerminals.value = data.available || []
-    selectedTerminal.value = data.selected || null
-    originalSelectedTerminal.value = data.selected || null
-
-    // 如果没有选中的终端，自动选择默认终端
-    if (!selectedTerminal.value && availableTerminals.value.length > 0) {
-      const defaultTerminal = availableTerminals.value.find(t => t.isDefault)
-      if (defaultTerminal) {
-        selectedTerminal.value = defaultTerminal.id
-      }
-    }
-  } catch (error) {
-    console.error('Failed to load terminals:', error)
-    message.error('加载终端列表失败：' + (error.message || '未知错误'))
-  } finally {
-    loading.value = false
-  }
-}
-
-// 终端切换处理
-function handleTerminalChange(value) {
-  // 终端切换，无需额外处理
-}
-
-// 保存设置
-async function handleSave() {
-  if (!selectedTerminal.value) {
-    message.warning('请选择一个终端工具')
-    return
-  }
-
-  saving.value = true
-  try {
-    await saveTerminalConfig(selectedTerminal.value)
-    originalSelectedTerminal.value = selectedTerminal.value
-    message.success('设置已保存')
-  } catch (error) {
-    console.error('Failed to save terminal config:', error)
-    message.error('保存失败：' + (error.message || '未知错误'))
-  } finally {
-    saving.value = false
-  }
-}
 
 // 加载面板可见性设置
 async function loadPanelSettings() {
@@ -1620,7 +1453,6 @@ watch(activeMenu, (newVal) => {
 // 监听抽屉打开，加载数据
 watch(show, (newVal) => {
   if (newVal) {
-    loadTerminals()
     loadPanelSettings()
     loadPortsConfig()
     loadAutoStartStatus()
@@ -1831,43 +1663,6 @@ watch(show, (newVal) => {
 .setting-label {
   display: flex;
   flex-direction: column;
-}
-
-.terminal-info {
-  margin-top: 8px;
-}
-
-.info-card {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
-  border-radius: 12px;
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-[data-theme="dark"] .info-card {
-  background: rgba(30, 41, 59, 0.4);
-  border: 1px solid rgba(148, 163, 184, 0.15);
-}
-
-.info-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.info-label {
-  min-width: 80px;
-  font-size: 13px;
-}
-
-.info-value {
-  font-size: 13px;
-  word-break: break-all;
-  flex: 1;
 }
 
 .panel-footer {

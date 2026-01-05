@@ -56,10 +56,17 @@ export async function searchSessionsGlobally(keyword, contextLength = 35, channe
   return response.data
 }
 
-export async function launchTerminal(projectName, sessionId, channel = 'claude') {
+export async function launchTerminal(projectName, sessionId, channel = 'claude', options = {}) {
   const prefix = getChannelPrefix(channel)
-  const response = await client.post(`${prefix}/sessions/${projectName}/${sessionId}/launch`)
+  const response = await client.post(`${prefix}/sessions/${projectName}/${sessionId}/launch`, {
+    terminalId: options.terminalId || null,
+    clipboardOnly: options.clipboardOnly || false
+  })
   return response.data
+}
+
+export async function getTerminalClipboardCommand(projectName, sessionId, channel = 'claude') {
+  return launchTerminal(projectName, sessionId, channel, { clipboardOnly: true })
 }
 
 export async function getSessionMessages(projectName, sessionId, page = 1, limit = 20, order = 'desc', channel = 'claude') {

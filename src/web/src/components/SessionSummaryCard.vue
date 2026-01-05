@@ -70,7 +70,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import {
   NCard, NButton, NIcon, NSpin, NEmpty, NTag, NCollapseTransition
 } from 'naive-ui'
@@ -180,6 +180,7 @@ async function handleSummarize() {
     })
     if (res?.success) {
       summaryData.value = res.data || null
+      await nextTick()
       expanded.value = true
       message.success('总结生成成功')
     } else {

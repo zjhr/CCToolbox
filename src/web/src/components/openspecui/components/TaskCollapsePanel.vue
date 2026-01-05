@@ -134,6 +134,10 @@ function emitToggleGroup(group, checked) {
 
 .task-checkbox-text {
   display: inline-block;
+  max-width: 100%;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .task-description {
@@ -148,5 +152,14 @@ function emitToggleGroup(group, checked) {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.task-items :deep(.n-checkbox) {
+  align-items: flex-start;
+}
+
+.task-items :deep(.n-checkbox__label) {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 </style>

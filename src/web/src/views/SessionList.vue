@@ -290,12 +290,11 @@
                     </template>
                     Fork
                   </n-button>
-                  <n-button size="small" type="primary" @click.stop="handleLaunchTerminal(session.sessionId)">
-                    <template #icon>
-                      <n-icon><TerminalOutline /></n-icon>
-                    </template>
-                    使用对话
-                  </n-button>
+                  <TerminalLauncher
+                    :project-name="props.projectName"
+                    :session-id="session.sessionId"
+                    :channel="currentChannel"
+                  />
                 </n-space>
               </div>
             </div>
@@ -362,12 +361,11 @@
               </n-text>
               <n-tag size="small" :bordered="false">{{ session.matchCount }} 个匹配</n-tag>
             </div>
-            <n-button size="small" type="primary" @click="handleLaunchTerminal(session.sessionId)">
-              <template #icon>
-                <n-icon><TerminalOutline /></n-icon>
-              </template>
-              使用对话
-            </n-button>
+            <TerminalLauncher
+              :project-name="props.projectName"
+              :session-id="session.sessionId"
+              :channel="currentChannel"
+            />
           </div>
           <div v-for="(match, idx) in session.matches" :key="idx" class="search-match">
             <n-tag
@@ -426,16 +424,17 @@ import {
 import {
   ArrowBackOutline, SearchOutline, DocumentTextOutline,
   ChatbubbleEllipsesOutline, GitBranchOutline, CreateOutline, TrashOutline,
-  ReorderThreeOutline, TerminalOutline, StarOutline, Star, TimeOutline,
+  ReorderThreeOutline, StarOutline, Star, TimeOutline,
   CheckmarkCircleOutline, ArchiveOutline, SparklesOutline
 } from '@vicons/ionicons5'
 import draggable from 'vuedraggable'
 import { useSessionsStore } from '../stores/sessions'
 import { useFavorites } from '../composables/useFavorites'
 import message, { dialog } from '../utils/message'
-import { searchSessions as searchSessionsApi, launchTerminal } from '../api/sessions'
+import { searchSessions as searchSessionsApi } from '../api/sessions'
 import { getTagColor } from '../utils/tag-color'
 import ChatHistoryDrawer from '../components/ChatHistoryDrawer.vue'
+import TerminalLauncher from '../components/TerminalLauncher.vue'
 import OpenSpecDrawer from '../components/openspecui/OpenSpecDrawer.vue'
 import SerenaDrawer from '../components/serenaui/SerenaDrawer.vue'
 import AliasModal from '../components/AliasModal.vue'
@@ -753,19 +752,6 @@ function handleViewChatHistory(session) {
 // Handle chat history error
 function handleChatHistoryError(errorMsg) {
   message.error(errorMsg)
-}
-
-async function handleLaunchTerminal(sessionId) {
-  try {
-    const data = await launchTerminal(props.projectName, sessionId, currentChannel.value)
-    if (data?.terminalId === 'vscode') {
-      message.success('VSCode 已打开，命令已复制到剪贴板。按 Cmd+` 打开终端并粘贴执行')
-    } else {
-      message.success('已启动终端')
-    }
-  } catch (err) {
-    message.error('启动失败: ' + err.message)
-  }
 }
 
 function handleDelete(sessionId) {
