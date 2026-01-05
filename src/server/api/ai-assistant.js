@@ -7,10 +7,10 @@ const router = express.Router();
 const { loadAIConfig } = require("../services/ai-config");
 const { getAIServiceManager } = require("../services/ai-service");
 const { normalizeAIError } = require("../services/ai-errors");
-const {
-  parseRealProjectPath,
-  hasActualMessages,
-} = require("../services/sessions");
+const { parseRealProjectPath } = require("../services/sessions");
+const { getAllSessions: getAllCodexSessions } = require("../services/codex-sessions");
+const { getAllSessions: getAllGeminiSessions } = require("../services/gemini-sessions");
+const { readJSONL, extractMessages } = require("../services/codex-parser");
 const { getMetadata, setMetadata } = require("../services/session-metadata");
 const { loadSummary, saveSummary } = require("../services/session-summary");
 
@@ -24,7 +24,7 @@ function resolveContextTokens(providerKey) {
   return MODEL_CONTEXT_TOKENS[providerKey] || 8000;
 }
 
-function resolveSessionFile(projectName, sessionId) {
+function resolveSessionContext(projectName, sessionId) {
   const { fullPath } = parseRealProjectPath(projectName);
   const possiblePaths = [
     path.join(fullPath, ".claude", "sessions", sessionId + ".jsonl"),
@@ -39,16 +39,115 @@ function resolveSessionFile(projectName, sessionId) {
 
   for (const testPath of possiblePaths) {
     if (fs.existsSync(testPath)) {
-      return testPath;
+      return { filePath: testPath, source: "claude" };
     }
   }
+  const codexFile = resolveCodexSessionFile(projectName, sessionId);
+  if (codexFile) {
+    return { filePath: codexFile, source: "codex" };
+  }
+  const geminiFile = resolveGeminiSessionFile(projectName, sessionId);
+  if (geminiFile) {
+    return { filePath: geminiFile, source: "gemini" };
+  }
   return null;
+}
+
+function resolveCodexProjectName(meta) {
+  if (!meta) return "";
+  if (meta.git?.repositoryUrl) {
+    const repoName = meta.git.repositoryUrl.split("/").pop() || "";
+    return repoName.replace(/\.git$/, "");
+  }
+  if (meta.cwd) return path.basename(meta.cwd);
+  return "";
+}
+
+function resolveCodexSessionFile(projectName, sessionId) {
+  try {
+    const sessions = getAllCodexSessions();
+    const session = sessions.find((item) => item.sessionId === sessionId);
+    if (!session?.filePath) return null;
+    const codexProjectName = resolveCodexProjectName(session.meta);
+    if (projectName && codexProjectName && codexProjectName !== projectName) {
+      return null;
+    }
+    return session.filePath;
+  } catch (err) {
+    return null;
+  }
+}
+
+function resolveGeminiSessionFile(projectName, sessionId) {
+  try {
+    const sessions = getAllGeminiSessions();
+    const session = sessions.find((item) => item.sessionId === sessionId);
+    if (!session?.filePath) return null;
+    if (projectName && session.projectHash && session.projectHash !== projectName) {
+      return null;
+    }
+    return session.filePath;
+  } catch (err) {
+    return null;
+  }
 }
 
 function normalizeText(value) {
   return String(value || "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function normalizeConversationMessage(role, content) {
+  const normalized = normalizeText(content);
+  if (!normalized || normalized === "Warmup") return null;
+  return { role, content: normalized };
+}
+
+async function loadSessionMessagesBySource(sessionContext) {
+  if (!sessionContext?.filePath) return [];
+  if (sessionContext.source === "codex") {
+    return loadCodexMessages(sessionContext.filePath);
+  }
+  if (sessionContext.source === "gemini") {
+    return loadGeminiMessages(sessionContext.filePath);
+  }
+  return loadSessionMessages(sessionContext.filePath);
+}
+
+function loadCodexMessages(sessionFile) {
+  try {
+    const lines = readJSONL(sessionFile);
+    const messages = extractMessages(lines);
+    return messages
+      .filter((msg) => msg.role === "user" || msg.role === "assistant")
+      .map((msg) => normalizeConversationMessage(msg.role, msg.content))
+      .filter(Boolean);
+  } catch (err) {
+    return [];
+  }
+}
+
+function loadGeminiMessages(sessionFile) {
+  try {
+    const content = fs.readFileSync(sessionFile, "utf8");
+    const session = JSON.parse(content);
+    const messages = Array.isArray(session.messages) ? session.messages : [];
+    return messages
+      .filter(
+        (msg) =>
+          msg?.type === "user" || msg?.type === "assistant" || msg?.type === "model"
+      )
+      .map((msg) =>
+        normalizeConversationMessage(
+          msg.type === "user" ? "user" : "assistant",
+          msg.content
+        )
+      )
+      .filter(Boolean);
+  } catch (err) {
+    return [];
+  }
 }
 
 function extractUserContent(message) {
@@ -298,18 +397,12 @@ router.post("/generate-alias", async (req, res) => {
   }
 
   try {
-    const sessionFile = resolveSessionFile(projectName, sessionId);
-    if (!sessionFile) {
+    const sessionContext = resolveSessionContext(projectName, sessionId);
+    if (!sessionContext?.filePath) {
       return res.status(404).json({ error: "未找到会话文件" });
     }
 
-    if (!hasActualMessages(sessionFile)) {
-      return res
-        .status(404)
-        .json({ error: "会话没有可用于生成别名的对话内容" });
-    }
-
-    const messages = await loadSessionMessages(sessionFile);
+    const messages = await loadSessionMessagesBySource(sessionContext);
     if (!messages.length) {
       return res
         .status(404)
@@ -379,11 +472,11 @@ router.get("/summary/:projectName/:sessionId", (req, res) => {
       .json({ error: "projectName and sessionId are required" });
   }
   try {
-    const sessionFile = resolveSessionFile(projectName, sessionId);
-    if (!sessionFile) {
+    const sessionContext = resolveSessionContext(projectName, sessionId);
+    if (!sessionContext?.filePath) {
       return res.status(404).json({ error: "未找到会话文件" });
     }
-    const summary = loadSummary(sessionFile, sessionId);
+    const summary = loadSummary(sessionContext.filePath, sessionId);
     res.json({ success: true, data: summary });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -404,15 +497,11 @@ router.post("/summarize", async (req, res) => {
   }
 
   try {
-    const sessionFile = resolveSessionFile(projectName, sessionId);
-    if (!sessionFile) {
+    const sessionContext = resolveSessionContext(projectName, sessionId);
+    if (!sessionContext?.filePath) {
       return res.status(404).json({ error: "未找到会话文件" });
     }
-    if (!hasActualMessages(sessionFile)) {
-      return res.status(404).json({ error: "会话没有可用于总结的对话内容" });
-    }
-
-    const messages = await loadSessionMessages(sessionFile);
+    const messages = await loadSessionMessagesBySource(sessionContext);
     if (!messages.length) {
       return res.status(404).json({ error: "会话没有可用于总结的对话内容" });
     }
@@ -443,7 +532,7 @@ router.post("/summarize", async (req, res) => {
     }
 
     const saved = saveSummary(
-      sessionFile,
+      sessionContext.filePath,
       sessionId,
       summaryText,
       result.model ? `${result.provider}/${result.model}` : result.provider
