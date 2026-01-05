@@ -102,7 +102,7 @@ watch(
   () => {
     loadRequirements()
   },
-  { deep: true }
+  { deep: true, immediate: true }
 )
 
 watch(
@@ -110,7 +110,7 @@ watch(
   () => {
     loadTasks()
   },
-  { deep: true }
+  { deep: true, immediate: true }
 )
 
 async function loadRequirements() {
