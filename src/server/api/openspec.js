@@ -15,6 +15,7 @@ const {
   writeFile,
   getDiff,
   resolveConflict,
+  deleteChange,
   ensureWatcher
 } = require('../services/openspec.service');
 const { openspecFileGuard } = require('../middleware/openspec.fileGuard');
@@ -111,6 +112,20 @@ router.get('/archives', (req, res) => {
   } catch (err) {
     console.error('[OpenSpec] archives error:', err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/openspec/changes/delete
+router.post('/changes/delete', (req, res) => {
+  const projectPath = requireProjectPath(req, res);
+  if (!projectPath) return;
+
+  try {
+    const result = deleteChange(projectPath, req.body?.path);
+    res.json(result);
+  } catch (err) {
+    console.error('[OpenSpec] delete change error:', err);
+    res.status(400).json({ error: err.message });
   }
 });
 

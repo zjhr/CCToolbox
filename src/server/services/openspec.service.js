@@ -264,6 +264,27 @@ function normalizeRelPath(baseDir, fullPath) {
   return path.relative(baseDir, fullPath).split(path.sep).join('/');
 }
 
+function normalizeChangePath(changePath) {
+  if (typeof changePath !== 'string' || !changePath.trim()) {
+    throw new Error('缺少变更路径');
+  }
+  const normalized = changePath.replace(/\\/g, '/').replace(/^\/+/, '');
+  const segments = normalized.split('/');
+  if (segments.includes('..')) {
+    throw new Error('变更路径不合法');
+  }
+  if (!normalized.startsWith('changes/')) {
+    throw new Error('只能删除 changes 下的变更');
+  }
+  if (normalized === 'changes' || normalized === 'changes/') {
+    throw new Error('变更路径不合法');
+  }
+  if (normalized.startsWith('changes/archive')) {
+    throw new Error('不允许删除归档变更');
+  }
+  return normalized;
+}
+
 function buildTree(baseDir, relativeDir = '') {
   const targetDir = path.join(baseDir, relativeDir);
   if (!fs.existsSync(targetDir)) {
@@ -619,6 +640,28 @@ function resolveConflict(projectPath, relativePath, resolution, content) {
   };
 }
 
+function deleteChange(projectPath, changePath) {
+  const baseDir = getOpenSpecBase(projectPath);
+  const normalized = normalizeChangePath(changePath);
+  const targetPath = path.resolve(baseDir, normalized);
+  if (targetPath === baseDir || !targetPath.startsWith(baseDir + path.sep)) {
+    throw new Error('非法路径访问');
+  }
+  if (!fs.existsSync(targetPath)) {
+    throw new Error('变更路径不存在');
+  }
+  const stats = fs.statSync(targetPath);
+  if (!stats.isDirectory()) {
+    throw new Error('变更路径必须为目录');
+  }
+  const proposalPath = path.join(targetPath, 'proposal.md');
+  if (!fs.existsSync(proposalPath) || !fs.statSync(proposalPath).isFile()) {
+    throw new Error('变更缺少 proposal.md，禁止删除');
+  }
+  fs.rmSync(targetPath, { recursive: true, force: true });
+  return { path: normalized };
+}
+
 function ensureWatcher(projectPath) {
   if (watchers.has(projectPath)) {
     return;
@@ -701,5 +744,6 @@ module.exports = {
   writeFile,
   getDiff,
   resolveConflict,
+  deleteChange,
   ensureWatcher
 };

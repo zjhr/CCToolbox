@@ -35,6 +35,14 @@ export async function getChanges(projectPath) {
   return response.data
 }
 
+export async function deleteChange(projectPath, changePath) {
+  const response = await client.post('/openspec/changes/delete', {
+    projectPath,
+    path: changePath
+  })
+  return response.data
+}
+
 export async function getArchives(projectPath) {
   const response = await client.get('/openspec/archives', {
     params: withProjectPath({}, projectPath)

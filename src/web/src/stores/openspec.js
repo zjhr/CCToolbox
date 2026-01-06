@@ -5,6 +5,7 @@ import {
   getProjects,
   getSpecs,
   getChanges,
+  deleteChange as deleteChangeApi,
   getArchives,
   getSettings,
   getCliInfo,
@@ -317,6 +318,21 @@ export const useOpenSpecStore = defineStore('openspec', () => {
     return changeId
   }
 
+  async function deleteChange(changePath) {
+    if (!projectPath.value) return null
+    syncStatus.value = 'syncing'
+    try {
+      const result = await deleteChangeApi(projectPath.value, changePath)
+      await refreshTab('changes')
+      lastUpdated.value = Date.now()
+      syncStatus.value = 'synced'
+      return result
+    } catch (err) {
+      syncStatus.value = 'error'
+      throw err
+    }
+  }
+
   return {
     drawerOpen,
     activeTab,
@@ -355,6 +371,7 @@ export const useOpenSpecStore = defineStore('openspec', () => {
     triggerDetailRefresh,
     saveSettings,
     createSpec,
-    createChange
+    createChange,
+    deleteChange
   }
 })
