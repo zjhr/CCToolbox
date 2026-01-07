@@ -26,6 +26,7 @@ build/
 # config.json is tracked for template
 .claude/
 .serena
+.gemini
 openspec
 CLAUDE.md
 __pycache__

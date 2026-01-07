@@ -1,20 +1,22 @@
 <template>
   <div class="filter-bar">
-    <n-space size="small" wrap>
-      <n-button
-        v-for="option in options"
-        :key="option.value"
-        size="small"
-        :class="['filter-btn', { active: isActive(option.value) }]"
-        :tertiary="true"
-        :bordered="false"
-        :aria-pressed="isActive(option.value)"
-        @click="toggleFilter(option.value)"
-      >
-        <span class="filter-label">{{ option.label }}</span>
-        <span class="filter-count">{{ counts[option.value] || 0 }}</span>
-      </n-button>
-    </n-space>
+    <div class="filter-scroll">
+      <n-space size="small" :wrap="false" class="filter-row">
+        <n-button
+          v-for="option in options"
+          :key="option.value"
+          size="small"
+          :class="['filter-btn', { active: isActive(option.value) }]"
+          :quaternary="true"
+          :bordered="false"
+          :aria-pressed="isActive(option.value)"
+          @click="toggleFilter(option.value)"
+        >
+          <span class="filter-label">{{ option.label }}</span>
+          <span class="filter-count">{{ counts[option.value] || 0 }}</span>
+        </n-button>
+      </n-space>
+    </div>
   </div>
 </template>
 
@@ -61,56 +63,86 @@ function toggleFilter(value) {
   position: sticky;
   top: 0;
   z-index: 8;
-  padding: 8px 20px;
+  padding: 6px 16px;
   border-bottom: 1px solid var(--n-border-color);
   background: var(--n-color);
 }
 
+.filter-scroll {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.filter-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.filter-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+}
+
 .filter-btn {
-  border-radius: 999px;
-  padding: 2px 10px;
-  height: 24px;
+  border-radius: 6px;
+  padding: 0 10px;
+  height: 30px;
   font-size: 12px;
-  color: var(--n-text-color-2);
+  color: var(--n-text-color-3);
   border: 1px solid var(--n-border-color);
-  background: transparent;
-  transition: all 0.18s ease;
+  background: var(--n-color-embedded);
+  transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
 }
 
 .filter-btn:hover {
-  color: var(--n-text-color-1);
-  border-color: rgba(245, 158, 11, 0.4);
+  color: var(--n-text-color-2);
+  background: var(--n-hover-color);
 }
 
 .filter-btn.active {
   color: #b45309;
-  border-color: rgba(245, 158, 11, 0.6);
-  background: rgba(245, 158, 11, 0.08);
+  border-color: rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.12);
 }
 
 .filter-label {
   margin-right: 6px;
   font-size: 12px;
   font-weight: 500;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
 }
 
 .filter-count {
-  min-width: 18px;
-  height: 18px;
-  padding: 0 6px;
-  border-radius: 999px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 6px;
   font-size: 11px;
-  line-height: 18px;
+  line-height: 16px;
   text-align: center;
-  border: 1px solid var(--n-border-color);
   color: var(--n-text-color-3);
-  background: var(--n-color-embedded);
+  background: var(--n-color);
+  font-variant-numeric: tabular-nums;
 }
 
 .filter-btn.active .filter-count {
-  border-color: rgba(245, 158, 11, 0.5);
   color: #b45309;
-  background: rgba(245, 158, 11, 0.18);
+  background: rgba(245, 158, 11, 0.2);
+}
+
+@media (max-width: 640px) {
+  .filter-bar {
+    padding: 8px 10px;
+  }
+
+  .filter-btn {
+    height: 32px;
+    padding: 0 12px;
+  }
+
+  .filter-count {
+    height: 18px;
+    line-height: 18px;
+  }
 }
 </style>
