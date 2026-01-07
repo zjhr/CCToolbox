@@ -14,6 +14,7 @@ const {
 } = require('../services/codex-sessions');
 const { isCodexInstalled } = require('../services/codex-config');
 const { loadAliases } = require('../services/alias');
+const { buildMessageCounts } = require('../services/message-counts');
 
 module.exports = (config) => {
   // ============================================
@@ -294,6 +295,7 @@ module.exports = (config) => {
       // 分页处理
       const pageNum = parseInt(page);
       const limitNum = parseInt(limit);
+      const messageCounts = buildMessageCounts(convertedMessages);
 
       // 排序
       let messages = convertedMessages;
@@ -315,6 +317,7 @@ module.exports = (config) => {
           cwd: session.cwd,
           provider: session.provider
         },
+        messageCounts,
         pagination: {
           page: pageNum,
           limit: limitNum,

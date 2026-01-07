@@ -16,6 +16,7 @@ const {
 const { isGeminiInstalled } = require('../services/gemini-config');
 const { loadAliases } = require('../services/alias');
 const { getTerminalLaunchCommand } = require('../services/terminal-config');
+const { buildMessageCounts } = require('../services/message-counts');
 
 module.exports = (config) => {
   /**
@@ -209,6 +210,7 @@ module.exports = (config) => {
       // 分页处理
       const pageNum = parseInt(page);
       const limitNum = parseInt(limit);
+      const messageCounts = buildMessageCounts(convertedMessages);
 
       // 排序
       let messages = convertedMessages;
@@ -230,6 +232,7 @@ module.exports = (config) => {
           cwd: null,
           model: session.model || 'gemini'
         },
+        messageCounts,
         pagination: {
           page: pageNum,
           limit: limitNum,

@@ -1,19 +1,39 @@
 <template>
-  <div class="chat-message" :class="[`message-${message.type}`]">
+  <div class="chat-message" :class="[`message-${messageRole}`, modelClass]">
     <div class="message-header">
-      <template v-if="message.type === 'assistant'">
+      <template v-if="messageRole === 'assistant'">
         <n-icon :size="16" :component="RobotIcon" class="role-icon" />
         <span class="message-role">AI</span>
-        <span v-if="message.model" class="message-model">{{ message.model }}</span>
+        <span v-if="modelLabel" class="message-model">{{ modelLabel }}</span>
         <span class="message-time">{{ message.timestamp ? formatTime(message.timestamp) : '' }}</span>
         <span class="spacer"></span>
-        <span class="copy-btn" @click="copyContent" title="复制">
-          <n-icon :size="14" :component="CopyIcon" />
+        <span class="copy-btn" :class="{ copied }" @click="copyContent" :title="copyTitle">
+          <n-icon :size="14" :component="copyIcon" />
+        </span>
+      </template>
+      <template v-else-if="messageRole === 'tool'">
+        <n-icon :size="16" :component="ToolIcon" class="role-icon" />
+        <span class="message-role">工具调用</span>
+        <span v-if="modelLabel" class="message-model">{{ modelLabel }}</span>
+        <span class="message-time">{{ message.timestamp ? formatTime(message.timestamp) : '' }}</span>
+        <span class="spacer"></span>
+        <span class="copy-btn" :class="{ copied }" @click="copyContent" :title="copyTitle">
+          <n-icon :size="14" :component="copyIcon" />
+        </span>
+      </template>
+      <template v-else-if="messageRole === 'thinking'">
+        <n-icon :size="16" :component="RobotIcon" class="role-icon" />
+        <span class="message-role">思考</span>
+        <span v-if="modelLabel" class="message-model">{{ modelLabel }}</span>
+        <span class="message-time">{{ message.timestamp ? formatTime(message.timestamp) : '' }}</span>
+        <span class="spacer"></span>
+        <span class="copy-btn" :class="{ copied }" @click="copyContent" :title="copyTitle">
+          <n-icon :size="14" :component="copyIcon" />
         </span>
       </template>
       <template v-else>
-        <span class="copy-btn" @click="copyContent" title="复制">
-          <n-icon :size="14" :component="CopyIcon" />
+        <span class="copy-btn" :class="{ copied }" @click="copyContent" :title="copyTitle">
+          <n-icon :size="14" :component="copyIcon" />
         </span>
         <span class="spacer"></span>
         <span class="message-time">{{ message.timestamp ? formatTime(message.timestamp) : '' }}</span>
@@ -21,14 +41,17 @@
         <n-icon :size="16" :component="PersonIcon" class="role-icon" />
       </template>
     </div>
-    <div class="message-content" :class="{ collapsed: !expanded && isLongContent }">
+    <div
+      class="message-content"
+      :class="{ collapsed: !expanded && isLongContent, 'thinking-content': messageRole === 'thinking' }"
+    >
       <!-- User message: plain text or array content -->
-      <div v-if="message.type === 'user'" class="user-content">
-        <template v-if="typeof message.content === 'string'">
-          {{ expanded ? message.content : truncatedContent }}
+      <div v-if="messageRole === 'user'" class="user-content">
+        <template v-if="typeof messageContent === 'string'">
+          {{ expanded ? messageContent : truncatedContent }}
         </template>
-        <template v-else-if="Array.isArray(message.content)">
-          <div v-for="(item, index) in message.content" :key="index" class="content-item">
+        <template v-else-if="Array.isArray(messageContent)">
+          <div v-for="(item, index) in displayArray" :key="index" class="content-item">
             <div v-if="item.type === 'text'">{{ item.text }}</div>
             <div v-else-if="item.type === 'image'" class="image-item">
               <template v-if="getImageSrc(item)">
@@ -43,7 +66,19 @@
         </template>
       </div>
       <!-- Assistant message: Markdown rendered -->
-      <div v-else-if="message.type === 'assistant'" class="assistant-content markdown-body" v-html="expanded ? renderedMarkdown : truncatedMarkdown"></div>
+      <div
+        v-else-if="messageRole === 'assistant'"
+        class="assistant-content markdown-body"
+        v-html="expanded ? renderedMarkdown : truncatedMarkdown"
+      ></div>
+      <!-- Tool message -->
+      <div v-else-if="messageRole === 'tool'" class="tool-content">
+        <ToolCallRenderer :tool-calls="message.toolCalls || []" />
+      </div>
+      <!-- Thinking message -->
+      <div v-else-if="messageRole === 'thinking'" class="thinking-text">
+        {{ expanded ? messageContent : truncatedContent }}
+      </div>
     </div>
     <!-- Expand button -->
     <div v-if="isLongContent" class="expand-btn" @click="expanded = !expanded">
@@ -53,11 +88,12 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, onBeforeUnmount } from 'vue'
 import { NIcon } from 'naive-ui'
-import { Person as PersonIcon, Chatbubbles as RobotIcon, Image as ImageIcon, Copy as CopyIcon } from '@vicons/ionicons5'
+import { Person as PersonIcon, Chatbubbles as RobotIcon, Image as ImageIcon, Copy as CopyIcon, BuildOutline as ToolIcon, Checkmark as CheckmarkIcon } from '@vicons/ionicons5'
 import { marked } from 'marked'
 import hljs from 'highlight.js/lib/core'
+import ToolCallRenderer from './chat/ToolCallRenderer.vue'
 
 // Import commonly used languages
 import javascript from 'highlight.js/lib/languages/javascript'
@@ -85,26 +121,70 @@ const props = defineProps({
   }
 })
 
+const messageRole = computed(() => props.message.role || props.message.type || 'assistant')
+const messageContent = computed(() => props.message.content ?? '')
+const arrayContent = computed(() => Array.isArray(messageContent.value) ? messageContent.value : [])
+const arrayPreview = computed(() => buildArrayPreview(arrayContent.value))
+
+const normalizedModel = computed(() => {
+  const raw = (props.message.model || '').toString().toLowerCase()
+  if (raw.includes('claude') || raw.includes('anthropic')) return 'claude'
+  if (raw.includes('gemini')) return 'gemini'
+  if (raw.includes('gpt') || raw.includes('openai') || raw.includes('codex')) return 'codex'
+  if (raw === 'claude' || raw === 'codex' || raw === 'gemini') return raw
+  return props.message.model ? raw : ''
+})
+
+const modelLabel = computed(() => {
+  if (!normalizedModel.value) return ''
+  return normalizedModel.value.toUpperCase()
+})
+
+const modelClass = computed(() => {
+  if (!normalizedModel.value) return ''
+  return `model-${normalizedModel.value}`
+})
+
 // Expand/collapse state
 const expanded = ref(false)
-const MAX_LENGTH = 500
+const MAX_LENGTH = 360
+const MAX_LINES = 8
+const ARRAY_LIMIT = 3
+const ARRAY_TEXT_LIMIT = 120
+const copied = ref(false)
+let copyTimer = null
+const copyIcon = computed(() => copied.value ? CheckmarkIcon : CopyIcon)
+const copyTitle = computed(() => copied.value ? '已复制' : '复制')
 
 // Check if content is long
 const isLongContent = computed(() => {
-  const content = props.message.content
+  if (messageRole.value === 'tool') return false
+  const content = messageContent.value
   if (typeof content === 'string') {
-    return content.length > MAX_LENGTH
+    return isLongText(content)
+  }
+  if (Array.isArray(content)) {
+    return arrayPreview.value.truncated
   }
   return false
 })
 
 // Truncated content for user messages
 const truncatedContent = computed(() => {
-  const content = props.message.content
+  const content = messageContent.value
   if (typeof content === 'string' && content.length > MAX_LENGTH) {
-    return content.substring(0, MAX_LENGTH) + '...'
+    return truncateText(content)
+  }
+  if (typeof content === 'string' && content.split('\n').length > MAX_LINES) {
+    return truncateText(content)
   }
   return content
+})
+
+const displayArray = computed(() => {
+  if (!Array.isArray(messageContent.value)) return []
+  if (expanded.value || !arrayPreview.value.truncated) return messageContent.value
+  return arrayPreview.value.items
 })
 
 // Configure marked
@@ -125,12 +205,12 @@ marked.setOptions({
 
 // Render markdown (full)
 const renderedMarkdown = computed(() => {
-  if (props.message.type === 'assistant' && props.message.content) {
+  if (messageRole.value === 'assistant' && messageContent.value) {
     try {
-      return marked.parse(props.message.content)
+      return marked.parse(messageContent.value)
     } catch (err) {
       console.error('Markdown parse error:', err)
-      return props.message.content
+      return messageContent.value
     }
   }
   return ''
@@ -138,15 +218,13 @@ const renderedMarkdown = computed(() => {
 
 // Render markdown (truncated)
 const truncatedMarkdown = computed(() => {
-  if (props.message.type === 'assistant' && props.message.content) {
+  if (messageRole.value === 'assistant' && messageContent.value) {
     try {
-      const content = props.message.content
-      const truncated = content.length > MAX_LENGTH
-        ? content.substring(0, MAX_LENGTH) + '...'
-        : content
+      const content = messageContent.value
+      const truncated = truncateText(content)
       return marked.parse(truncated)
     } catch (err) {
-      return props.message.content.substring(0, MAX_LENGTH) + '...'
+      return truncateText(messageContent.value)
     }
   }
   return ''
@@ -167,11 +245,73 @@ function formatTime(timestamp) {
 }
 
 // Copy content
-function copyContent() {
-  const text = typeof props.message.content === 'string'
-    ? props.message.content
-    : JSON.stringify(props.message.content)
-  navigator.clipboard.writeText(text)
+async function copyContent() {
+  const text = messageRole.value === 'tool'
+    ? JSON.stringify(props.message.toolCalls || [], null, 2)
+    : typeof messageContent.value === 'string'
+      ? messageContent.value
+      : JSON.stringify(messageContent.value, null, 2)
+  try {
+    await navigator.clipboard.writeText(text)
+    copied.value = true
+    if (copyTimer) clearTimeout(copyTimer)
+    copyTimer = setTimeout(() => {
+      copied.value = false
+      copyTimer = null
+    }, 1200)
+  } catch (err) {
+    copied.value = false
+    console.error('复制失败:', err)
+  }
+}
+
+onBeforeUnmount(() => {
+  if (copyTimer) clearTimeout(copyTimer)
+})
+
+function isLongText(text) {
+  if (!text) return false
+  const lineCount = text.split('\n').length
+  return text.length > MAX_LENGTH || lineCount > MAX_LINES
+}
+
+function truncateText(text) {
+  if (!text) return ''
+  const lines = text.split('\n')
+  if (lines.length > MAX_LINES) {
+    return `${lines.slice(0, MAX_LINES).join('\n')}\n...`
+  }
+  if (text.length > MAX_LENGTH) {
+    return text.substring(0, MAX_LENGTH) + '...'
+  }
+  return text
+}
+
+function buildArrayPreview(items) {
+  if (!Array.isArray(items)) return { items: [], truncated: false }
+  let truncated = false
+  const preview = items.slice(0, ARRAY_LIMIT).map((item) => {
+    if (item && typeof item === 'object' && item.type === 'text' && typeof item.text === 'string') {
+      if (item.text.length > ARRAY_TEXT_LIMIT) {
+        truncated = true
+        return { ...item, text: item.text.substring(0, ARRAY_TEXT_LIMIT) + '...' }
+      }
+    }
+    if (typeof item === 'string') {
+      if (item.length > ARRAY_TEXT_LIMIT) {
+        truncated = true
+        return { type: 'text', text: item.substring(0, ARRAY_TEXT_LIMIT) + '...' }
+      }
+      return { type: 'text', text: item }
+    }
+    return item
+  })
+  const remaining = items.length - ARRAY_LIMIT
+  if (remaining > 0) {
+    truncated = true
+    preview.push({ type: 'text', text: `... 还有 ${remaining} 项 ...` })
+  }
+  return { items: preview, truncated }
 }
 
 function getImageSrc(item) {
@@ -195,18 +335,49 @@ function getImageSrc(item) {
   width: 100%;
   padding: 12px 16px;
   border-radius: 8px;
-  margin-bottom: 8px;
   box-sizing: border-box;
+  border-left: 3px solid transparent;
 }
 
 .message-user {
   background: linear-gradient(135deg, #667eea08 0%, #764ba208 100%);
   border: 1px solid #667eea20;
+  border-left-width: 3px;
 }
 
 .message-assistant {
   background: linear-gradient(135deg, #18a05808 0%, #0ea5e908 100%);
   border: 1px solid #18a05820;
+  border-left-width: 3px;
+}
+
+.message-tool {
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-left-color: #3b82f6;
+  border-left-width: 3px;
+}
+
+.message-thinking {
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-left-width: 3px;
+}
+
+.model-claude {
+  border-left-color: #7c3aed;
+}
+
+.model-codex {
+  border-left-color: #10b981;
+}
+
+.model-gemini {
+  border-left-color: #f59e0b;
+}
+
+.chat-message.message-tool {
+  border-left-color: #3b82f6;
 }
 
 .message-header {
@@ -220,7 +391,9 @@ function getImageSrc(item) {
   justify-content: flex-end;
 }
 
-.message-assistant .message-header {
+.message-assistant .message-header,
+.message-tool .message-header,
+.message-thinking .message-header {
   justify-content: flex-start;
 }
 
@@ -268,6 +441,10 @@ function getImageSrc(item) {
   color: var(--n-text-color);
 }
 
+.copy-btn.copied {
+  color: #22c55e;
+}
+
 .message-content {
   font-size: 13px;
   line-height: 1.5;
@@ -276,6 +453,18 @@ function getImageSrc(item) {
   word-break: break-word;
 }
 
+.thinking-content,
+.thinking-text {
+  font-style: italic;
+  color: var(--n-text-color-2);
+  white-space: pre-wrap;
+}
+
+.tool-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 .user-content {
   white-space: pre-wrap;
   word-break: break-word;
@@ -345,6 +534,8 @@ function getImageSrc(item) {
   border-radius: 3px;
   font-family: 'Monaco', 'Consolas', 'Courier New', monospace;
   font-size: 0.9em;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .markdown-body :deep(pre) {
@@ -352,7 +543,9 @@ function getImageSrc(item) {
   padding: 8px;
   background: var(--n-code-color);
   border-radius: 6px;
-  overflow-x: auto;
+  overflow-x: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   max-width: 100%;
 }
 
@@ -361,6 +554,9 @@ function getImageSrc(item) {
   background: none;
   font-size: 12px;
   line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .markdown-body :deep(ul),
@@ -394,12 +590,17 @@ function getImageSrc(item) {
   width: 100%;
   border-collapse: collapse;
   margin: 8px 0;
+  table-layout: fixed;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .markdown-body :deep(table th),
 .markdown-body :deep(table td) {
   padding: 8px 12px;
   border: 1px solid var(--n-border-color);
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .markdown-body :deep(table th) {
@@ -475,6 +676,10 @@ function getImageSrc(item) {
   height: 50px;
   background: linear-gradient(transparent, var(--n-color));
   pointer-events: none;
+}
+
+.message-thinking .message-content.collapsed::after {
+  background: linear-gradient(transparent, #f3f4f6);
 }
 
 .expand-btn {

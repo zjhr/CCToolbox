@@ -25,14 +25,11 @@ build/
 # User config (keep template only)
 # config.json is tracked for template
 .claude/
-.gemini/
 .serena
-.gemini-home
 openspec
 CLAUDE.md
 __pycache__
 
 # Temporary files
-tmp/
 temp/
 *.tmp

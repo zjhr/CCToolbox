@@ -15,6 +15,7 @@ const { loadAliases, setAlias, deleteAlias, getAlias } = require('./alias');
 const { parseSessionMeta, readJSONL, extractMessages } = require('./codex-parser');
 const { getSessionsByProject: getCodexSessionsByProject } = require('./codex-sessions');
 const { getProjectSessions: getGeminiSessionsByProject, cleanupGeminiForkRelations } = require('./gemini-sessions');
+const { buildMessageCounts } = require('./message-counts');
 
 const TRASH_VERSION = '1.0';
 const TRASH_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
@@ -647,6 +648,7 @@ async function getTrashMessages(projectName, trashId, channel, options = {}) {
   }
 
   const total = allMessages.length;
+  const messageCounts = buildMessageCounts(allMessages);
   const startIndex = (pageNum - 1) * limitNum;
   const endIndex = startIndex + limitNum;
   const messages = allMessages.slice(startIndex, endIndex);
@@ -655,6 +657,7 @@ async function getTrashMessages(projectName, trashId, channel, options = {}) {
   return {
     messages,
     metadata: parsed.metadata || {},
+    messageCounts,
     pagination: {
       page: pageNum,
       limit: limitNum,

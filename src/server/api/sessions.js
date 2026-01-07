@@ -7,6 +7,7 @@ const readline = require('readline');
 const { getSessionsForProject, deleteSession, forkSession, saveSessionOrder, parseRealProjectPath, searchSessions, getRecentSessions, searchSessionsAcrossProjects, hasActualMessages } = require('../services/sessions');
 const { loadAliases } = require('../services/alias');
 const { broadcastLog } = require('../websocket-server');
+const { buildMessageCounts } = require('../services/message-counts');
 
 module.exports = (config) => {
   // GET /api/sessions/search/global - Search sessions across all projects
@@ -277,6 +278,7 @@ router.get('/:projectName/:sessionId/messages', async (req, res) => {
 
       // Pagination
       const total = allMessages.length;
+      const messageCounts = buildMessageCounts(allMessages);
       const startIndex = (pageNum - 1) * limitNum;
       const endIndex = startIndex + limitNum;
       const messages = allMessages.slice(startIndex, endIndex);
@@ -287,6 +289,7 @@ router.get('/:projectName/:sessionId/messages', async (req, res) => {
       res.json({
         messages,
         metadata,
+        messageCounts,
         pagination: {
           page: pageNum,
           limit: limitNum,
