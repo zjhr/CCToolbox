@@ -28,6 +28,13 @@ export async function getSpecs(projectPath) {
   return response.data
 }
 
+export async function getTemporarySpecs(projectPath) {
+  const response = await client.get('/openspec/temporary-specs', {
+    params: withProjectPath({}, projectPath)
+  })
+  return response.data
+}
+
 export async function getChanges(projectPath) {
   const response = await client.get('/openspec/changes', {
     params: withProjectPath({}, projectPath)

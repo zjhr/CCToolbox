@@ -6,25 +6,13 @@
         <n-empty description="暂无规范文件" />
       </div>
         <div v-else class="spec-list">
-          <div
+          <component
             v-for="item in displaySpecs"
+            :is="item.isTemporary ? TemporarySpecCard : SpecCard"
             :key="item.path"
-            class="spec-card"
-            :class="{ disabled: !item.filePath }"
-            @click="openSpec(item)"
-          >
-            <div class="spec-info">
-              <div class="spec-title" v-html="highlightText(item.name)" />
-              <div v-if="searchQuery && snippetFor(item)" class="spec-snippet" v-html="highlightText(snippetFor(item))" />
-              <div class="spec-meta">
-                {{ item.fileName || '未找到 spec.md' }}
-                <span v-if="item.mtime"> · {{ formatTime(item.mtime) }}</span>
-              </div>
-            </div>
-            <div class="spec-count">
-              {{ requirementLabel(item) }}
-            </div>
-          </div>
+            v-bind="item.cardProps"
+            @open="openSpec"
+          />
         </div>
       </div>
     <Teleport v-else key="detail" to="body" :disabled="!isFullscreen">
@@ -71,6 +59,8 @@ import { useOpenSpecStore } from '../../../stores/openspec'
 import { readFile as readFileApi } from '../../../api/openspec'
 import MarkdownViewer from '../components/MarkdownViewer.vue'
 import SearchBar from '../components/SearchBar.vue'
+import SpecCard from '../components/SpecCard.vue'
+import TemporarySpecCard from '../components/TemporarySpecCard.vue'
 import { filterBySearchQuery, getSearchSnippet, highlightMatches } from '../composables/useSearch'
 import message from '../../../utils/message'
 
@@ -85,11 +75,17 @@ const specContents = reactive({})
 const specContentLoading = reactive({})
 
 const specItems = computed(() => {
-  const items = (store.data.specs || [])
+  const items = (store.allSpecs || [])
     .filter(node => node.type === 'directory' || node.type === 'file')
     .map(node => {
+      const base = {
+        isTemporary: !!node.isTemporary,
+        changeId: node.changeId || '',
+        changePath: node.changePath || ''
+      }
       if (node.type === 'file') {
         return {
+          ...base,
           name: node.name,
           path: node.path,
           filePath: node.path,
@@ -99,6 +95,7 @@ const specItems = computed(() => {
       }
       const specFile = findSpecFile(node)
       return {
+        ...base,
         name: node.name,
         path: node.path,
         filePath: specFile?.path || '',
@@ -115,9 +112,30 @@ const searchQuery = computed({
 })
 
 const displaySpecs = computed(() => {
-  return filterBySearchQuery(specItems.value, searchQuery.value, {
+  const filtered = filterBySearchQuery(specItems.value, searchQuery.value, {
     getSearchText: (item) => {
       return `${item.name} ${item.path} ${item.fileName} ${item.filePath} ${specContents[item.filePath] || ''}`
+    }
+  })
+  return filtered.map((item) => {
+    const snippet = snippetFor(item)
+    const snippetHtml = searchQuery.value && snippet ? highlightText(snippet) : ''
+    const metaText = `${item.fileName || '未找到 spec.md'}${item.mtime ? ` · ${formatTime(item.mtime)}` : ''}`
+    const requirementText = requirementLabel.value(item)
+    const cardProps = {
+      item,
+      titleHtml: highlightText(item.name),
+      snippetHtml,
+      metaText,
+      requirementText,
+      disabled: !item.filePath
+    }
+    if (item.isTemporary && item.changeId) {
+      cardProps.sourceLabel = `来自: ${item.changeId}`
+    }
+    return {
+      ...item,
+      cardProps
     }
   })
 })
@@ -291,70 +309,6 @@ async function loadSpecContent(item) {
   display: flex;
   flex-direction: column;
   gap: 12px;
-}
-
-.spec-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px;
-  border: 1px solid var(--border-primary);
-  border-radius: 8px;
-  background: var(--bg-primary);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.spec-card:hover {
-  border-color: #18a058;
-  box-shadow: 0 2px 8px rgba(24, 160, 88, 0.12);
-}
-
-.spec-card.disabled {
-  cursor: not-allowed;
-  opacity: 0.7;
-  box-shadow: none;
-}
-
-.spec-info {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.spec-title {
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.spec-meta {
-  font-size: 12px;
-  color: #666;
-}
-
-.spec-snippet {
-  font-size: 12px;
-  color: #6b7280;
-  line-height: 1.5;
-}
-
-.spec-snippet :deep(.search-highlight),
-.spec-title :deep(.search-highlight) {
-  background: #fde68a;
-  color: #7a4a1f;
-  padding: 0 2px;
-  border-radius: 4px;
-}
-
-.spec-count {
-  font-size: 12px;
-  color: #8a5a2f;
-  padding: 4px 8px;
-  border-radius: 999px;
-  background: #fff4e6;
-  border: 1px solid #f0d9bb;
-  white-space: nowrap;
 }
 
 .spec-detail {

@@ -26,6 +26,7 @@ function getNpmCachePath() {
   return path.join(appDir, 'npm-cache');
 }
 const CLI_CACHE_TTL = 60 * 1000;
+const CHANGE_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
 let cliInfoCache = null;
 
 const SUPPORTED_TOOLS = [
@@ -317,6 +318,57 @@ function buildTree(baseDir, relativeDir = '') {
     }
     return (b.mtime || 0) - (a.mtime || 0);
   });
+}
+
+function markTemporaryNodes(nodes, changeId, changePath) {
+  return (nodes || []).map((node) => {
+    const next = {
+      ...node,
+      isTemporary: true,
+      changeId,
+      changePath
+    };
+    if (node.children) {
+      next.children = markTemporaryNodes(node.children, changeId, changePath);
+    }
+    return next;
+  });
+}
+
+function buildTemporarySpecs(baseDir) {
+  const changesDir = path.join(baseDir, 'changes');
+  if (!fs.existsSync(changesDir)) {
+    return [];
+  }
+
+  const entries = fs.readdirSync(changesDir, { withFileTypes: true });
+  const items = [];
+  entries.forEach((entry) => {
+    if (!entry.isDirectory()) {
+      return;
+    }
+    if (entry.name === 'archive') {
+      return;
+    }
+    if (!CHANGE_ID_PATTERN.test(entry.name)) {
+      return;
+    }
+    const specsDir = path.join(changesDir, entry.name, 'specs');
+    if (!fs.existsSync(specsDir)) {
+      return;
+    }
+    const stats = fs.statSync(specsDir);
+    if (!stats.isDirectory()) {
+      return;
+    }
+    const relativeSpecsDir = normalizeRelPath(baseDir, specsDir);
+    const nodes = buildTree(baseDir, relativeSpecsDir);
+    if (nodes.length) {
+      items.push(...markTemporaryNodes(nodes, entry.name, `changes/${entry.name}`));
+    }
+  });
+
+  return items;
 }
 
 function listFilesRecursive(dirPath) {
@@ -735,6 +787,7 @@ module.exports = {
   computeDashboard,
   readProjectFiles,
   buildTree,
+  buildTemporarySpecs,
   getSupportedTools,
   getCliInfo,
   initTools,

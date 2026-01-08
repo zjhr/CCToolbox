@@ -4,6 +4,7 @@ import {
   getDashboard,
   getProjects,
   getSpecs,
+  getTemporarySpecs,
   getChanges,
   deleteChange as deleteChangeApi,
   getArchives,
@@ -45,6 +46,7 @@ export const useOpenSpecStore = defineStore('openspec', () => {
     dashboard: null,
     projects: [],
     specs: [],
+    temporarySpecs: [],
     changes: [],
     archives: [],
     settings: null,
@@ -68,6 +70,35 @@ export const useOpenSpecStore = defineStore('openspec', () => {
     return filterBySearchQuery(data.archives || [], searchQuery.value, {
       fields: ['name', 'path']
     })
+  })
+
+  function findSpecFile(node) {
+    if (!node?.children) return null
+    const direct = (node.children || []).find(child => child.type === 'file' && child.name === 'spec.md')
+    if (direct) return direct
+    for (const child of node.children || []) {
+      if (child.type === 'directory') {
+        const found = findSpecFile(child)
+        if (found) return found
+      }
+    }
+    return null
+  }
+
+  function getSpecSortTime(node) {
+    if (!node) return 0
+    if (node.type === 'file') return node.mtime || 0
+    const specFile = findSpecFile(node)
+    return specFile?.mtime || node.mtime || 0
+  }
+
+  function mergeAndSortSpecs(specs, temporarySpecs) {
+    const merged = [...(specs || []), ...(temporarySpecs || [])]
+    return merged.sort((a, b) => getSpecSortTime(b) - getSpecSortTime(a))
+  }
+
+  const allSpecs = computed(() => {
+    return mergeAndSortSpecs(data.specs, data.temporarySpecs)
   })
 
   function setContext({ name, path, source }) {
@@ -113,10 +144,11 @@ export const useOpenSpecStore = defineStore('openspec', () => {
     loading.value = true
     syncStatus.value = 'syncing'
     try {
-      const [dashboard, projects, specs, changes, archives, settings] = await Promise.all([
+      const [dashboard, projects, specs, temporarySpecs, changes, archives, settings] = await Promise.all([
         getDashboard(projectPath.value),
         getProjects(projectPath.value),
         getSpecs(projectPath.value),
+        getTemporarySpecs(projectPath.value),
         getChanges(projectPath.value),
         getArchives(projectPath.value),
         getSettings(projectPath.value)
@@ -124,6 +156,7 @@ export const useOpenSpecStore = defineStore('openspec', () => {
       data.dashboard = dashboard
       data.projects = projects.items || []
       data.specs = specs.tree || []
+      data.temporarySpecs = temporarySpecs.items || []
       data.changes = changes.tree || []
       data.archives = archives.tree || []
       data.settings = settings
@@ -152,8 +185,12 @@ export const useOpenSpecStore = defineStore('openspec', () => {
         const projects = await getProjects(projectPath.value)
         data.projects = projects.items || []
       } else if (target === 'specs') {
-        const specs = await getSpecs(projectPath.value)
-        data.specs = specs.tree || []
+        const [specsResult, temporaryResult] = await Promise.allSettled([
+          getSpecs(projectPath.value),
+          getTemporarySpecs(projectPath.value)
+        ])
+        data.specs = specsResult.status === 'fulfilled' ? (specsResult.value.tree || []) : []
+        data.temporarySpecs = temporaryResult.status === 'fulfilled' ? (temporaryResult.value.items || []) : []
       } else if (target === 'changes') {
         const changes = await getChanges(projectPath.value)
         data.changes = changes.tree || []
@@ -354,6 +391,7 @@ export const useOpenSpecStore = defineStore('openspec', () => {
     hasUnsavedChanges,
     filteredChanges,
     filteredArchives,
+    allSpecs,
     setContext,
     setDrawerOpen,
     setActiveTab,

@@ -6,6 +6,7 @@ const {
   computeDashboard,
   readProjectFiles,
   buildTree,
+  buildTemporarySpecs,
   getSupportedTools,
   getCliInfo,
   initTools,
@@ -82,6 +83,21 @@ router.get('/specs', (req, res) => {
   } catch (err) {
     console.error('[OpenSpec] specs error:', err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/openspec/temporary-specs
+router.get('/temporary-specs', (req, res) => {
+  const projectPath = requireProjectPath(req, res);
+  if (!projectPath) return;
+
+  try {
+    const baseDir = path.resolve(projectPath, 'openspec');
+    const items = buildTemporarySpecs(baseDir);
+    res.json({ items });
+  } catch (err) {
+    console.error('[OpenSpec] temporary specs error:', err);
+    res.json({ items: [] });
   }
 });
 
