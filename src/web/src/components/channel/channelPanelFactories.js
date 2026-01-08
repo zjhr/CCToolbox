@@ -151,6 +151,7 @@ const channelPanelFactories = {
     modalWidth: 520,
     formLabelWidth: 95,
     showApplyButton: true,
+    applyOnEditCurrent: true,
     presets: claudePresets,
     presetCategories,
     getPresetById,
@@ -407,6 +408,7 @@ const channelPanelFactories = {
     modalWidth: 600,
     formLabelWidth: 90,
     showApplyButton: true,
+    applyOnEditCurrent: true,
     formSections: [
       {
         title: "基本信息",
@@ -590,6 +592,7 @@ const channelPanelFactories = {
     formLabelWidth: 90,
     showApplyButton: true,
     showClearButton: true,
+    applyOnEditCurrent: true,
     applyConfirmContent: "仅写入配置，不会改变渠道启用状态，是否继续？",
     formSections: [
       {

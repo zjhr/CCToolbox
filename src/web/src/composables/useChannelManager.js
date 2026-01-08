@@ -257,7 +257,29 @@ export default function useChannelManager(config) {
     try {
       if (state.editingChannel) {
         await config.api.update(state.editingChannel, state.formData)
-        message.success(`${config.displayName} 渠道已更新`)
+        let applied = false
+        let applyFailed = false
+        const shouldApply =
+          config.applyOnEditCurrent &&
+          typeof config.api.applyToSettings === 'function' &&
+          state.editingChannel?.id &&
+          state.editingChannel.id === state.currentChannelId
+        if (shouldApply) {
+          try {
+            await config.api.applyToSettings(state.editingChannel)
+            applied = true
+          } catch (error) {
+            applyFailed = true
+            message.error(resolveError(error, `${config.displayName} 渠道已更新，但写入配置失败`))
+          }
+        }
+        if (!applyFailed) {
+          message.success(
+            applied
+              ? `${config.displayName} 渠道已更新并同步写入配置`
+              : `${config.displayName} 渠道已更新`
+          )
+        }
       } else {
         await config.api.create(state.formData)
         message.success(`${config.displayName} 渠道已添加`)

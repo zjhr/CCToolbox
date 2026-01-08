@@ -6,6 +6,7 @@ const tomlStringify = require('@iarna/toml').stringify;
 const { getCodexDir } = require('./codex-config');
 const { injectEnvToShell, removeEnvFromShell, isProxyConfig } = require('./codex-settings-manager');
 const { getAppDir } = require('../../utils/app-path-manager');
+const { normalizeEnvKey, buildEnvKeyFromProvider } = require('../../utils/env-key');
 
 /**
  * Codex 渠道管理服务（多渠道架构）
@@ -45,6 +46,7 @@ function loadChannels() {
     if (data.channels) {
       data.channels = data.channels.map(ch => ({
         ...ch,
+        envKey: buildEnvKeyFromProvider(ch.providerKey) || normalizeEnvKey(ch.envKey),
         enabled: ch.enabled !== false, // 默认启用
         weight: ch.weight || 1,
         maxConcurrency: ch.maxConcurrency || null,
@@ -85,15 +87,21 @@ function initializeFromConfig() {
     const channels = [];
     if (config.model_providers) {
       for (const [providerKey, providerConfig] of Object.entries(config.model_providers)) {
-        // env_key 优先级：配置的 env_key > PROVIDER_API_KEY > OPENAI_API_KEY
-        let envKey = providerConfig.env_key || `${providerKey.toUpperCase()}_API_KEY`;
-        let apiKey = auth[envKey] || '';
+        // API Key 获取优先级：派生 env_key > 配置 env_key > OPENAI_API_KEY
+        const derivedEnvKey = buildEnvKeyFromProvider(providerKey);
+        const configuredEnvKey = normalizeEnvKey(providerConfig.env_key);
+        let apiKey = (derivedEnvKey && auth[derivedEnvKey]) || '';
+
+        if (!apiKey && configuredEnvKey) {
+          apiKey = auth[configuredEnvKey] || '';
+        }
 
         // 如果没找到，尝试 OPENAI_API_KEY 作为通用 fallback
         if (!apiKey && auth['OPENAI_API_KEY']) {
           apiKey = auth['OPENAI_API_KEY'];
-          envKey = 'OPENAI_API_KEY';
         }
+
+        const envKey = derivedEnvKey || configuredEnvKey;
 
         channels.push({
           id: crypto.randomUUID(),
@@ -161,7 +169,7 @@ function createChannel(name, providerKey, baseUrl, apiKey, wireApi = 'responses'
     throw new Error(`Provider key "${providerKey}" already exists`);
   }
 
-  const envKey = extraConfig.envKey || `${providerKey.toUpperCase()}_API_KEY`;
+  const envKey = buildEnvKeyFromProvider(providerKey);
 
   const newChannel = {
     id: crypto.randomUUID(),
@@ -195,8 +203,7 @@ function createChannel(name, providerKey, baseUrl, apiKey, wireApi = 'responses'
     }
   }
 
-  // 注意：不再自动写入 config.toml，只在开启代理控制时才同步
-  // writeCodexConfigForMultiChannel(data.channels);
+  writeCodexConfigForMultiChannel(data.channels);
 
   return newChannel;
 }
@@ -227,22 +234,29 @@ function updateChannel(channelId, updates) {
     createdAt: oldChannel.createdAt, // 保持创建时间
     updatedAt: Date.now()
   };
+  newChannel.envKey = buildEnvKeyFromProvider(newChannel.providerKey) || normalizeEnvKey(newChannel.envKey);
 
   data.channels[index] = newChannel;
   saveChannels(data);
 
   // 处理环境变量更新
   // 如果 envKey 或 apiKey 变化，需要更新环境变量
-  const oldEnvKey = oldChannel.envKey;
-  const newEnvKey = newChannel.envKey;
+  const oldEnvKey = buildEnvKeyFromProvider(oldChannel.providerKey) || normalizeEnvKey(oldChannel.envKey);
+  const newEnvKey = buildEnvKeyFromProvider(newChannel.providerKey) || normalizeEnvKey(newChannel.envKey);
   const oldApiKey = oldChannel.apiKey;
   const newApiKey = newChannel.apiKey;
 
   // 如果 envKey 改变，删除旧的，注入新的
-  if (oldEnvKey !== newEnvKey && oldEnvKey) {
-    const removeResult = removeEnvFromShell(oldEnvKey);
-    if (removeResult.success) {
-      console.log(`[Codex Channels] Old environment variable ${oldEnvKey} removed`);
+  if (oldEnvKey !== newEnvKey) {
+    const envKeysToRemove = new Set([oldEnvKey, normalizeEnvKey(oldChannel.envKey)].filter(Boolean));
+    for (const envKey of envKeysToRemove) {
+      if (!envKey || envKey === newEnvKey) {
+        continue;
+      }
+      const removeResult = removeEnvFromShell(envKey);
+      if (removeResult.success) {
+        console.log(`[Codex Channels] Old environment variable ${envKey} removed`);
+      }
     }
   }
 
@@ -254,8 +268,7 @@ function updateChannel(channelId, updates) {
     }
   }
 
-  // 注意：不再自动写入 config.toml，只在开启代理控制时才同步
-  // writeCodexConfigForMultiChannel(data.channels);
+  writeCodexConfigForMultiChannel(data.channels);
 
   return data.channels[index];
 }
@@ -274,17 +287,22 @@ function deleteChannel(channelId) {
   saveChannels(data);
 
   // 从 shell 配置文件移除该渠道的环境变量
-  if (deletedChannel.envKey) {
-    const removeResult = removeEnvFromShell(deletedChannel.envKey);
+  const envKeysToRemove = new Set([
+    buildEnvKeyFromProvider(deletedChannel.providerKey),
+    deletedChannel.envKey,
+    normalizeEnvKey(deletedChannel.envKey)
+  ].filter(Boolean));
+
+  for (const envKey of envKeysToRemove) {
+    const removeResult = removeEnvFromShell(envKey);
     if (removeResult.success) {
-      console.log(`[Codex Channels] Environment variable ${deletedChannel.envKey} removed`);
+      console.log(`[Codex Channels] Environment variable ${envKey} removed`);
     } else {
-      console.warn(`[Codex Channels] Failed to remove ${deletedChannel.envKey}: ${removeResult.error}`);
+      console.warn(`[Codex Channels] Failed to remove ${envKey}: ${removeResult.error}`);
     }
   }
 
-  // 注意：不再自动写入 config.toml，只在开启代理控制时才同步
-  // writeCodexConfigForMultiChannel(data.channels);
+  // 删除渠道时保持配置同步由调用方决定
 
   return { success: true };
 }
@@ -378,8 +396,9 @@ function writeCodexConfigForMultiChannel(allChannels) {
       requires_openai_auth: channel.requiresOpenaiAuth !== false
     };
 
-    if (channel.envKey && channel.envKey !== 'OPENAI_API_KEY') {
-      providerConfig.env_key = channel.envKey;
+    const envKey = buildEnvKeyFromProvider(channel.providerKey) || normalizeEnvKey(channel.envKey);
+    if (envKey) {
+      providerConfig.env_key = envKey;
     }
 
     // 添加额外查询参数(如 Azure 的 api-version)
@@ -420,8 +439,9 @@ ${tomlContent}`;
 
   // 更新所有渠道的 API Key
   for (const channel of allChannels) {
-    if (channel.apiKey) {
-      auth[channel.envKey] = channel.apiKey;
+    const envKey = buildEnvKeyFromProvider(channel.providerKey) || normalizeEnvKey(channel.envKey);
+    if (channel.apiKey && envKey) {
+      auth[envKey] = channel.apiKey;
     }
   }
 
@@ -479,13 +499,14 @@ function syncAllChannelEnvVars() {
     const results = [];
 
     for (const channel of channels) {
-      if (channel.apiKey && channel.envKey) {
-        const injectResult = injectEnvToShell(channel.envKey, channel.apiKey);
+      const envKey = buildEnvKeyFromProvider(channel.providerKey) || normalizeEnvKey(channel.envKey);
+      if (channel.apiKey && envKey) {
+        const injectResult = injectEnvToShell(envKey, channel.apiKey);
         if (injectResult.success) {
           syncedCount++;
-          results.push({ envKey: channel.envKey, success: true });
+          results.push({ envKey, success: true });
         } else {
-          results.push({ envKey: channel.envKey, success: false, error: injectResult.error });
+          results.push({ envKey, success: false, error: injectResult.error });
         }
       }
     }
@@ -560,8 +581,9 @@ function applyChannelToSettings(channelId) {
     requires_openai_auth: channel.requiresOpenaiAuth !== false
   };
 
-  if (channel.envKey && channel.envKey !== 'OPENAI_API_KEY') {
-    providerConfig.env_key = channel.envKey;
+  const envKey = buildEnvKeyFromProvider(channel.providerKey) || normalizeEnvKey(channel.envKey);
+  if (envKey) {
+    providerConfig.env_key = envKey;
   }
 
   // 添加额外查询参数(如 Azure 的 api-version)
@@ -598,17 +620,17 @@ ${tomlContent}`;
   }
 
   // 添加当前渠道的 API Key
-  if (channel.apiKey && channel.envKey) {
-    auth[channel.envKey] = channel.apiKey;
+  if (channel.apiKey && envKey) {
+    auth[envKey] = channel.apiKey;
   }
 
   fs.writeFileSync(authPath, JSON.stringify(auth, null, 2), 'utf8');
 
   // 注入环境变量到 shell 配置文件
-  if (channel.apiKey && channel.envKey) {
-    const injectResult = injectEnvToShell(channel.envKey, channel.apiKey);
+  if (channel.apiKey && envKey) {
+    const injectResult = injectEnvToShell(envKey, channel.apiKey);
     if (injectResult.success) {
-      console.log(`[Codex Channels] Environment variable ${channel.envKey} injected`);
+      console.log(`[Codex Channels] Environment variable ${envKey} injected`);
     }
   }
 
