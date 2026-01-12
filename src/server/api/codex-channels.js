@@ -9,6 +9,8 @@ const {
   saveChannelOrder,
   applyChannelToSettings,
   writeCodexConfigForSingleChannel,
+  updateReasoningEffort,
+  getReasoningEffort,
   getCurrentChannel
 } = require('../services/codex-channels');
 const { getSchedulerState } = require('../services/channel-scheduler');
@@ -179,6 +181,47 @@ module.exports = (config) => {
       });
     } catch (error) {
       console.error('[Codex Channels API] Error writing channel config:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  /**
+   * POST /api/codex/channels/reasoning-effort
+   * 更新推理强度配置
+   * Body: { effort }
+   */
+  router.post('/reasoning-effort', (req, res) => {
+    try {
+      if (!isCodexInstalled()) {
+        return res.status(404).json({ error: 'Codex CLI not installed' });
+      }
+
+      const { effort } = req.body || {};
+      const result = updateReasoningEffort(effort);
+      res.json({
+        success: true,
+        effort: result.effort
+      });
+    } catch (error) {
+      console.error('[Codex Channels API] Error updating reasoning effort:', error);
+      const status = error.message === 'Invalid reasoning effort' ? 400 : 500;
+      res.status(status).json({ error: error.message });
+    }
+  });
+
+  /**
+   * GET /api/codex/channels/reasoning-effort
+   * 获取推理强度配置
+   */
+  router.get('/reasoning-effort', (req, res) => {
+    try {
+      if (!isCodexInstalled()) {
+        return res.status(404).json({ error: 'Codex CLI not installed' });
+      }
+      const result = getReasoningEffort();
+      res.json({ effort: result.effort });
+    } catch (error) {
+      console.error('[Codex Channels API] Error fetching reasoning effort:', error);
       res.status(500).json({ error: error.message });
     }
   });

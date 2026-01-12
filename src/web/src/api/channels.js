@@ -106,6 +106,16 @@ export async function writeCodexConfig(channelId) {
   return response.data
 }
 
+export async function updateReasoningEffort(effort) {
+  const response = await client.post('/codex/channels/reasoning-effort', { effort })
+  return response.data
+}
+
+export async function getReasoningEffort() {
+  const response = await client.get('/codex/channels/reasoning-effort')
+  return response.data
+}
+
 export async function getCurrentCodexChannel() {
   const response = await client.get('/codex/channels/current')
   return response.data

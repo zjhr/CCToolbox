@@ -151,6 +151,15 @@ function saveChannels(data) {
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
 }
 
+const VALID_REASONING_EFFORTS = new Set(['xhigh', 'high', 'medium', 'low']);
+
+function normalizeReasoningEffort(effort) {
+  if (typeof effort !== 'string') return null;
+  const normalized = effort.trim().toLowerCase();
+  if (!VALID_REASONING_EFFORTS.has(normalized)) return null;
+  return normalized;
+}
+
 // 获取所有渠道
 function getChannels() {
   const data = loadChannels();
@@ -273,6 +282,34 @@ function updateChannel(channelId, updates) {
   return data.channels[index];
 }
 
+function updateReasoningEffort(effort) {
+  const normalized = normalizeReasoningEffort(effort);
+  if (!normalized) {
+    throw new Error('Invalid reasoning effort');
+  }
+
+  const data = loadChannels();
+  writeCodexConfigForMultiChannel(data.channels, normalized);
+  return { effort: normalized };
+}
+
+function getReasoningEffort() {
+  const configPath = path.join(getCodexDir(), 'config.toml');
+  if (!fs.existsSync(configPath)) {
+    return { effort: 'high' };
+  }
+
+  try {
+    const content = fs.readFileSync(configPath, 'utf8');
+    const config = toml.parse(content);
+    const normalized = normalizeReasoningEffort(config?.model_reasoning_effort);
+    return { effort: normalized || 'high' };
+  } catch (err) {
+    console.warn('[Codex Channels] Failed to read reasoning effort, fallback to high');
+    return { effort: 'high' };
+  }
+}
+
 // 删除渠道
 function deleteChannel(channelId) {
   const data = loadChannels();
@@ -315,7 +352,7 @@ function deleteChannel(channelId) {
  * 2. 如果已启用动态切换（cc-proxy），不覆盖 model_provider
  * 3. 使用 TOML 序列化而不是字符串拼接，确保配置完整性
  */
-function writeCodexConfigForMultiChannel(allChannels) {
+function writeCodexConfigForMultiChannel(allChannels, reasoningEffort) {
   const codexDir = getCodexDir();
 
   if (!fs.existsSync(codexDir)) {
@@ -356,6 +393,11 @@ function writeCodexConfigForMultiChannel(allChannels) {
     } catch (err) {
       // ignore read error, use defaults
     }
+  }
+
+  const normalizedEffort = normalizeReasoningEffort(reasoningEffort);
+  if (normalizedEffort) {
+    config.model_reasoning_effort = normalizedEffort;
   }
 
   // 判断是否已启用动态切换
@@ -679,6 +721,8 @@ module.exports = {
   getChannels,
   createChannel,
   updateChannel,
+  updateReasoningEffort,
+  getReasoningEffort,
   deleteChannel,
   getEnabledChannels,
   saveChannelOrder,

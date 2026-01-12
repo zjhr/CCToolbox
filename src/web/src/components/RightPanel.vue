@@ -64,7 +64,31 @@
       <div class="panel-header">
         <div class="header-title">
           <h3>{{ channelTitle }}</h3>
-          <n-text depth="3" style="font-size: 12px; margin-left: 8px;">拖拽可调整顺序</n-text>
+          <div v-if="activeChannel || showReasoningEffort" class="channel-quick">
+            <div
+              v-if="activeChannel"
+              class="channel-tag"
+              :class="{ clickable: canOpenActiveWebsite }"
+              @click="handleOpenActiveWebsite"
+            >
+              <n-tag size="small" type="info" :bordered="false">
+                {{ activeChannel.name || '未命名渠道' }}
+              </n-tag>
+              <n-button text size="tiny" class="edit-button" @click.stop="handleEditActiveChannel">
+                <n-icon size="14" aria-hidden="true"><CreateOutline /></n-icon>
+              </n-button>
+            </div>
+            <n-text v-else depth="3" class="no-active-channel">无活跃渠道</n-text>
+            <div v-if="showReasoningEffort" class="reasoning-effort">
+              <n-select
+                size="small"
+                :value="reasoningEffort"
+                :options="reasoningEffortOptions"
+                :loading="reasoningEffortSaving"
+                @update:value="handleReasoningEffortChange"
+              />
+            </div>
+          </div>
         </div>
         <div class="header-actions">
           <n-tooltip trigger="hover">
@@ -90,17 +114,23 @@
             添加渠道
           </n-button>
 
-          <n-button
-            v-if="currentChannel === 'gemini'"
-            size="small"
-            type="error"
-            secondary
-            :disabled="!geminiCanClearConfig"
-            :aria-disabled="!geminiCanClearConfig"
-            @click="handleClearGeminiConfig"
-          >
-            清空配置
-          </n-button>
+          <n-tooltip v-if="currentChannel === 'gemini'" :disabled="!showGeminiClearTooltip">
+            <template #trigger>
+              <span>
+                <n-button
+                  size="small"
+                  type="error"
+                  secondary
+                  :disabled="!geminiCanClearConfig"
+                  :aria-disabled="!geminiCanClearConfig"
+                  @click="handleClearGeminiConfig"
+                >
+                  清空配置
+                </n-button>
+              </span>
+            </template>
+            {{ geminiClearTooltip }}
+          </n-tooltip>
         </div>
       </div>
 
@@ -142,9 +172,9 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import {
-  NButton, NIcon, NText, NSwitch, NTooltip, NTag
+  NButton, NIcon, NText, NSwitch, NTooltip, NTag, NSelect
 } from 'naive-ui'
-import { AddOutline, ChatbubblesOutline, ChevronDownOutline, ExtensionPuzzleOutline } from '@vicons/ionicons5'
+import { AddOutline, ChatbubblesOutline, ChevronDownOutline, ExtensionPuzzleOutline, CreateOutline } from '@vicons/ionicons5'
 import ClaudeChannelPanel from './channel/ClaudeChannelPanel.vue'
 import CodexChannelPanel from './channel/CodexChannelPanel.vue'
 import GeminiChannelPanel from './channel/GeminiChannelPanel.vue'
@@ -188,6 +218,9 @@ const geminiPanelRef = ref(null)
 const geminiCanClearConfig = ref(false)
 const showSkillsDrawer = ref(false)
 const installedSkillsCount = ref(0)
+const geminiClearTooltip = computed(() => geminiPanelRef.value?.getClearButtonTooltip?.() || '')
+const showGeminiClearTooltip = computed(() => geminiCanClearConfig.value && Boolean(geminiClearTooltip.value))
+
 
 // 加载已安装技能数量
 async function loadInstalledSkillsCount() {
@@ -215,8 +248,34 @@ const channelTitles = {
 
 const channelTitle = computed(() => channelTitles[currentChannel.value] || 'Claude 渠道管理')
 
+const currentPanelRef = computed(() => channelRefs[currentChannel.value]?.value || null)
+const activeChannel = computed(() => currentPanelRef.value?.getActiveChannel?.() || null)
+const canOpenActiveWebsite = computed(() => Boolean(activeChannel.value?.websiteUrl))
+const showReasoningEffort = computed(() => currentChannel.value === 'codex')
+const reasoningEffort = computed(() => currentPanelRef.value?.getReasoningEffort?.() || 'high')
+const reasoningEffortOptions = computed(() => currentPanelRef.value?.getReasoningEffortOptions?.() || [
+  { label: 'xhigh', value: 'xhigh' },
+  { label: 'high', value: 'high' },
+  { label: 'medium', value: 'medium' },
+  { label: 'low', value: 'low' }
+])
+const reasoningEffortSaving = computed(() => currentPanelRef.value?.isReasoningEffortSaving?.() || false)
+
 function openWebsite(url) {
   window.open(url, '_blank')
+}
+
+function handleOpenActiveWebsite() {
+  if (!canOpenActiveWebsite.value || !activeChannel.value?.websiteUrl) return
+  openWebsite(activeChannel.value.websiteUrl)
+}
+
+function handleEditActiveChannel() {
+  currentPanelRef.value?.editActiveChannel?.()
+}
+
+function handleReasoningEffortChange(value) {
+  currentPanelRef.value?.setReasoningEffort?.(value)
 }
 
 function handleAddClick() {
@@ -386,8 +445,64 @@ watch(() => currentChannel.value, (value) => {
 
 .header-title {
   display: flex;
-  align-items: baseline;
-  gap: 4px;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.channel-quick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.channel-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.channel-tag.clickable {
+  cursor: pointer;
+}
+
+.channel-tag.clickable :deep(.n-tag) {
+  cursor: pointer;
+}
+
+.channel-tag.clickable:active {
+  transform: translateY(1px);
+}
+
+.channel-tag.clickable:active :deep(.n-tag) {
+  background: var(--n-primary-color-suppl, rgba(24, 160, 88, 0.15));
+}
+
+.channel-tag.clickable :deep(.n-tag:active) {
+  transform: translateY(1px);
+  background: var(--n-primary-color-suppl, rgba(24, 160, 88, 0.15));
+}
+
+.channel-tag .edit-button {
+  opacity: 1;
+  transform: translateX(0);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.reasoning-effort {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.reasoning-effort :deep(.n-select) {
+  width: 96px;
+}
+
+.no-active-channel {
+  font-size: 12px;
+  color: var(--text-secondary);
 }
 
 .header-actions {

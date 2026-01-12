@@ -242,7 +242,7 @@ function deleteMemory(projectPath, name) {
   const safeName = normalizeMemoryName(name);
   const fullPath = path.join(memoriesDir, `${safeName}.md`);
   if (!fs.existsSync(fullPath)) {
-    return { name: safeName, removed: false };
+    return null;
   }
   fs.unlinkSync(fullPath);
   return { name: safeName, removed: true };

@@ -6,6 +6,7 @@
     :auto-focus="false"
     :trap-focus="false"
     :block-scroll="false"
+    :z-index="1100"
   >
     <div class="drawer-wrapper">
       <!-- Header -->

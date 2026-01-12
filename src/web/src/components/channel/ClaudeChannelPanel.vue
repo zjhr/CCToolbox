@@ -12,6 +12,14 @@ const baseRef = ref(null)
 defineExpose({
   openAddDialog: () => baseRef.value?.openAddDialog(),
   refresh: () => baseRef.value?.refresh(),
-  toggleAllCollapse: () => baseRef.value?.toggleAllCollapse()
+  toggleAllCollapse: () => baseRef.value?.toggleAllCollapse(),
+  getActiveChannel: () => baseRef.value?.getActiveChannel?.(),
+  openActiveWebsite: () => baseRef.value?.openActiveWebsite?.(),
+  editActiveChannel: () => baseRef.value?.editActiveChannel?.(),
+  supportsReasoningEffort: () => baseRef.value?.supportsReasoningEffort?.(),
+  getReasoningEffort: () => baseRef.value?.getReasoningEffort?.(),
+  getReasoningEffortOptions: () => baseRef.value?.getReasoningEffortOptions?.(),
+  setReasoningEffort: (value) => baseRef.value?.setReasoningEffort?.(value),
+  isReasoningEffortSaving: () => baseRef.value?.isReasoningEffortSaving?.()
 })
 </script>

@@ -11,7 +11,7 @@
           <n-button size="small" @click="cancelEdit">取消</n-button>
           <n-button size="small" type="primary" :loading="saving" @click="save">保存</n-button>
         </template>
-        <n-button size="small" type="error" quaternary :disabled="!name" @click="showDelete = true">删除</n-button>
+        <n-button size="small" type="error" quaternary class="delete-button" :disabled="!name" @click="showDelete = true">删除</n-button>
       </div>
     </div>
 
@@ -154,6 +154,10 @@ async function confirmDelete() {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.delete-button {
+  margin-right: 8px;
 }
 
 .editor-body {

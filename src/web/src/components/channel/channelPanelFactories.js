@@ -592,6 +592,7 @@ const channelPanelFactories = {
     formLabelWidth: 90,
     showApplyButton: true,
     showClearButton: true,
+    clearButtonTooltip: "使用官方API",
     applyOnEditCurrent: true,
     applyConfirmContent: "仅写入配置，不会改变渠道启用状态，是否继续？",
     formSections: [

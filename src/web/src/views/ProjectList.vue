@@ -4,7 +4,7 @@
       <div class="header">
         <div class="header-text">
           <n-h2 style="margin: 0;">我的项目</n-h2>
-          <n-text depth="3">选择一个项目查看会话，拖拽可调整顺序</n-text>
+          <n-text depth="3">选择一个项目查看会话</n-text>
         </div>
         <n-input
           v-model:value="searchQuery"
@@ -86,82 +86,20 @@
     </div>
 
     <!-- Global Search Modal -->
-    <n-modal
-      v-model:show="showGlobalSearch"
-      preset="card"
-      title="全局搜索"
-      style="width: 800px; max-width: 90vw;"
-      :style="{ marginTop: '80px' }"
-    >
-      <div style="margin-bottom: 16px;">
-        <n-input
-          ref="globalSearchInputRef"
-          v-model:value="globalSearchQuery"
-          placeholder="搜索所有项目的对话内容..."
-          clearable
-          @keyup.enter="handleGlobalSearch"
-          :disabled="globalSearching"
-        >
-          <template #prefix>
-            <n-icon><SearchOutline /></n-icon>
-          </template>
-          <template #suffix>
-            <n-button text @click="handleGlobalSearch" :disabled="!globalSearchQuery || globalSearching" :loading="globalSearching">
-              搜索
-            </n-button>
-          </template>
-        </n-input>
-      </div>
-
-      <div v-if="globalSearchResults" style="max-height: 60vh; overflow-y: auto;">
-        <n-alert type="info" style="margin-bottom: 16px;">
-          关键词 "{{ globalSearchResults.keyword }}" 共找到 {{ globalSearchResults.totalMatches }} 处匹配
-        </n-alert>
-
-        <div v-for="session in globalSearchResults.sessions" :key="`${session.projectName}-${session.sessionId}`" class="search-result-item">
-          <div class="search-result-header">
-            <div class="search-result-title">
-              <n-text strong style="font-size: 15px; font-weight: 700;">
-                {{ session.projectDisplayName }}
-              </n-text>
-              <n-text depth="2" style="margin: 0 8px;">·</n-text>
-              <n-text strong>
-                {{ session.alias ? `${session.alias} (${session.sessionId.substring(0, 8)})` : session.sessionId.substring(0, 8) }}
-              </n-text>
-              <n-tag size="small" :bordered="false">{{ session.matchCount }} 个匹配</n-tag>
-            </div>
-            <TerminalLauncher
-              :project-name="session.projectName"
-              :session-id="session.sessionId"
-              :channel="currentChannel"
-              @launched="showGlobalSearch = false"
-            />
-          </div>
-          <div v-for="(match, idx) in session.matches" :key="idx" class="search-match">
-            <n-tag size="tiny" :type="match.role === 'user' ? 'info' : 'success'" :bordered="false">
-              {{ match.role === 'user' ? '用户' : '助手' }}
-            </n-tag>
-            <n-text depth="3" class="search-match-text" v-html="highlightKeyword(match.context, globalSearchResults.keyword)"></n-text>
-          </div>
-        </div>
-
-        <n-empty v-if="globalSearchResults.sessions.length === 0" description="没有找到匹配的内容" />
-      </div>
-    </n-modal>
+    <SearchModal v-model:show="showGlobalSearch" :channel="currentChannel" />
   </div>
 </template>
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { NH2, NText, NSpin, NAlert, NEmpty, NIcon, NInput, NModal, NButton, NTag } from 'naive-ui'
+import { NH2, NText, NSpin, NAlert, NEmpty, NIcon, NInput } from 'naive-ui'
 import { FolderOpenOutline, SearchOutline } from '@vicons/ionicons5'
 import draggable from 'vuedraggable'
 import { useSessionsStore } from '../stores/sessions'
 import ProjectCard from '../components/ProjectCard.vue'
-import TerminalLauncher from '../components/TerminalLauncher.vue'
+import SearchModal from '../components/SearchModal.vue'
 import message, { dialog } from '../utils/message'
-import { searchSessionsGlobally } from '../api/sessions'
 
 const router = useRouter()
 const route = useRoute()
@@ -181,10 +119,6 @@ const contentEl = ref(null)
 
 // Global search
 const showGlobalSearch = ref(false)
-const globalSearchQuery = ref('')
-const globalSearchResults = ref(null)
-const globalSearching = ref(false)
-const globalSearchInputRef = ref(null)
 
 // Filtered projects based on search (only used when searching)
 const filteredProjects = computed(() => {
@@ -263,48 +197,14 @@ async function refreshDataWithScrollPreservation() {
 //   refreshDataWithScrollPreservation()
 // }
 
-// 全局搜索相关函数
-async function handleGlobalSearch() {
-  if (!globalSearchQuery.value) return
-
-  globalSearching.value = true
-  try {
-    const data = await searchSessionsGlobally(globalSearchQuery.value, 35, currentChannel.value)
-    globalSearchResults.value = data
-  } catch (err) {
-    message.error('搜索失败: ' + err.message)
-  } finally {
-    globalSearching.value = false
-  }
-}
-
-// 高亮关键字
-function highlightKeyword(text, keyword) {
-  if (!keyword || !text) return text
-  const regex = new RegExp(`(${keyword})`, 'gi')
-  return text.replace(regex, '<mark style="background-color: #ffd700; padding: 2px 4px; border-radius: 2px; font-weight: 600;">$1</mark>')
-}
-
 // 快捷键监听
 function handleKeyDown(e) {
   // Command/Ctrl + K
   if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
     e.preventDefault()
     showGlobalSearch.value = true
-    // 等待弹窗打开后聚焦输入框
-    nextTick(() => {
-      globalSearchInputRef.value?.focus()
-    })
   }
 }
-
-// 监听弹窗关闭，清空搜索结果
-watch(showGlobalSearch, (newVal) => {
-  if (!newVal) {
-    globalSearchQuery.value = ''
-    globalSearchResults.value = null
-  }
-})
 
 // 监听 channel 变化
 watch(currentChannel, (newChannel) => {

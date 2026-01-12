@@ -62,7 +62,7 @@ import { computed, ref, watch } from 'vue'
 import { NInput, NIcon, NButton, NList, NListItem, NCheckbox, NSpin, NEmpty } from 'naive-ui'
 import { SearchOutline } from '@vicons/ionicons5'
 import { useSerenaStore } from '../../../stores/serena'
-import message from '../../../utils/message'
+import message, { dialog } from '../../../utils/message'
 import MemoryEditor from '../components/MemoryEditor.vue'
 
 const store = useSerenaStore()
@@ -135,13 +135,41 @@ async function handleDelete(name) {
 
 async function handleBatchDelete() {
   if (selectedNames.value.length === 0) return
-  try {
-    await store.removeMemories(selectedNames.value)
-    selectedNames.value = []
-    message.success('批量删除完成')
-  } catch (err) {
-    message.error(err.message || '批量删除失败')
-  }
+  const names = [...selectedNames.value]
+  dialog.warning({
+    title: '确认批量删除？',
+    content: `将删除 ${names.length} 条记忆：${names.join('、')}`,
+    positiveText: '确认删除',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        const results = await store.removeMemories(names)
+        const normalizedResults = Array.isArray(results) ? results.filter(Boolean) : []
+        const removedNames = normalizedResults.filter(item => item?.removed).map(item => item.name)
+        const failedItems = normalizedResults.filter(item => item && !item.removed)
+
+        if (removedNames.length > 0) {
+          selectedNames.value = selectedNames.value.filter(name => !removedNames.includes(name))
+        }
+
+        await store.fetchMemories().catch(() => {})
+
+        if (failedItems.length > 0) {
+          const errorText = failedItems
+            .map(item => `${item.name || '未知'}: ${item.error || '删除失败'}`)
+            .join('；')
+          const hint = removedNames.length > 0 ? '部分删除完成' : '批量删除失败'
+          message.warning(`${hint}，失败原因：${errorText}`)
+          return
+        }
+
+        selectedNames.value = []
+        message.success('批量删除完成')
+      } catch (err) {
+        message.error(err.message || '批量删除失败')
+      }
+    }
+  })
 }
 </script>
 

@@ -95,6 +95,7 @@ async function startServer(port) {
   app.use('/health', require('./api/health'));
   app.use('/api/projects', require('./api/projects')(config));
   app.use('/api/sessions', require('./api/sessions')(config));
+  app.use('/api/search', require('./api/search')(config));
 
   // Codex API Routes
   app.use('/api/codex/projects', require('./api/codex-projects')(config));

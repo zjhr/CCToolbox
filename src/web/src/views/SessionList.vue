@@ -347,13 +347,18 @@
     />
 
     <!-- Search Results Dialog -->
-    <n-modal v-model:show="showSearchResults" preset="card" title="搜索结果" style="width: 1200px;">
+    <n-modal v-model:show="showSearchResults" preset="card" title="搜索结果" style="width: 1200px;" :z-index="900">
       <div v-if="searchResults" style="max-height: 70vh; overflow-y: auto;">
         <n-alert type="info" style="margin-bottom: 16px;">
           关键词 "{{ searchResults.keyword }}" 共找到 {{ searchResults.totalMatches }} 处匹配
         </n-alert>
 
-        <div v-for="session in searchResults.sessions" :key="session.sessionId" class="search-result-item">
+        <div
+          v-for="session in searchResults.sessions"
+          :key="session.sessionId"
+          class="search-result-item"
+          @click="handleViewChatHistory(session)"
+        >
           <div class="search-result-header">
             <div class="search-result-title">
               <n-text strong>
@@ -361,11 +366,13 @@
               </n-text>
               <n-tag size="small" :bordered="false">{{ session.matchCount }} 个匹配</n-tag>
             </div>
-            <TerminalLauncher
-              :project-name="props.projectName"
-              :session-id="session.sessionId"
-              :channel="currentChannel"
-            />
+            <div @click.stop>
+              <TerminalLauncher
+                :project-name="props.projectName"
+                :session-id="session.sessionId"
+                :channel="currentChannel"
+              />
+            </div>
           </div>
           <div v-for="(match, idx) in session.matches" :key="idx" class="search-match">
             <n-tag
@@ -1346,6 +1353,13 @@ onUnmounted(() => {
   border: 1px solid var(--border-primary);
   border-radius: 6px;
   background: var(--bg-elevated);
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.search-result-item:hover {
+  border-color: var(--n-primary-color);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 .search-result-header {

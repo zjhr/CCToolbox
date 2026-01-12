@@ -173,7 +173,7 @@
 </template>
 
 <script setup>
-import { computed, watch } from 'vue'
+import { computed, ref, watch, onMounted } from 'vue'
 import {
   NButton,
   NIcon,
@@ -193,8 +193,10 @@ import { AddOutline, SearchOutline } from '@vicons/ionicons5'
 import draggable from 'vuedraggable'
 import ChannelCard from './ChannelCard.vue'
 import channelPanelFactories from './channelPanelFactories'
+import { updateReasoningEffort, getReasoningEffort } from '../../api/channels'
 import useChannelManager from '../../composables/useChannelManager'
 import { useChannelScheduler } from '../../composables/useChannelScheduler'
+import message from '../../utils/message'
 
 const props = defineProps({
   type: {
@@ -209,6 +211,43 @@ const configFactory = channelPanelFactories[props.type] || channelPanelFactories
 const config = configFactory()
 const { state, validation, actions } = useChannelManager(config)
 const { getChannelInflight } = useChannelScheduler(config.schedulerSource)
+
+const activeChannel = computed(() => {
+  if (state.currentChannelId) {
+    const matched = state.channels.find(channel => channel.id === state.currentChannelId)
+    if (matched) return matched
+  }
+  if (state.currentChannel?.id) {
+    const matched = state.channels.find(channel => channel.id === state.currentChannel.id)
+    if (matched) return matched
+  }
+  const enabledChannel = state.channels.find(channel => channel.enabled !== false)
+  if (enabledChannel) return enabledChannel
+  return state.currentChannel || state.channels[0] || null
+})
+const canOpenWebsite = computed(() => Boolean(activeChannel.value?.websiteUrl))
+const showReasoningEffort = computed(() => config.type === 'codex')
+const reasoningEffort = ref('high')
+const lastSavedReasoningEffort = ref('high')
+const reasoningEffortSaving = ref(false)
+const reasoningEffortOptions = [
+  { label: 'xhigh', value: 'xhigh' },
+  { label: 'high', value: 'high' },
+  { label: 'medium', value: 'medium' },
+  { label: 'low', value: 'low' }
+]
+
+async function loadReasoningEffort() {
+  if (!showReasoningEffort.value) return
+  try {
+    const data = await getReasoningEffort()
+    const effort = data?.effort || 'high'
+    reasoningEffort.value = effort
+    lastSavedReasoningEffort.value = effort
+  } catch (err) {
+    // 读取失败时保留默认值
+  }
+}
 
 // 跨渠道面板保留搜索词
 const searchInput = useStorage('cctoolbox-channel-search-input', '')
@@ -234,6 +273,10 @@ const applySearch = useDebounceFn((value) => {
 if (searchInput.value.trim()) {
   applySearch(searchInput.value)
 }
+
+onMounted(() => {
+  loadReasoningEffort()
+})
 
 function handleSearchInput(value) {
   const normalizedValue = typeof value === 'string' ? value : ''
@@ -283,9 +326,25 @@ const searchResultText = computed(() => {
   return `已找到 ${filteredChannels.value.length} 个渠道`
 })
 const canClearConfig = computed(() => Boolean(state.currentChannelId))
+const clearButtonTooltip = computed(() => config.clearButtonTooltip || '')
 watch(canClearConfig, (value) => {
   emit('clear-config-state', value)
 }, { immediate: true })
+
+const saveReasoningEffort = useDebounceFn(async (value) => {
+  if (!showReasoningEffort.value) return
+  reasoningEffortSaving.value = true
+  try {
+    await updateReasoningEffort(value)
+    lastSavedReasoningEffort.value = value
+    message.success('推理强度已更新')
+  } catch (err) {
+    reasoningEffort.value = lastSavedReasoningEffort.value
+    message.error(`推理强度保存失败：${err?.message || '未知错误'}`)
+  } finally {
+    reasoningEffortSaving.value = false
+  }
+}, 1000)
 
 // 预设选项（仅 Claude 有）
 const presetOptions = computed(() => {
@@ -319,6 +378,22 @@ function handlePresetChange(presetId) {
   } else {
     state.formData.presetId = presetId
   }
+}
+
+function handleEditActive() {
+  if (!activeChannel.value) return
+  actions.handleEdit(activeChannel.value)
+}
+
+function handleOpenActiveWebsite() {
+  if (!canOpenWebsite.value || !activeChannel.value?.websiteUrl) return
+  emit('open-website', activeChannel.value.websiteUrl)
+}
+
+function handleReasoningEffortChange(value) {
+  if (!value) return
+  reasoningEffort.value = value
+  saveReasoningEffort(value)
 }
 
 // 获取嵌套值 (支持 'modelConfig.model' 这种路径)
@@ -421,7 +496,16 @@ defineExpose({
   refresh: actions.loadChannels,
   toggleAllCollapse: actions.toggleAllCollapse,
   clearConfig: actions.handleClearConfig,
-  canClearConfig: () => canClearConfig.value
+  canClearConfig: () => canClearConfig.value,
+  getClearButtonTooltip: () => clearButtonTooltip.value,
+  getActiveChannel: () => activeChannel.value,
+  openActiveWebsite: handleOpenActiveWebsite,
+  editActiveChannel: handleEditActive,
+  supportsReasoningEffort: () => showReasoningEffort.value,
+  getReasoningEffort: () => reasoningEffort.value,
+  getReasoningEffortOptions: () => reasoningEffortOptions,
+  setReasoningEffort: handleReasoningEffortChange,
+  isReasoningEffortSaving: () => reasoningEffortSaving.value
 })
 </script>
 
