@@ -28,7 +28,6 @@ build/
 .serena
 .gemini
 openspec
-CLAUDE.md
 __pycache__
 
 # Temporary files
