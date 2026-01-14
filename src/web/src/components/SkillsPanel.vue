@@ -66,6 +66,22 @@
 
     <!-- 搜索和筛选 -->
     <div class="filter-bar">
+      <!-- 平台筛选标签 -->
+      <div class="platform-filters" v-if="platforms.length > 0">
+        <div
+          v-for="platform in platforms"
+          :key="platform.id"
+          class="platform-filter-tag"
+          :class="[
+            { active: selectedPlatforms.includes(platform.id) },
+            `platform-${platform.id}`
+          ]"
+          @click="togglePlatform(platform.id)"
+        >
+          {{ platform.name }}
+        </div>
+      </div>
+
       <n-input
         v-model:value="searchQuery"
         placeholder="搜索技能..."
@@ -142,6 +158,15 @@
       :skill="selectedSkill"
       @updated="loadSkills"
     />
+
+    <!-- 平台选择弹窗 -->
+    <SkillPlatformModal
+      v-model:visible="showPlatformModal"
+      :mode="platformModalMode"
+      :skill="platformModalSkill"
+      :platforms="platforms"
+      @confirm="confirmPlatformSelection"
+    />
   </div>
 </template>
 
@@ -157,12 +182,13 @@ import {
   AddOutline,
   ExtensionPuzzleOutline
 } from '@vicons/ionicons5'
-import { getSkills, installSkill, uninstallSkill } from '../api/skills'
+import { getSkills, installSkill, uninstallSkill, getPlatforms } from '../api/skills'
 import message from '../utils/message'
 import SkillCard from './SkillCard.vue'
 import SkillRepoManager from './SkillRepoManager.vue'
 import SkillCreateModal from './SkillCreateModal.vue'
 import SkillDetailModal from './SkillDetailModal.vue'
+import SkillPlatformModal from './SkillPlatformModal.vue'
 
 const props = defineProps({
   hideBack: {
@@ -181,9 +207,14 @@ const skills = ref([])
 const loading = ref(false)
 const searchQuery = ref('')
 const filterStatus = ref('all')
+const platforms = ref([])
+const selectedPlatforms = ref([])
 const showRepoManager = ref(false)
 const showCreateModal = ref(false)
 const showDetailModal = ref(false)
+const showPlatformModal = ref(false)
+const platformModalMode = ref('install')
+const platformModalSkill = ref(null)
 const selectedSkill = ref(null)
 const installingKeys = ref({})  // 正在安装的技能 key -> true
 const uninstallingKeys = ref({})  // 正在卸载的技能 key -> true
@@ -204,6 +235,21 @@ const filteredSkills = computed(() => {
     result = result.filter(s => s.installed)
   } else if (filterStatus.value === 'uninstalled') {
     result = result.filter(s => !s.installed)
+  }
+
+  // 按平台筛选 (OR 逻辑)
+  // 如果选中了平台，则显示安装在任一选中平台的技能。
+  // 对于未安装的技能，如果处于“全部”或“未安装”视图，也应该显示它们。
+  if (selectedPlatforms.value.length > 0) {
+    result = result.filter(s => {
+      // 未安装的技能不受平台筛选影响（除非在“已安装”视图下）
+      if (!s.installed) return filterStatus.value !== 'installed'
+      // 已安装的技能必须在选中的平台之一中
+      return s.installedPlatforms?.some(p => selectedPlatforms.value.includes(p))
+    })
+  } else if (filterStatus.value === 'installed') {
+    // 如果没有选中任何平台且处于“已安装”视图，则不显示任何内容
+    result = []
   }
 
   // 按搜索词筛选
@@ -233,6 +279,21 @@ const emptyText = computed(() => {
   return '暂无可用技能，请配置仓库源'
 })
 
+async function loadPlatforms() {
+  try {
+    const result = await getPlatforms()
+    if (result.success) {
+      platforms.value = result.platforms || []
+      // 默认选中所有已存在的平台
+      selectedPlatforms.value = platforms.value
+        .filter(p => p.exists)
+        .map(p => p.id)
+    }
+  } catch (err) {
+    console.error('加载平台列表失败:', err)
+  }
+}
+
 async function loadSkills(forceRefresh = false) {
   loading.value = true
   try {
@@ -250,52 +311,76 @@ async function loadSkills(forceRefresh = false) {
 // 强制刷新（用于刷新按钮）
 function handleRefresh() {
   loadSkills(true)
+  loadPlatforms()
 }
 
-async function handleInstall(skill) {
-  if (!skill.repoOwner || !skill.repoName) {
+function handleInstall(skill) {
+  // 已安装的技能可以复制到其他平台，未安装的需要仓库信息
+  if (!skill.installed && (!skill.repoOwner || !skill.repoName)) {
     message.error('缺少仓库信息，无法安装')
     return
   }
+  platformModalSkill.value = skill
+  platformModalMode.value = 'install'
+  showPlatformModal.value = true
+}
 
-  installingKeys.value[skill.key] = true
-  try {
-    const result = await installSkill(skill.directory, {
-      owner: skill.repoOwner,
-      name: skill.repoName,
-      branch: skill.repoBranch || 'main'
-    })
+function handleUninstall(skill) {
+  platformModalSkill.value = skill
+  platformModalMode.value = 'uninstall'
+  showPlatformModal.value = true
+}
 
-    if (result.success) {
-      message.success(`技能 "${skill.name}" 安装成功`)
-      // 重新加载列表以确保与后端同步
-      await loadSkills(true)
-      // 通知父组件更新
-      emit('updated')
+async function confirmPlatformSelection(selectedPlatforms) {
+  const skill = platformModalSkill.value
+  const mode = platformModalMode.value
+  showPlatformModal.value = false
+
+  if (mode === 'install') {
+    installingKeys.value[skill.key] = true
+    try {
+      // 如果有仓库信息则从仓库安装，否则使用本地复制模式
+      const repo = skill.repoOwner ? {
+        owner: skill.repoOwner,
+        name: skill.repoName,
+        branch: skill.repoBranch || 'main'
+      } : null
+      const result = await installSkill(skill.directory, repo, selectedPlatforms)
+
+      if (result.success) {
+        message.success(`技能 "${skill.name}" 安装成功`)
+        await loadSkills(true)
+        emit('updated')
+      }
+    } catch (err) {
+      message.error('安装失败: ' + err.message)
+    } finally {
+      delete installingKeys.value[skill.key]
     }
-  } catch (err) {
-    message.error('安装失败: ' + err.message)
-  } finally {
-    delete installingKeys.value[skill.key]
+  } else {
+    uninstallingKeys.value[skill.key] = true
+    try {
+      const result = await uninstallSkill(skill.directory, selectedPlatforms)
+
+      if (result.success) {
+        message.success(`技能 "${skill.name}" 卸载成功`)
+        await loadSkills(true)
+        emit('updated')
+      }
+    } catch (err) {
+      message.error('卸载失败: ' + err.message)
+    } finally {
+      delete uninstallingKeys.value[skill.key]
+    }
   }
 }
 
-async function handleUninstall(skill) {
-  uninstallingKeys.value[skill.key] = true
-  try {
-    const result = await uninstallSkill(skill.directory)
-
-    if (result.success) {
-      message.success(`技能 "${skill.name}" 已卸载`)
-      // 重新加载列表以确保与后端同步
-      await loadSkills(true)
-      // 通知父组件更新
-      emit('updated')
-    }
-  } catch (err) {
-    message.error('卸载失败: ' + err.message)
-  } finally {
-    delete uninstallingKeys.value[skill.key]
+function togglePlatform(platformId) {
+  const index = selectedPlatforms.value.indexOf(platformId)
+  if (index > -1) {
+    selectedPlatforms.value.splice(index, 1)
+  } else {
+    selectedPlatforms.value.push(platformId)
   }
 }
 
@@ -309,6 +394,7 @@ function handleBack() {
 }
 
 onMounted(() => {
+  loadPlatforms()
   loadSkills()
 })
 </script>
@@ -359,17 +445,89 @@ onMounted(() => {
 
 .filter-bar {
   display: flex;
-  gap: 10px;
+  align-items: center;
+  gap: 8px;
   padding: 12px 16px;
   border-bottom: 1px solid var(--border-primary);
+  flex-wrap: nowrap;
+}
+
+.platform-filters {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.platform-filter-tag {
+  padding: 4px 12px;
+  border-radius: 4px;
+  background: transparent;
+  border: none;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+  white-space: nowrap;
+  position: relative;
+}
+
+.platform-filter-tag::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 2px;
+  border-radius: 1px;
+  transition: width 0.15s ease;
+}
+
+.platform-filter-tag:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+/* Claude 平台样式 */
+.platform-filter-tag.platform-claude.active {
+  color: #FF6B35;
+  background: rgba(255, 107, 53, 0.1);
+}
+.platform-filter-tag.platform-claude.active::after {
+  width: 100%;
+  background: #FF6B35;
+}
+
+/* Codex 平台样式 */
+.platform-filter-tag.platform-codex.active {
+  color: #4CAF50;
+  background: rgba(76, 175, 80, 0.1);
+}
+.platform-filter-tag.platform-codex.active::after {
+  width: 100%;
+  background: #4CAF50;
+}
+
+/* Gemini 平台样式 */
+.platform-filter-tag.platform-gemini.active {
+  color: #2196F3;
+  background: rgba(33, 150, 243, 0.1);
+}
+.platform-filter-tag.platform-gemini.active::after {
+  width: 100%;
+  background: #2196F3;
 }
 
 .search-input {
   flex: 1;
+  min-width: 120px;
 }
 
 .filter-select {
-  width: 100px;
+  width: 90px;
+  flex-shrink: 0;
 }
 
 .skills-content {

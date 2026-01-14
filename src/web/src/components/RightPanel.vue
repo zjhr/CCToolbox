@@ -71,22 +71,32 @@
               :class="{ clickable: canOpenActiveWebsite }"
               @click="handleOpenActiveWebsite"
             >
-              <n-tag size="small" type="info" :bordered="false">
-                {{ activeChannel.name || '未命名渠道' }}
-              </n-tag>
+              <n-tooltip trigger="hover">
+                <template #trigger>
+                  <n-tag size="small" type="info" :bordered="false">
+                    {{ activeChannel.name || '未命名渠道' }}
+                  </n-tag>
+                </template>
+                正在使用的渠道
+              </n-tooltip>
               <n-button text size="tiny" class="edit-button" @click.stop="handleEditActiveChannel">
                 <n-icon size="14" aria-hidden="true"><CreateOutline /></n-icon>
               </n-button>
             </div>
             <n-text v-else depth="3" class="no-active-channel">无活跃渠道</n-text>
             <div v-if="showReasoningEffort" class="reasoning-effort">
-              <n-select
-                size="small"
-                :value="reasoningEffort"
-                :options="reasoningEffortOptions"
-                :loading="reasoningEffortSaving"
-                @update:value="handleReasoningEffortChange"
-              />
+              <n-tooltip trigger="hover">
+                <template #trigger>
+                  <n-select
+                    size="small"
+                    :value="reasoningEffort"
+                    :options="reasoningEffortOptions"
+                    :loading="reasoningEffortSaving"
+                    @update:value="handleReasoningEffortChange"
+                  />
+                </template>
+                推理强度
+              </n-tooltip>
             </div>
           </div>
         </div>

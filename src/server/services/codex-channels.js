@@ -288,8 +288,41 @@ function updateReasoningEffort(effort) {
     throw new Error('Invalid reasoning effort');
   }
 
-  const data = loadChannels();
-  writeCodexConfigForMultiChannel(data.channels, normalized);
+  const codexDir = getCodexDir();
+  if (!fs.existsSync(codexDir)) {
+    fs.mkdirSync(codexDir, { recursive: true });
+  }
+
+  const configPath = path.join(codexDir, 'config.toml');
+  let config = {};
+
+  if (fs.existsSync(configPath)) {
+    try {
+      const content = fs.readFileSync(configPath, 'utf8');
+      config = toml.parse(content) || {};
+    } catch (err) {
+      console.warn('[Codex Channels] Failed to read config.toml, only updating reasoning effort');
+      config = {};
+    }
+  }
+
+  // 仅更新推理强度，不触发渠道或默认提供商重写
+  config.model_reasoning_effort = normalized;
+
+  try {
+    const tomlContent = tomlStringify(config);
+    const annotatedContent = `# Codex Configuration
+# Managed by CCToolbox
+# WARNING: MCP servers and projects are preserved automatically
+
+${tomlContent}`;
+
+    fs.writeFileSync(configPath, annotatedContent, 'utf8');
+  } catch (err) {
+    console.error('[Codex Channels] Failed to write reasoning effort:', err);
+    throw new Error('Failed to write config.toml: ' + err.message);
+  }
+
   return { effort: normalized };
 }
 

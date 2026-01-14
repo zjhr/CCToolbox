@@ -63,12 +63,13 @@
       <div class="modal-footer">
         <n-button @click="handleClose">关闭</n-button>
         <n-button
-          v-if="detail && !detail.installed && skill?.repoOwner"
+          v-if="detail"
           type="primary"
           :loading="installing"
+          :disabled="installing || detail.installedPlatforms?.length >= 3 || (!detail.installed && !props.skill?.repoOwner)"
           @click="handleInstall"
         >
-          安装此技能
+          安装
         </n-button>
         <n-button
           v-if="detail?.installed"
@@ -82,15 +83,25 @@
       </div>
     </template>
   </n-modal>
+
+  <!-- 平台选择弹窗 -->
+  <SkillPlatformModal
+    v-model:visible="showPlatformModal"
+    :mode="platformModalMode"
+    :skill="platformModalSkill"
+    :platforms="platforms"
+    @confirm="confirmPlatformSelection"
+  />
 </template>
 
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { NModal, NButton, NIcon, NTag, NSpin } from 'naive-ui'
 import { AlertCircleOutline, FolderOutline, CopyOutline } from '@vicons/ionicons5'
-import { getSkillDetail, installSkill, uninstallSkill } from '../api/skills'
+import { getSkillDetail, installSkill, uninstallSkill, getPlatforms } from '../api/skills'
 import message from '../utils/message'
 import { marked } from 'marked'
+import SkillPlatformModal from './SkillPlatformModal.vue'
 
 const props = defineProps({
   visible: Boolean,
@@ -109,6 +120,10 @@ const error = ref('')
 const detail = ref(null)
 const installing = ref(false)
 const uninstalling = ref(false)
+const platforms = ref([])
+const showPlatformModal = ref(false)
+const platformModalMode = ref('install')
+const platformModalSkill = ref(null)
 
 // 渲染 Markdown
 const renderedContent = computed(() => {
@@ -122,6 +137,17 @@ const renderedContent = computed(() => {
     return detail.value.content
   }
 })
+
+async function loadPlatforms() {
+  try {
+    const result = await getPlatforms()
+    if (result.success) {
+      platforms.value = result.platforms || []
+    }
+  } catch (err) {
+    console.error('加载平台列表失败:', err)
+  }
+}
 
 async function loadDetail() {
   if (!props.skill?.directory) return
@@ -143,51 +169,74 @@ async function loadDetail() {
   }
 }
 
-async function handleInstall() {
-  if (!props.skill) return
-
-  installing.value = true
-  try {
-    const result = await installSkill(props.skill.directory, {
-      owner: props.skill.repoOwner,
-      name: props.skill.repoName,
-      branch: props.skill.repoBranch || 'main'
-    })
-
-    if (result.success) {
-      message.success('安装成功')
-      // 安全地更新状态
-      if (detail.value) {
-        detail.value.installed = true
-      }
-      emit('updated')
-    }
-  } catch (err) {
-    message.error('安装失败: ' + (err.response?.data?.message || err.message))
-  } finally {
-    installing.value = false
-  }
-}
-
-async function handleUninstall() {
+function handleInstall() {
   if (!detail.value) return
 
-  uninstalling.value = true
-  try {
-    const result = await uninstallSkill(detail.value.directory)
+  // 已安装的技能可以复制到其他平台，未安装的需要仓库信息
+  if (!detail.value.installed && !props.skill?.repoOwner) {
+    message.error('缺少仓库信息，无法安装')
+    return
+  }
 
-    if (result.success) {
-      message.success('卸载成功')
-      // 安全地更新状态
-      if (detail.value) {
-        detail.value.installed = false
+  platformModalSkill.value = {
+    ...detail.value,
+    repoOwner: props.skill?.repoOwner,
+    repoName: props.skill?.repoName,
+    repoBranch: props.skill?.repoBranch
+  }
+  platformModalMode.value = 'install'
+  showPlatformModal.value = true
+}
+
+function handleUninstall() {
+  if (!detail.value) return
+
+  platformModalSkill.value = detail.value
+  platformModalMode.value = 'uninstall'
+  showPlatformModal.value = true
+}
+
+async function confirmPlatformSelection(selectedPlatforms) {
+  const skill = platformModalSkill.value
+  const mode = platformModalMode.value
+  showPlatformModal.value = false
+
+  if (mode === 'install') {
+    installing.value = true
+    try {
+      // 如果有仓库信息则从仓库安装，否则使用本地复制模式
+      const repo = props.skill?.repoOwner ? {
+        owner: props.skill.repoOwner,
+        name: props.skill.repoName,
+        branch: props.skill.repoBranch || 'main'
+      } : null
+      const result = await installSkill(skill.directory, repo, selectedPlatforms)
+
+      if (result.success) {
+        message.success('安装成功')
+        await loadDetail()
+        emit('updated')
       }
-      emit('updated')
+    } catch (err) {
+      message.error('安装失败: ' + (err.response?.data?.message || err.message))
+    } finally {
+      installing.value = false
     }
-  } catch (err) {
-    message.error('卸载失败: ' + (err.response?.data?.message || err.message))
-  } finally {
-    uninstalling.value = false
+  } else {
+    uninstalling.value = true
+    try {
+      const result = await uninstallSkill(skill.directory, selectedPlatforms)
+
+      if (result.success) {
+        message.success('卸载成功')
+        await loadDetail()
+        emit('updated')
+      }
+    } catch (err) {
+      message.error('卸载失败: ' + (err.response?.data?.message || err.message))
+    } finally {
+      uninstalling.value = false
+    }
   }
 }
 
@@ -208,6 +257,7 @@ function handleClose() {
 watch(() => props.visible, (val) => {
   if (val && props.skill) {
     loadDetail()
+    loadPlatforms()
   } else {
     detail.value = null
     error.value = ''

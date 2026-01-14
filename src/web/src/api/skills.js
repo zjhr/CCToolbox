@@ -24,6 +24,14 @@ export async function getInstalledSkills() {
 }
 
 /**
+ * 获取平台列表
+ */
+export async function getPlatforms() {
+  const response = await client.get('/skills/platforms')
+  return response.data
+}
+
+/**
  * 获取技能详情
  * @param {string} directory - 技能目录
  */
@@ -36,24 +44,26 @@ export async function getSkillDetail(directory) {
  * 安装技能
  * @param {string} directory - 技能目录
  * @param {object} repo - 仓库信息 { owner, name, branch }
+ * @param {string[]} platforms - 目标平台列表
  */
-export async function installSkill(directory, repo) {
-  const response = await client.post('/skills/install', { directory, repo })
+export async function installSkill(directory, repo, platforms = ['claude']) {
+  const response = await client.post('/skills/install', { directory, repo, platforms })
   return response.data
 }
 
 /**
  * 卸载技能
  * @param {string} directory - 技能目录
+ * @param {string[]|null} platforms - 目标平台列表，null 表示从所有已安装的平台卸载
  */
-export async function uninstallSkill(directory) {
-  const response = await client.post('/skills/uninstall', { directory })
+export async function uninstallSkill(directory, platforms = null) {
+  const response = await client.post('/skills/uninstall', { directory, platforms })
   return response.data
 }
 
 /**
  * 创建自定义技能
- * @param {object} skill - { name, directory, description, content }
+ * @param {object} skill - { name, directory, description, content, platforms }
  */
 export async function createCustomSkill(skill) {
   const response = await client.post('/skills/create', skill)

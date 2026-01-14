@@ -1,62 +1,75 @@
 <template>
   <div class="skill-card" :class="{ installed: skill.installed }" @click="emit('click', skill)">
-    <div class="card-main">
-      <div class="card-header">
-        <div class="skill-name">{{ skill.name }}</div>
-        <div class="skill-badges">
-          <n-tag v-if="skill.installed" type="success" size="tiny" :bordered="false">
-            已安装
-          </n-tag>
-          <n-tag v-if="skill.repoOwner" type="info" size="tiny" :bordered="false">
-            {{ skill.repoOwner }}
-          </n-tag>
-        </div>
-      </div>
-
-      <div class="skill-desc" v-if="skill.description">
-        {{ truncateDesc(skill.description) }}
-      </div>
-
-      <div class="skill-meta">
-        <span class="meta-item" v-if="skill.directory">
-          <n-icon size="12"><FolderOutline /></n-icon>
-          {{ skill.directory }}
-        </span>
-        <a
-          v-if="skill.readmeUrl"
-          :href="skill.readmeUrl"
-          target="_blank"
-          class="meta-link"
-          @click.stop
-        >
-          <n-icon size="12"><OpenOutline /></n-icon>
-          GitHub
-        </a>
+    <!-- 平台标签区域 (页签式) -->
+    <div class="platform-tabs" v-if="skill.installedPlatforms?.length">
+      <div
+        v-for="platform in skill.installedPlatforms"
+        :key="platform"
+        class="platform-tab"
+        :style="{ backgroundColor: platformColors[platform] || '#999' }"
+      >
+        {{ platformNames[platform] || platform }}
       </div>
     </div>
 
-    <div class="card-actions">
-      <n-button
-        v-if="skill.installed"
-        size="tiny"
-        tertiary
-        type="error"
-        :loading="props.uninstalling"
-        :disabled="props.uninstalling"
-        @click.stop="handleUninstall"
-      >
-        卸载
-      </n-button>
-      <n-button
-        v-else
-        size="tiny"
-        type="primary"
-        :loading="props.installing"
-        :disabled="!skill.repoOwner || props.installing"
-        @click.stop="handleInstall"
-      >
-        安装
-      </n-button>
+    <div class="card-body">
+      <div class="card-main">
+        <div class="card-header">
+          <div class="skill-name">{{ skill.name }}</div>
+          <div class="skill-badges">
+            <n-tag v-if="skill.repoOwner" type="info" size="tiny" :bordered="false">
+              {{ skill.repoOwner }}
+            </n-tag>
+          </div>
+        </div>
+
+        <div class="skill-desc" v-if="skill.description">
+          {{ truncateDesc(skill.description) }}
+        </div>
+
+        <div class="skill-meta">
+          <span class="meta-item" v-if="skill.directory">
+            <n-icon size="12"><FolderOutline /></n-icon>
+            {{ skill.directory }}
+          </span>
+          <a
+            v-if="skill.readmeUrl"
+            :href="skill.readmeUrl"
+            target="_blank"
+            class="meta-link"
+            @click.stop
+          >
+            <n-icon size="12"><OpenOutline /></n-icon>
+            GitHub
+          </a>
+        </div>
+      </div>
+
+      <div class="card-actions">
+        <!-- 统一显示安装按钮，点击后弹窗选择平台 -->
+        <!-- 已安装的技能可以复制到其他平台，未安装的需要有仓库信息 -->
+        <n-button
+          size="tiny"
+          type="primary"
+          :loading="props.installing"
+          :disabled="props.installing || skill.installedPlatforms?.length >= 3 || (!skill.installed && !skill.repoOwner)"
+          @click.stop="handleInstall"
+        >
+          安装
+        </n-button>
+        <!-- 已安装时显示卸载按钮 -->
+        <n-button
+          v-if="skill.installed"
+          size="tiny"
+          tertiary
+          type="error"
+          :loading="props.uninstalling"
+          :disabled="props.uninstalling"
+          @click.stop="handleUninstall"
+        >
+          卸载
+        </n-button>
+      </div>
     </div>
   </div>
 </template>
@@ -80,6 +93,18 @@ const props = defineProps({
   }
 })
 
+const platformColors = {
+  claude: '#FF6B35',
+  codex: '#4CAF50',
+  gemini: '#2196F3'
+}
+
+const platformNames = {
+  claude: 'Claude',
+  codex: 'Codex',
+  gemini: 'Gemini'
+}
+
 const emit = defineEmits(['install', 'uninstall', 'click'])
 
 function truncateDesc(desc) {
@@ -99,15 +124,14 @@ function handleUninstall() {
 <style scoped>
 .skill-card {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 14px;
+  flex-direction: column;
   background: var(--bg-secondary);
   border: 1px solid var(--border-primary);
   border-radius: 6px;
   transition: all 0.15s ease;
   cursor: pointer;
+  position: relative;
+  overflow: hidden;
 }
 
 .skill-card:hover {
@@ -118,6 +142,31 @@ function handleUninstall() {
 
 .skill-card.installed {
   border-left: 3px solid #18a058;
+}
+
+.platform-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 12px;
+}
+
+.platform-tab {
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: bold;
+  color: #fff;
+  border-bottom-left-radius: 4px;
+  border-bottom-right-radius: 4px;
+  line-height: 1.2;
+  text-transform: capitalize;
+}
+
+.card-body {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
 }
 
 .card-main {
@@ -189,13 +238,14 @@ function handleUninstall() {
   flex-shrink: 0;
   display: flex;
   align-items: center;
+  gap: 6px;
 }
 
 /* ========== 响应式样式 ========== */
 
 /* 小屏幕 (640px - 768px) */
 @media (max-width: 768px) {
-  .skill-card {
+  .card-body {
     padding: 10px 12px;
     gap: 10px;
   }
@@ -217,7 +267,7 @@ function handleUninstall() {
 
 /* 移动端 (< 640px) */
 @media (max-width: 640px) {
-  .skill-card {
+  .card-body {
     flex-direction: column;
     align-items: stretch;
     padding: 8px 10px;
@@ -251,7 +301,7 @@ function handleUninstall() {
 
 /* 超小屏幕 (< 480px) */
 @media (max-width: 480px) {
-  .skill-card {
+  .card-body {
     padding: 6px 8px;
   }
 

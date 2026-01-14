@@ -44,6 +44,22 @@
         />
       </n-form-item>
 
+      <n-form-item label="安装到平台" path="platforms">
+        <n-checkbox-group v-model:value="formData.platforms">
+          <n-space item-style="display: flex;">
+            <n-checkbox
+              v-for="platform in availablePlatforms"
+              :key="platform.id"
+              :value="platform.id"
+              :label="platform.name"
+            />
+          </n-space>
+        </n-checkbox-group>
+        <template #feedback v-if="loadingPlatforms">
+          正在加载平台列表...
+        </template>
+      </n-form-item>
+
       <n-form-item label="技能内容 (提示词，支持 Markdown)" path="content">
         <n-tabs type="line" size="small" class="content-tabs">
           <n-tab-pane name="edit" tab="编辑">
@@ -74,8 +90,8 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { NModal, NForm, NFormItem, NInput, NButton, NTabs, NTabPane } from 'naive-ui'
-import { createCustomSkill } from '../api/skills'
+import { NModal, NForm, NFormItem, NInput, NButton, NTabs, NTabPane, NCheckboxGroup, NCheckbox, NSpace } from 'naive-ui'
+import { createCustomSkill, getPlatforms } from '../api/skills'
 import message from '../utils/message'
 import { marked } from 'marked'
 
@@ -92,12 +108,15 @@ const visible = computed({
 
 const formRef = ref(null)
 const submitting = ref(false)
+const loadingPlatforms = ref(false)
+const availablePlatforms = ref([])
 
 const formData = ref({
   directory: '',
   name: '',
   description: '',
-  content: ''
+  content: '',
+  platforms: []
 })
 
 const rules = {
@@ -111,7 +130,28 @@ const rules = {
   ],
   content: [
     { required: true, message: '请输入技能内容', trigger: 'blur' }
+  ],
+  platforms: [
+    { type: 'array', required: true, min: 1, message: '请至少选择一个平台', trigger: 'change' }
   ]
+}
+
+async function fetchPlatforms() {
+  loadingPlatforms.value = true
+  try {
+    const result = await getPlatforms()
+    if (result.success) {
+      availablePlatforms.value = result.platforms
+      // 默认勾选 exists=true 的平台
+      formData.value.platforms = result.platforms
+        .filter(p => p.exists)
+        .map(p => p.id)
+    }
+  } catch (err) {
+    message.error('获取平台列表失败')
+  } finally {
+    loadingPlatforms.value = false
+  }
 }
 
 // Markdown 预览
@@ -137,7 +177,8 @@ async function handleSubmit() {
       name: formData.value.name || formData.value.directory,
       directory: formData.value.directory,
       description: formData.value.description,
-      content: formData.value.content
+      content: formData.value.content,
+      platforms: formData.value.platforms
     })
 
     if (result.success) {
@@ -158,14 +199,17 @@ function handleClose() {
   emit('update:visible', false)
 }
 
-// 关闭时重置表单
+// 关闭时重置表单，打开时获取平台
 watch(() => props.visible, (val) => {
-  if (!val) {
+  if (val) {
+    fetchPlatforms()
+  } else {
     formData.value = {
       directory: '',
       name: '',
       description: '',
-      content: ''
+      content: '',
+      platforms: []
     }
   }
 })

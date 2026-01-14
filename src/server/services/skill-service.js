@@ -23,12 +23,38 @@ const DEFAULT_REPOS = [
 // 缓存有效期（5分钟）
 const CACHE_TTL = 5 * 60 * 1000;
 
+// 多平台配置
+const PLATFORMS = {
+  claude: {
+    id: 'claude',
+    name: 'Claude',
+    dir: path.join(os.homedir(), '.claude', 'skills'),
+    color: '#FF6B35'
+  },
+  codex: {
+    id: 'codex',
+    name: 'Codex',
+    dir: path.join(os.homedir(), '.codex', 'skills'),
+    color: '#4CAF50'
+  },
+  gemini: {
+    id: 'gemini',
+    name: 'Gemini',
+    dir: path.join(os.homedir(), '.gemini', 'skills'),
+    color: '#2196F3'
+  }
+};
+
 class SkillService {
   constructor() {
+    // 保留 installDir 用于向后兼容（默认 Claude 平台）
     this.installDir = path.join(os.homedir(), '.claude', 'skills');
     this.configDir = getAppDir();
     this.reposConfigPath = path.join(this.configDir, 'skill-repos.json');
     this.cachePath = path.join(this.configDir, 'skills-cache.json');
+
+    // 多平台配置
+    this.platforms = PLATFORMS;
 
     // 内存缓存
     this.skillsCache = null;
@@ -39,12 +65,47 @@ class SkillService {
   }
 
   ensureDirs() {
-    if (!fs.existsSync(this.installDir)) {
-      fs.mkdirSync(this.installDir, { recursive: true });
-    }
+    // 确保配置目录存在
     if (!fs.existsSync(this.configDir)) {
       fs.mkdirSync(this.configDir, { recursive: true });
     }
+    // 确保默认安装目录存在（Claude）
+    if (!fs.existsSync(this.installDir)) {
+      fs.mkdirSync(this.installDir, { recursive: true });
+    }
+  }
+
+  /**
+   * 确保指定平台目录存在
+   * @param {string} dir - 目录路径
+   */
+  ensurePlatformDir(dir) {
+    try {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+    } catch (err) {
+      if (err.code === 'EACCES') {
+        throw new Error(`Permission denied: Cannot create ${dir}`);
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * 获取平台列表及其目录状态
+   */
+  getPlatforms() {
+    const result = [];
+    for (const [id, platform] of Object.entries(this.platforms)) {
+      result.push({
+        id: platform.id,
+        name: platform.name,
+        color: platform.color,
+        exists: fs.existsSync(platform.dir)
+      });
+    }
+    return result;
   }
 
   /**
@@ -224,7 +285,9 @@ class SkillService {
    */
   updateInstallStatus(skills) {
     for (const skill of skills) {
-      skill.installed = this.isInstalled(skill.directory);
+      // 获取已安装的平台列表
+      skill.installedPlatforms = this.getInstalledPlatforms(skill.directory);
+      skill.installed = skill.installedPlatforms.length > 0;
     }
   }
 
@@ -284,12 +347,16 @@ class SkillService {
       const content = await this.fetchBlobContent(file.sha, repo, file.path);
       const metadata = this.parseSkillMd(content);
 
+      // 获取已安装的平台列表
+      const installedPlatforms = this.getInstalledPlatforms(directory);
+
       return {
         key: `${repo.owner}/${repo.name}:${directory}`,
         name: metadata.name || directory.split('/').pop(),
         description: metadata.description || '',
         directory,
-        installed: this.isInstalled(directory),
+        installed: installedPlatforms.length > 0,
+        installedPlatforms,
         readmeUrl: `https://github.com/${repo.owner}/${repo.name}/tree/${repo.branch}/${directory}`,
         repoOwner: repo.owner,
         repoName: repo.name,
@@ -601,25 +668,51 @@ class SkillService {
    * 检查技能是否已安装
    */
   isInstalled(directory) {
-    const skillPath = path.join(this.installDir, directory);
-    const skillMdPath = path.join(skillPath, 'SKILL.md');
-    return fs.existsSync(skillMdPath);
+    // 检查是否在任一平台安装
+    for (const platform of Object.values(this.platforms)) {
+      const skillPath = path.join(platform.dir, directory);
+      const skillMdPath = path.join(skillPath, 'SKILL.md');
+      if (fs.existsSync(skillMdPath)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+
+  /**
+   * 获取技能安装在哪些平台
+   * @param {string} directory - 技能目录名
+   * @returns {string[]} - 已安装的平台 ID 列表
+   */
+  getInstalledPlatforms(directory) {
+    const installedPlatforms = [];
+    for (const [platformId, platform] of Object.entries(this.platforms)) {
+      const skillPath = path.join(platform.dir, directory);
+      const skillMdPath = path.join(skillPath, 'SKILL.md');
+      if (fs.existsSync(skillMdPath)) {
+        installedPlatforms.push(platformId);
+      }
+    }
+    return installedPlatforms;
   }
 
   /**
    * 合并本地已安装的技能
    */
   mergeLocalSkills(skills) {
-    if (!fs.existsSync(this.installDir)) return;
-
-    // 递归扫描本地技能目录
-    this.scanLocalDir(this.installDir, this.installDir, skills);
+    // 扫描所有平台的技能目录
+    for (const [platformId, platform] of Object.entries(this.platforms)) {
+      if (fs.existsSync(platform.dir)) {
+        this.scanLocalDir(platform.dir, platform.dir, skills, platformId);
+      }
+    }
   }
 
   /**
    * 递归扫描本地目录
    */
-  scanLocalDir(currentDir, baseDir, skills) {
+  scanLocalDir(currentDir, baseDir, skills, platformId = 'claude') {
     const skillMdPath = path.join(currentDir, 'SKILL.md');
 
     if (fs.existsSync(skillMdPath)) {
@@ -636,6 +729,13 @@ class SkillService {
 
       if (existing) {
         existing.installed = true;
+        // 添加平台到已安装平台列表
+        if (!existing.installedPlatforms) {
+          existing.installedPlatforms = [];
+        }
+        if (!existing.installedPlatforms.includes(platformId)) {
+          existing.installedPlatforms.push(platformId);
+        }
       } else {
         // 添加本地独有的技能
         try {
@@ -648,6 +748,7 @@ class SkillService {
             description: metadata.description || '',
             directory,
             installed: true,
+            installedPlatforms: [platformId],
             readmeUrl: null,
             repoOwner: null,
             repoName: null,
@@ -667,7 +768,7 @@ class SkillService {
       const entries = fs.readdirSync(currentDir, { withFileTypes: true });
       for (const entry of entries) {
         if (entry.isDirectory() && !entry.name.startsWith('.')) {
-          this.scanLocalDir(path.join(currentDir, entry.name), baseDir, skills);
+          this.scanLocalDir(path.join(currentDir, entry.name), baseDir, skills, platformId);
         }
       }
     } catch (err) {
@@ -703,13 +804,17 @@ class SkillService {
 
   /**
    * 安装技能
+   * @param {string} directory - 技能目录名
+   * @param {object|null} repo - 仓库信息，为 null 时使用本地复制模式
+   * @param {string[]} platforms - 目标平台列表
    */
-  async installSkill(directory, repo) {
-    const dest = path.join(this.installDir, directory);
+  async installSkill(directory, repo, platforms = ['claude']) {
+    const installedPlatforms = [];
+    const skippedPlatforms = [];
 
-    // 已安装则跳过
-    if (fs.existsSync(dest)) {
-      return { success: true, message: 'Already installed' };
+    // 如果没有仓库信息，使用本地复制模式
+    if (!repo || !repo.owner) {
+      return this.copySkillToPlatforms(directory, platforms);
     }
 
     // 下载仓库 ZIP
@@ -743,15 +848,63 @@ class SkillService {
         throw new Error(`Skill directory not found: ${directory}`);
       }
 
-      // 复制到安装目录
-      fs.mkdirSync(dest, { recursive: true });
-      this.copyDirRecursive(sourceDir, dest);
+      // 安装到指定的平台
+      for (const platformId of platforms) {
+        const platform = this.platforms[platformId];
+        if (!platform) {
+          console.warn(`[SkillService] Unknown platform: ${platformId}`);
+          continue;
+        }
+
+        const dest = path.join(platform.dir, directory);
+
+        // 已安装则跳过
+        if (fs.existsSync(dest)) {
+          skippedPlatforms.push(platformId);
+          installedPlatforms.push(platformId);
+          continue;
+        }
+
+        try {
+          // 确保平台目录存在
+          this.ensurePlatformDir(platform.dir);
+
+          // 复制到安装目录
+          fs.mkdirSync(dest, { recursive: true });
+          this.copyDirRecursive(sourceDir, dest);
+          installedPlatforms.push(platformId);
+        } catch (err) {
+          // 安装失败，回滚已安装的平台
+          console.error(`[SkillService] Install to ${platformId} failed:`, err.message);
+          for (const rollbackPlatformId of installedPlatforms) {
+            if (skippedPlatforms.includes(rollbackPlatformId)) continue;
+            const rollbackPlatform = this.platforms[rollbackPlatformId];
+            const rollbackDest = path.join(rollbackPlatform.dir, directory);
+            try {
+              fs.rmSync(rollbackDest, { recursive: true, force: true });
+            } catch (e) {
+              // 忽略回滚错误
+            }
+          }
+          throw err;
+        }
+      }
 
       // 清除缓存，让列表刷新
       this.skillsCache = null;
       this.cacheTime = 0;
 
-      return { success: true, message: 'Installed successfully' };
+      const newlyInstalled = installedPlatforms.filter(p => !skippedPlatforms.includes(p));
+      const message = newlyInstalled.length > 0
+        ? `Installed to ${newlyInstalled.join(', ')}`
+        : 'Already installed on all selected platforms';
+
+      return {
+        success: true,
+        message,
+        installedPlatforms,
+        skippedPlatforms
+      };
     } finally {
       // 清理临时目录
       try {
@@ -760,6 +913,88 @@ class SkillService {
         // 忽略清理错误
       }
     }
+  }
+
+  /**
+   * 本地复制模式：从已安装的平台复制到其他平台
+   */
+  async copySkillToPlatforms(directory, targetPlatforms) {
+    const installedPlatforms = [];
+    const skippedPlatforms = [];
+
+    // 找到已安装该技能的源平台
+    let sourceDir = null;
+    let sourcePlatformId = null;
+    for (const [platformId, platform] of Object.entries(this.platforms)) {
+      const skillPath = path.join(platform.dir, directory);
+      if (fs.existsSync(skillPath)) {
+        sourceDir = skillPath;
+        sourcePlatformId = platformId;
+        break;
+      }
+    }
+
+    if (!sourceDir) {
+      throw new Error(`Skill not found locally: ${directory}`);
+    }
+
+    // 复制到目标平台
+    for (const platformId of targetPlatforms) {
+      const platform = this.platforms[platformId];
+      if (!platform) {
+        console.warn(`[SkillService] Unknown platform: ${platformId}`);
+        continue;
+      }
+
+      const dest = path.join(platform.dir, directory);
+
+      // 已安装则跳过
+      if (fs.existsSync(dest)) {
+        skippedPlatforms.push(platformId);
+        installedPlatforms.push(platformId);
+        continue;
+      }
+
+      try {
+        // 确保平台目录存在
+        this.ensurePlatformDir(platform.dir);
+
+        // 复制到安装目录
+        fs.mkdirSync(dest, { recursive: true });
+        this.copyDirRecursive(sourceDir, dest);
+        installedPlatforms.push(platformId);
+      } catch (err) {
+        // 安装失败，回滚已安装的平台
+        console.error(`[SkillService] Copy to ${platformId} failed:`, err.message);
+        for (const rollbackPlatformId of installedPlatforms) {
+          if (skippedPlatforms.includes(rollbackPlatformId)) continue;
+          const rollbackPlatform = this.platforms[rollbackPlatformId];
+          const rollbackDest = path.join(rollbackPlatform.dir, directory);
+          try {
+            fs.rmSync(rollbackDest, { recursive: true, force: true });
+          } catch (e) {
+            // 忽略回滚错误
+          }
+        }
+        throw err;
+      }
+    }
+
+    // 清除缓存
+    this.skillsCache = null;
+    this.cacheTime = 0;
+
+    const newlyInstalled = installedPlatforms.filter(p => !skippedPlatforms.includes(p));
+    const message = newlyInstalled.length > 0
+      ? `Copied from ${sourcePlatformId} to ${newlyInstalled.join(', ')}`
+      : 'Already installed on all selected platforms';
+
+    return {
+      success: true,
+      message,
+      installedPlatforms,
+      skippedPlatforms
+    };
   }
 
   /**
@@ -830,16 +1065,9 @@ class SkillService {
   /**
    * 创建自定义技能
    */
-  createCustomSkill({ name, directory, description, content }) {
-    const dest = path.join(this.installDir, directory);
-
-    // 检查是否已存在
-    if (fs.existsSync(dest)) {
-      throw new Error(`技能目录 "${directory}" 已存在`);
-    }
-
-    // 创建目录
-    fs.mkdirSync(dest, { recursive: true });
+  createCustomSkill({ name, directory, description, content, platforms = ['claude'] }) {
+    const createdPlatforms = [];
+    const skippedPlatforms = [];
 
     // 生成 SKILL.md 内容
     const skillMdContent = `---
@@ -850,57 +1078,150 @@ description: "${description}"
 ${content}
 `;
 
-    // 写入文件
-    fs.writeFileSync(path.join(dest, 'SKILL.md'), skillMdContent, 'utf-8');
+    for (const platformId of platforms) {
+      const platform = this.platforms[platformId];
+      if (!platform) {
+        console.warn(`[SkillService] Unknown platform: ${platformId}`);
+        continue;
+      }
+
+      const dest = path.join(platform.dir, directory);
+
+      // 检查是否已存在
+      if (fs.existsSync(dest)) {
+        skippedPlatforms.push(platformId);
+        continue;
+      }
+
+      try {
+        // 确保平台目录存在
+        this.ensurePlatformDir(platform.dir);
+
+        // 创建目录
+        fs.mkdirSync(dest, { recursive: true });
+
+        // 写入文件
+        fs.writeFileSync(path.join(dest, 'SKILL.md'), skillMdContent, 'utf-8');
+        createdPlatforms.push(platformId);
+      } catch (err) {
+        // 创建失败，回滚已创建的平台
+        console.error(`[SkillService] Create on ${platformId} failed:`, err.message);
+        for (const rollbackPlatformId of createdPlatforms) {
+          const rollbackPlatform = this.platforms[rollbackPlatformId];
+          const rollbackDest = path.join(rollbackPlatform.dir, directory);
+          try {
+            fs.rmSync(rollbackDest, { recursive: true, force: true });
+          } catch (e) {
+            // 忽略回滚错误
+          }
+        }
+        throw err;
+      }
+    }
 
     // 清除缓存，让列表刷新
     this.skillsCache = null;
     this.cacheTime = 0;
 
-    return { success: true, message: '技能创建成功', directory };
+    if (createdPlatforms.length === 0 && skippedPlatforms.length > 0) {
+      throw new Error(`技能目录 "${directory}" 在所有选中的平台上已存在`);
+    }
+
+    const message = createdPlatforms.length > 0
+      ? `技能创建成功，已安装到 ${createdPlatforms.join(', ')}`
+      : '技能创建成功';
+
+    return {
+      success: true,
+      message,
+      directory,
+      createdPlatforms,
+      skippedPlatforms
+    };
   }
 
   /**
    * 卸载技能
    */
-  uninstallSkill(directory) {
-    const dest = path.join(this.installDir, directory);
+  uninstallSkill(directory, platforms = null) {
+    const uninstalledPlatforms = [];
+    const notInstalledPlatforms = [];
 
-    if (fs.existsSync(dest)) {
-      fs.rmSync(dest, { recursive: true, force: true });
-      // 清除缓存
-      this.skillsCache = null;
-      this.cacheTime = 0;
-      return { success: true, message: 'Uninstalled successfully' };
+    // 如果没有指定平台，则从所有已安装的平台卸载
+    const targetPlatforms = platforms || this.getInstalledPlatforms(directory);
+
+    if (targetPlatforms.length === 0) {
+      return { success: true, message: 'Not installed on any platform' };
     }
 
-    return { success: true, message: 'Not installed' };
+    for (const platformId of targetPlatforms) {
+      const platform = this.platforms[platformId];
+      if (!platform) {
+        console.warn(`[SkillService] Unknown platform: ${platformId}`);
+        continue;
+      }
+
+      const dest = path.join(platform.dir, directory);
+
+      if (fs.existsSync(dest)) {
+        try {
+          fs.rmSync(dest, { recursive: true, force: true });
+          uninstalledPlatforms.push(platformId);
+        } catch (err) {
+          console.error(`[SkillService] Uninstall from ${platformId} failed:`, err.message);
+        }
+      } else {
+        notInstalledPlatforms.push(platformId);
+      }
+    }
+
+    // 清除缓存
+    this.skillsCache = null;
+    this.cacheTime = 0;
+
+    const message = uninstalledPlatforms.length > 0
+      ? `Uninstalled from ${uninstalledPlatforms.join(', ')}`
+      : 'Not installed on selected platforms';
+
+    return {
+      success: true,
+      message,
+      uninstalledPlatforms,
+      notInstalledPlatforms
+    };
   }
 
   /**
    * 获取技能详情（完整内容）
    */
   async getSkillDetail(directory) {
-    // 先检查本地是否安装
-    const localPath = path.join(this.installDir, directory, 'SKILL.md');
+    // 获取已安装的平台列表
+    const installedPlatforms = this.getInstalledPlatforms(directory);
 
-    if (fs.existsSync(localPath)) {
-      const content = fs.readFileSync(localPath, 'utf-8');
-      const metadata = this.parseSkillMd(content);
+    // 先检查本地是否安装（优先从第一个已安装的平台读取）
+    if (installedPlatforms.length > 0) {
+      const platform = this.platforms[installedPlatforms[0]];
+      const localPath = path.join(platform.dir, directory, 'SKILL.md');
 
-      // 提取正文内容（去除 frontmatter）
-      const bodyMatch = content.match(/^---\s*\n[\s\S]*?\n---\s*\n([\s\S]*)$/);
-      const body = bodyMatch ? bodyMatch[1].trim() : content;
+      if (fs.existsSync(localPath)) {
+        const content = fs.readFileSync(localPath, 'utf-8');
+        const metadata = this.parseSkillMd(content);
 
-      return {
-        directory,
-        name: metadata.name || directory,
-        description: metadata.description || '',
-        content: body,
-        fullContent: content,
-        installed: true,
-        source: 'local'
-      };
+        // 提取正文内容（去除 frontmatter）
+        const bodyMatch = content.match(/^---\s*\n[\s\S]*?\n---\s*\n([\s\S]*)$/);
+        const body = bodyMatch ? bodyMatch[1].trim() : content;
+
+        return {
+          directory,
+          name: metadata.name || directory,
+          description: metadata.description || '',
+          content: body,
+          fullContent: content,
+          installed: true,
+          installedPlatforms,
+          source: 'local'
+        };
+      }
     }
 
     // 如果本地没有，尝试从缓存的技能列表中获取仓库信息
@@ -937,6 +1258,7 @@ ${content}
             content: body,
             fullContent: content,
             installed: false,
+            installedPlatforms: [],
             source: 'github',
             repoOwner: repo.owner,
             repoName: repo.name
@@ -955,12 +1277,18 @@ ${content}
    */
   getInstalledSkills() {
     const skills = [];
-    this.scanLocalDir(this.installDir, this.installDir, skills);
+    // 扫描所有平台的技能目录
+    for (const [platformId, platform] of Object.entries(this.platforms)) {
+      if (fs.existsSync(platform.dir)) {
+        this.scanLocalDir(platform.dir, platform.dir, skills, platformId);
+      }
+    }
     return skills;
   }
 }
 
 module.exports = {
   SkillService,
-  DEFAULT_REPOS
+  DEFAULT_REPOS,
+  PLATFORMS
 };

@@ -81,13 +81,33 @@ router.get('/installed', (req, res) => {
 });
 
 /**
+ * 获取平台列表
+ * GET /api/skills/platforms
+ */
+router.get('/platforms', (req, res) => {
+  try {
+    const platforms = skillService.getPlatforms();
+    res.json({
+      success: true,
+      platforms
+    });
+  } catch (err) {
+    console.error('[Skills API] Get platforms error:', err);
+    res.status(500).json({
+      success: false,
+      message: err.message
+    });
+  }
+});
+
+/**
  * 安装技能
  * POST /api/skills/install
- * Body: { directory, repo: { owner, name, branch } }
+ * Body: { directory, repo: { owner, name, branch }, platforms?: string[] }
  */
 router.post('/install', async (req, res) => {
   try {
-    const { directory, repo } = req.body;
+    const { directory, repo, platforms } = req.body;
 
     if (!directory) {
       return res.status(400).json({
@@ -96,18 +116,23 @@ router.post('/install', async (req, res) => {
       });
     }
 
-    if (!repo || !repo.owner || !repo.name) {
+    // 验证 platforms 参数
+    const targetPlatforms = platforms || ['claude'];
+    if (!Array.isArray(targetPlatforms) || targetPlatforms.length === 0) {
       return res.status(400).json({
         success: false,
-        message: 'Missing repo info'
+        message: 'platforms must be a non-empty array'
       });
     }
 
-    const result = await skillService.installSkill(directory, {
+    // repo 可以为 null（本地复制模式）
+    const repoInfo = (repo && repo.owner && repo.name) ? {
       owner: repo.owner,
       name: repo.name,
       branch: repo.branch || 'main'
-    });
+    } : null;
+
+    const result = await skillService.installSkill(directory, repoInfo, targetPlatforms);
 
     res.json({
       success: true,
@@ -125,11 +150,11 @@ router.post('/install', async (req, res) => {
 /**
  * 创建自定义技能
  * POST /api/skills/create
- * Body: { name, directory, description, content }
+ * Body: { name, directory, description, content, platforms?: string[] }
  */
 router.post('/create', (req, res) => {
   try {
-    const { name, directory, description, content } = req.body;
+    const { name, directory, description, content, platforms } = req.body;
 
     if (!directory) {
       return res.status(400).json({
@@ -153,11 +178,21 @@ router.post('/create', (req, res) => {
       });
     }
 
+    // 验证 platforms 参数
+    const targetPlatforms = platforms || ['claude'];
+    if (!Array.isArray(targetPlatforms) || targetPlatforms.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'platforms must be a non-empty array'
+      });
+    }
+
     const result = skillService.createCustomSkill({
       name: name || directory,
       directory,
       description: description || '',
-      content
+      content,
+      platforms: targetPlatforms
     });
 
     res.json({
@@ -176,11 +211,11 @@ router.post('/create', (req, res) => {
 /**
  * 卸载技能
  * POST /api/skills/uninstall
- * Body: { directory }
+ * Body: { directory, platforms?: string[] }
  */
 router.post('/uninstall', (req, res) => {
   try {
-    const { directory } = req.body;
+    const { directory, platforms } = req.body;
 
     if (!directory) {
       return res.status(400).json({
@@ -189,7 +224,16 @@ router.post('/uninstall', (req, res) => {
       });
     }
 
-    const result = skillService.uninstallSkill(directory);
+    // platforms 为 null 时从所有已安装的平台卸载
+    const targetPlatforms = platforms || null;
+    if (targetPlatforms !== null && (!Array.isArray(targetPlatforms) || targetPlatforms.length === 0)) {
+      return res.status(400).json({
+        success: false,
+        message: 'platforms must be a non-empty array or null'
+      });
+    }
+
+    const result = skillService.uninstallSkill(directory, targetPlatforms);
 
     res.json({
       success: true,
