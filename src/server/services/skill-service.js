@@ -93,6 +93,52 @@ class SkillService {
   }
 
   /**
+   * 归一化安装目录，避免出现 skills/skills 的嵌套
+   */
+  normalizeInstallDirectory(directory) {
+    if (!directory) return directory;
+    let normalized = directory.replace(/\\/g, '/');
+    while (normalized.startsWith('skills/')) {
+      normalized = normalized.slice('skills/'.length);
+    }
+    return normalized || directory;
+  }
+
+  /**
+   * 获取目录候选项（原始 + 归一化）
+   */
+  getDirectoryCandidates(directory) {
+    const normalized = this.normalizeInstallDirectory(directory);
+    if (normalized && normalized !== directory) {
+      return [directory, normalized];
+    }
+    return [directory];
+  }
+
+  /**
+   * 查找本地已安装技能目录（存在 SKILL.md）
+   */
+  resolveInstalledSkillDir(platform, directory) {
+    const candidates = this.getDirectoryCandidates(directory);
+    for (const candidate of candidates) {
+      const skillDir = path.join(platform.dir, candidate);
+      const skillMdPath = path.join(skillDir, 'SKILL.md');
+      if (fs.existsSync(skillMdPath)) {
+        return skillDir;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * 检查平台上目录是否已存在（避免重复创建）
+   */
+  isSkillDirPresent(platform, directory) {
+    const candidates = this.getDirectoryCandidates(directory);
+    return candidates.some(candidate => fs.existsSync(path.join(platform.dir, candidate)));
+  }
+
+  /**
    * 获取平台列表及其目录状态
    */
   getPlatforms() {
@@ -670,9 +716,7 @@ class SkillService {
   isInstalled(directory) {
     // 检查是否在任一平台安装
     for (const platform of Object.values(this.platforms)) {
-      const skillPath = path.join(platform.dir, directory);
-      const skillMdPath = path.join(skillPath, 'SKILL.md');
-      if (fs.existsSync(skillMdPath)) {
+      if (this.resolveInstalledSkillDir(platform, directory)) {
         return true;
       }
     }
@@ -688,9 +732,7 @@ class SkillService {
   getInstalledPlatforms(directory) {
     const installedPlatforms = [];
     for (const [platformId, platform] of Object.entries(this.platforms)) {
-      const skillPath = path.join(platform.dir, directory);
-      const skillMdPath = path.join(skillPath, 'SKILL.md');
-      if (fs.existsSync(skillMdPath)) {
+      if (this.resolveInstalledSkillDir(platform, directory)) {
         installedPlatforms.push(platformId);
       }
     }
@@ -811,6 +853,7 @@ class SkillService {
   async installSkill(directory, repo, platforms = ['claude']) {
     const installedPlatforms = [];
     const skippedPlatforms = [];
+    const installDirectory = this.normalizeInstallDirectory(directory) || directory;
 
     // 如果没有仓库信息，使用本地复制模式
     if (!repo || !repo.owner) {
@@ -856,10 +899,10 @@ class SkillService {
           continue;
         }
 
-        const dest = path.join(platform.dir, directory);
+        const dest = path.join(platform.dir, installDirectory);
 
         // 已安装则跳过
-        if (fs.existsSync(dest)) {
+        if (this.isSkillDirPresent(platform, directory)) {
           skippedPlatforms.push(platformId);
           installedPlatforms.push(platformId);
           continue;
@@ -879,7 +922,7 @@ class SkillService {
           for (const rollbackPlatformId of installedPlatforms) {
             if (skippedPlatforms.includes(rollbackPlatformId)) continue;
             const rollbackPlatform = this.platforms[rollbackPlatformId];
-            const rollbackDest = path.join(rollbackPlatform.dir, directory);
+            const rollbackDest = path.join(rollbackPlatform.dir, installDirectory);
             try {
               fs.rmSync(rollbackDest, { recursive: true, force: true });
             } catch (e) {
@@ -921,14 +964,15 @@ class SkillService {
   async copySkillToPlatforms(directory, targetPlatforms) {
     const installedPlatforms = [];
     const skippedPlatforms = [];
+    const installDirectory = this.normalizeInstallDirectory(directory) || directory;
 
     // 找到已安装该技能的源平台
     let sourceDir = null;
     let sourcePlatformId = null;
     for (const [platformId, platform] of Object.entries(this.platforms)) {
-      const skillPath = path.join(platform.dir, directory);
-      if (fs.existsSync(skillPath)) {
-        sourceDir = skillPath;
+      const resolvedDir = this.resolveInstalledSkillDir(platform, directory);
+      if (resolvedDir) {
+        sourceDir = resolvedDir;
         sourcePlatformId = platformId;
         break;
       }
@@ -946,10 +990,10 @@ class SkillService {
         continue;
       }
 
-      const dest = path.join(platform.dir, directory);
+      const dest = path.join(platform.dir, installDirectory);
 
       // 已安装则跳过
-      if (fs.existsSync(dest)) {
+      if (this.isSkillDirPresent(platform, directory)) {
         skippedPlatforms.push(platformId);
         installedPlatforms.push(platformId);
         continue;
@@ -969,7 +1013,7 @@ class SkillService {
         for (const rollbackPlatformId of installedPlatforms) {
           if (skippedPlatforms.includes(rollbackPlatformId)) continue;
           const rollbackPlatform = this.platforms[rollbackPlatformId];
-          const rollbackDest = path.join(rollbackPlatform.dir, directory);
+          const rollbackDest = path.join(rollbackPlatform.dir, installDirectory);
           try {
             fs.rmSync(rollbackDest, { recursive: true, force: true });
           } catch (e) {
@@ -1161,15 +1205,23 @@ ${content}
         continue;
       }
 
-      const dest = path.join(platform.dir, directory);
-
-      if (fs.existsSync(dest)) {
+      const candidates = this.getDirectoryCandidates(directory);
+      let removed = false;
+      for (const candidate of candidates) {
+        const dest = path.join(platform.dir, candidate);
+        if (!fs.existsSync(dest)) {
+          continue;
+        }
         try {
           fs.rmSync(dest, { recursive: true, force: true });
-          uninstalledPlatforms.push(platformId);
+          removed = true;
         } catch (err) {
           console.error(`[SkillService] Uninstall from ${platformId} failed:`, err.message);
         }
+      }
+
+      if (removed) {
+        uninstalledPlatforms.push(platformId);
       } else {
         notInstalledPlatforms.push(platformId);
       }
@@ -1201,9 +1253,10 @@ ${content}
     // 先检查本地是否安装（优先从第一个已安装的平台读取）
     if (installedPlatforms.length > 0) {
       const platform = this.platforms[installedPlatforms[0]];
-      const localPath = path.join(platform.dir, directory, 'SKILL.md');
+      const resolvedDir = this.resolveInstalledSkillDir(platform, directory);
+      const localPath = resolvedDir ? path.join(resolvedDir, 'SKILL.md') : null;
 
-      if (fs.existsSync(localPath)) {
+      if (localPath && fs.existsSync(localPath)) {
         const content = fs.readFileSync(localPath, 'utf-8');
         const metadata = this.parseSkillMd(content);
 
