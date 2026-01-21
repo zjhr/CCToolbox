@@ -1,6 +1,6 @@
-# CC-Tool Web UI
+# CCToolbox Web UI
 
-Web UI for CC-Tool, built with Vue 3, Vite, and Tailwind CSS.
+Web UI for CCToolbox, built with Vue 3, Vite, and Tailwind CSS.
 
 ## Development
 
@@ -43,6 +43,7 @@ The built files will be output to `../../dist/web/`.
 ### State Management
 
 The `useSessionsStore` manages:
+
 - Projects list
 - Current project
 - Sessions list with metadata
