@@ -1,7 +1,15 @@
 <template>
-  <div class="skill-card" :class="{ installed: skill.installed }" @click="emit('click', skill)">
-    <!-- 平台标签区域 (页签式) -->
-    <div class="platform-tabs" v-if="skill.installedPlatforms?.length">
+  <div
+    class="skill-card"
+    :class="{
+      installed: skill.installed,
+      'is-disabled': skill.isDisabled,
+      'is-repo': isRepoSkill
+    }"
+    @click="emit('click', skill)"
+  >
+    <!-- 平台标签区域 (页签式) - 禁用状态下隐藏 -->
+    <div class="platform-tabs" v-if="skill.installedPlatforms?.length && !skill.isDisabled">
       <div
         v-for="platform in skill.installedPlatforms"
         :key="platform"
@@ -15,7 +23,10 @@
     <div class="card-body">
       <div class="card-main">
         <div class="card-header">
-          <div class="skill-name">{{ skill.name }}</div>
+          <div class="skill-name">
+            <span v-if="skill.isDisabled" class="disabled-dot">🔴</span>
+            {{ skill.name }}
+          </div>
           <div class="skill-badges">
             <n-tag v-if="skill.repoOwner" type="info" size="tiny" :bordered="false">
               {{ skill.repoOwner }}
@@ -46,25 +57,64 @@
       </div>
 
       <div class="card-actions">
-        <!-- 统一显示安装按钮，点击后弹窗选择平台 -->
-        <!-- 已安装的技能可以复制到其他平台，未安装的需要有仓库信息 -->
+        <!-- 正常安装按钮 -->
         <n-button
+          v-if="!skill.installed && !skill.isDisabled"
           size="tiny"
           type="primary"
-          :loading="props.installing"
-          :disabled="props.installing || skill.installedPlatforms?.length >= 3 || (!skill.installed && !skill.repoOwner)"
+          :loading="props.loading"
+          :disabled="props.loading || skill.installedPlatforms?.length >= 3 || (!skill.installed && !skill.repoOwner)"
           @click.stop="handleInstall"
         >
           安装
         </n-button>
-        <!-- 已安装时显示卸载按钮 -->
+
+        <!-- 已安装 -> 显示禁用 -->
         <n-button
-          v-if="skill.installed"
+          v-if="skill.installed && !skill.isDisabled"
+          size="tiny"
+          tertiary
+          type="warning"
+          :loading="props.loading"
+          :disabled="props.loading"
+          @click.stop="emit('disable', skill)"
+        >
+          禁用
+        </n-button>
+
+        <!-- 已禁用 -> 显示启用 -->
+        <n-button
+          v-if="skill.isDisabled"
+          size="tiny"
+          type="primary"
+          :loading="props.loading"
+          :disabled="props.loading"
+          @click.stop="emit('enable', skill)"
+        >
+          启用
+        </n-button>
+
+        <!-- 已禁用且非仓库源 -> 显示删除 -->
+        <n-button
+          v-if="skill.isDisabled && !isRepoSkill"
           size="tiny"
           tertiary
           type="error"
-          :loading="props.uninstalling"
-          :disabled="props.uninstalling"
+          :loading="props.loading"
+          :disabled="props.loading"
+          @click.stop="emit('delete', skill)"
+        >
+          删除
+        </n-button>
+
+        <!-- 卸载按钮（仅在未禁用且已安装时显示） -->
+        <n-button
+          v-if="skill.installed && !skill.isDisabled"
+          size="tiny"
+          tertiary
+          type="error"
+          :loading="props.loading"
+          :disabled="props.loading"
           @click.stop="handleUninstall"
         >
           卸载
@@ -75,6 +125,7 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import { NButton, NTag, NIcon } from 'naive-ui'
 import { FolderOutline, OpenOutline } from '@vicons/ionicons5'
 
@@ -83,11 +134,7 @@ const props = defineProps({
     type: Object,
     required: true
   },
-  installing: {
-    type: Boolean,
-    default: false
-  },
-  uninstalling: {
+  loading: {
     type: Boolean,
     default: false
   }
@@ -105,7 +152,9 @@ const platformNames = {
   gemini: 'Gemini'
 }
 
-const emit = defineEmits(['install', 'uninstall', 'click'])
+const emit = defineEmits(['install', 'uninstall', 'disable', 'enable', 'delete', 'click'])
+
+const isRepoSkill = computed(() => Boolean(props.skill?.repoOwner || props.skill?.source?.type === 'repository'))
 
 function truncateDesc(desc) {
   if (!desc) return ''
@@ -142,6 +191,25 @@ function handleUninstall() {
 
 .skill-card.installed {
   border-left: 3px solid #18a058;
+}
+
+.skill-card.is-repo:not(.installed) {
+  border-left: 3px solid rgba(59, 130, 246, 0.6);
+}
+
+.skill-card.is-disabled {
+  opacity: 0.7;
+  background: var(--bg-primary);
+  border-left: 3px solid #999;
+}
+
+.disabled-dot {
+  margin-right: 4px;
+  font-size: 10px;
+}
+
+.skill-card.is-disabled .skill-name {
+  color: var(--text-tertiary);
 }
 
 .platform-tabs {

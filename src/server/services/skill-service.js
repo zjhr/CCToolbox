@@ -14,6 +14,7 @@ const { createWriteStream } = require('fs');
 const { pipeline } = require('stream/promises');
 const AdmZip = require('adm-zip');
 const { getAppDir } = require('../../utils/app-path-manager');
+const { loadConfig, expandHome } = require('../../config/loader');
 
 // 默认仓库源 - 只预设官方仓库，其他由用户手动添加
 const DEFAULT_REPOS = [
@@ -22,6 +23,69 @@ const DEFAULT_REPOS = [
 
 // 缓存有效期（5分钟）
 const CACHE_TTL = 5 * 60 * 1000;
+
+const SKILL_CACHE_METADATA = 'metadata.json';
+const SKILL_CACHE_MIN_SPACE = 100 * 1024 * 1024; // 100MB
+const DEFAULT_SKILL_CACHE_TTL = 5 * 60 * 1000;
+const DEFAULT_SKILL_CACHE_MAX_SIZE = 100;
+
+const CACHE_ERROR_MESSAGES = {
+  ENOSPC: '缓存失败：磁盘空间不足，请清理磁盘后重试',
+  EACCES: '缓存失败：无写入权限，请检查目录权限',
+  ENOENT: '缓存失败：目录不存在或已被删除',
+  EEXIST: '安装失败：目标位置已存在同名 Skill，请先删除'
+};
+
+class LRUSkillCache {
+  constructor(maxSize = DEFAULT_SKILL_CACHE_MAX_SIZE, ttl = DEFAULT_SKILL_CACHE_TTL) {
+    this.maxSize = maxSize;
+    this.ttl = ttl;
+    this.cache = new Map();
+  }
+
+  get(key) {
+    if (!this.cache.has(key)) return undefined;
+    const entry = this.cache.get(key);
+    if (!entry || typeof entry.time !== 'number') {
+      this.cache.delete(key);
+      return undefined;
+    }
+    if (this.ttl > 0 && (Date.now() - entry.time > this.ttl)) {
+      this.cache.delete(key);
+      return undefined;
+    }
+    this.cache.delete(key);
+    this.cache.set(key, entry);
+    return entry.value;
+  }
+
+  set(key, value) {
+    if (this.cache.has(key)) {
+      this.cache.delete(key);
+    } else if (this.cache.size >= this.maxSize) {
+      const firstKey = this.cache.keys().next().value;
+      this.cache.delete(firstKey);
+    }
+    this.cache.set(key, { value, time: Date.now() });
+  }
+
+  delete(key) {
+    this.cache.delete(key);
+  }
+
+  clear() {
+    this.cache.clear();
+  }
+}
+
+function buildSkillError(message, code, extra = {}) {
+  const error = new Error(message);
+  if (code) {
+    error.code = code;
+  }
+  Object.assign(error, extra);
+  return error;
+}
 
 // 多平台配置
 const PLATFORMS = {
@@ -52,6 +116,12 @@ class SkillService {
     this.configDir = getAppDir();
     this.reposConfigPath = path.join(this.configDir, 'skill-repos.json');
     this.cachePath = path.join(this.configDir, 'skills-cache.json');
+    this.skillCacheConfig = this.resolveSkillCacheConfig();
+    this.skillCacheDir = this.skillCacheConfig.dir;
+    this.cachedMetaCache = new LRUSkillCache(
+      this.skillCacheConfig.maxSize,
+      this.skillCacheConfig.ttl
+    );
 
     // 多平台配置
     this.platforms = PLATFORMS;
@@ -76,6 +146,17 @@ class SkillService {
     }
   }
 
+  resolveSkillCacheConfig() {
+    const config = loadConfig();
+    const rawConfig = config?.skillCache || {};
+    const resolvedDir = expandHome(rawConfig.dir || path.join(this.configDir, 'skill-cache'));
+    return {
+      dir: resolvedDir,
+      ttl: Number(rawConfig.ttl) || DEFAULT_SKILL_CACHE_TTL,
+      maxSize: Number(rawConfig.maxSize) || DEFAULT_SKILL_CACHE_MAX_SIZE
+    };
+  }
+
   /**
    * 确保指定平台目录存在
    * @param {string} dir - 目录路径
@@ -91,6 +172,29 @@ class SkillService {
       }
       throw err;
     }
+  }
+
+  /**
+   * 确保缓存目录存在
+   */
+  ensureCacheDir() {
+    try {
+      if (!fs.existsSync(this.skillCacheDir)) {
+        fs.mkdirSync(this.skillCacheDir, { recursive: true });
+      }
+    } catch (err) {
+      throw buildSkillError(
+        CACHE_ERROR_MESSAGES[err.code] || `缓存目录创建失败: ${err.message}`,
+        err.code || 'CACHE_DIR_ERROR'
+      );
+    }
+  }
+
+  /**
+   * 生成技能目录去重 key（使用目录名最后一段）
+   */
+  getDirectoryKey(directory) {
+    return directory.split('/').pop().toLowerCase();
   }
 
   /**
@@ -114,6 +218,46 @@ class SkillService {
       return [directory, normalized];
     }
     return [directory];
+  }
+
+  /**
+   * 解析缓存目录路径
+   */
+  resolveCacheDirectory(directory) {
+    const normalized = this.normalizeInstallDirectory(directory) || directory;
+    const relative = normalized.replace(/\\/g, '/');
+    if (relative.split('/').some(segment => segment === '..')) {
+      throw buildSkillError('缓存目录非法，已阻止访问', 'INVALID_CACHE_PATH');
+    }
+    const cacheRoot = path.resolve(this.skillCacheDir);
+    const resolved = path.resolve(cacheRoot, relative);
+    const relPath = path.relative(cacheRoot, resolved);
+    if (relPath.startsWith('..') || path.isAbsolute(relPath)) {
+      throw buildSkillError('缓存目录非法，已阻止访问', 'INVALID_CACHE_PATH');
+    }
+    return resolved;
+  }
+
+  /**
+   * 检查缓存空间
+   */
+  ensureCacheSpace() {
+    if (typeof fs.statfsSync !== 'function') return;
+    try {
+      const stats = fs.statfsSync(this.skillCacheDir);
+      const available = stats.bavail * stats.bsize;
+      if (available < SKILL_CACHE_MIN_SPACE) {
+        throw buildSkillError(CACHE_ERROR_MESSAGES.ENOSPC, 'ENOSPC', {
+          fallbackAvailable: true
+        });
+      }
+    } catch (err) {
+      if (err.code === 'EACCES') {
+        throw buildSkillError(CACHE_ERROR_MESSAGES.EACCES, 'EACCES', {
+          fallbackAvailable: true
+        });
+      }
+    }
   }
 
   /**
@@ -298,6 +442,7 @@ class SkillService {
 
     // 检查内存缓存
     if (!forceRefresh && this.skillsCache && (Date.now() - this.cacheTime < CACHE_TTL)) {
+      this.mergeCachedSkills(this.skillsCache);
       this.updateInstallStatus(this.skillsCache);
       return this.skillsCache;
     }
@@ -308,6 +453,7 @@ class SkillService {
       if (fileCache) {
         this.skillsCache = fileCache;
         this.cacheTime = Date.now();
+        this.mergeCachedSkills(this.skillsCache);
         this.updateInstallStatus(this.skillsCache);
         return this.skillsCache;
       }
@@ -355,6 +501,8 @@ class SkillService {
 
     // 合并本地已安装的技能
     this.mergeLocalSkills(skills);
+    // 合并缓存技能（已禁用但未安装）
+    this.mergeCachedSkills(skills);
 
     // 去重并排序
     this.deduplicateSkills(skills);
@@ -400,13 +548,459 @@ class SkillService {
   }
 
   /**
+   * 读取缓存 metadata.json
+   */
+  readCacheMetadata(directory, options = {}) {
+    const key = this.getDirectoryKey(directory);
+    const cached = this.cachedMetaCache.get(key);
+    if (cached) return cached;
+
+    const cacheDir = this.resolveCacheDirectory(directory);
+    const metaPath = path.join(cacheDir, SKILL_CACHE_METADATA);
+    if (!fs.existsSync(metaPath)) return null;
+
+    try {
+      const data = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+      const normalized = this.normalizeCacheMetadata(data, directory);
+      this.cachedMetaCache.set(key, normalized);
+      return normalized;
+    } catch (err) {
+      if (options.removeOnCorrupt) {
+        this.removeCacheDir(cacheDir);
+      }
+      throw buildSkillError('缓存文件已损坏，Skill 已从缓存中移除', 'CACHE_CORRUPT');
+    }
+  }
+
+  /**
+   * 写入缓存 metadata.json
+   */
+  writeCacheMetadata(directory, metadata) {
+    const cacheDir = this.resolveCacheDirectory(directory);
+    const metaPath = path.join(cacheDir, SKILL_CACHE_METADATA);
+    fs.writeFileSync(metaPath, JSON.stringify(metadata, null, 2), 'utf-8');
+    this.cachedMetaCache.set(this.getDirectoryKey(directory), metadata);
+  }
+
+  /**
+   * 规范化缓存 metadata
+   */
+  normalizeCacheMetadata(data, directory) {
+    return {
+      directory,
+      cachedAt: data.cachedAt || new Date().toISOString(),
+      installedPlatforms: Array.isArray(data.installedPlatforms) ? data.installedPlatforms : [],
+      source: data.source || null,
+      metadata: data.metadata || {},
+      isDisabled: Boolean(data.isDisabled),
+      cacheAvailable: Boolean(data.cacheAvailable !== false)
+    };
+  }
+
+  /**
+   * 删除缓存目录
+   */
+  removeCacheDir(cacheDir) {
+    try {
+      fs.rmSync(cacheDir, { recursive: true, force: true });
+    } catch (err) {
+      // 忽略删除错误
+    }
+  }
+
+  /**
    * 更新技能的安装状态
    */
   updateInstallStatus(skills) {
+    const cachedMap = this.getCachedSkillsMap();
     for (const skill of skills) {
+      const key = this.getDirectoryKey(skill.directory);
+      const cached = cachedMap.get(key);
       // 获取已安装的平台列表
       skill.installedPlatforms = this.getInstalledPlatforms(skill.directory);
       skill.installed = skill.installedPlatforms.length > 0;
+      if (skill.installed) {
+        skill.isDisabled = false;
+        skill.cacheAvailable = false;
+      } else if (cached) {
+        skill.isDisabled = cached.isDisabled;
+        skill.cacheAvailable = cached.cacheAvailable;
+        skill.cachedAt = cached.cachedAt;
+      } else {
+        skill.isDisabled = false;
+        skill.cacheAvailable = false;
+      }
+    }
+  }
+
+  /**
+   * 获取缓存技能映射
+   */
+  getCachedSkillsMap() {
+    const cachedList = this.listCached();
+    const map = new Map();
+    for (const cached of cachedList) {
+      map.set(this.getDirectoryKey(cached.directory), cached);
+    }
+    return map;
+  }
+
+  /**
+   * 合并缓存中的技能（用于展示已禁用但未安装的技能）
+   */
+  mergeCachedSkills(skills) {
+    const cachedList = this.listCached();
+    if (cachedList.length === 0) return;
+
+    const existingIndex = new Map();
+    skills.forEach((skill, index) => {
+      existingIndex.set(this.getDirectoryKey(skill.directory), index);
+    });
+
+    for (const cached of cachedList) {
+      const key = this.getDirectoryKey(cached.directory);
+      const index = existingIndex.get(key);
+      if (index !== undefined) {
+        skills[index].isDisabled = cached.isDisabled;
+        skills[index].cacheAvailable = cached.cacheAvailable;
+        skills[index].cachedAt = cached.cachedAt;
+        continue;
+      }
+
+      const cachedName = cached.metadata?.name || cached.directory.split('/').pop();
+      const cachedDescription = cached.metadata?.description || '';
+      const source = cached.source || {};
+      const repoOwner = source.repoOwner || null;
+      const repoName = source.repoName || null;
+      const repoBranch = source.repoBranch || 'main';
+
+      skills.push({
+        key: `cache:${cached.directory}`,
+        name: cachedName,
+        description: cachedDescription,
+        directory: cached.directory,
+        installed: false,
+        installedPlatforms: [],
+        isDisabled: cached.isDisabled,
+        cacheAvailable: cached.cacheAvailable,
+        cachedAt: cached.cachedAt,
+        source: cached.source || null,
+        readmeUrl: repoOwner && repoName
+          ? `https://github.com/${repoOwner}/${repoName}/tree/${repoBranch}/${cached.directory}`
+          : null,
+        repoOwner,
+        repoName,
+        repoBranch
+      });
+    }
+  }
+
+  /**
+   * 获取缓存技能列表
+   */
+  listCached() {
+    if (!fs.existsSync(this.skillCacheDir)) {
+      return [];
+    }
+
+    const cacheDirs = [];
+    this.collectCachedDirs(this.skillCacheDir, cacheDirs);
+
+    const result = [];
+    for (const cacheDir of cacheDirs) {
+      const relativeDir = path.relative(this.skillCacheDir, cacheDir).replace(/\\/g, '/');
+      try {
+        const metadata = this.readCacheMetadata(relativeDir, { removeOnCorrupt: true });
+        if (!metadata) continue;
+        metadata.cacheAvailable = this.hasCacheFiles(cacheDir);
+        result.push(metadata);
+      } catch (err) {
+        if (err.code !== 'CACHE_CORRUPT') {
+          throw err;
+        }
+      }
+    }
+
+    result.sort((a, b) => new Date(b.cachedAt) - new Date(a.cachedAt));
+    return result;
+  }
+
+  /**
+   * 缓存技能目录
+   */
+  cacheSkill(directory, options = {}) {
+    const installedPlatforms = options.installedPlatforms || this.getInstalledPlatforms(directory);
+    if (installedPlatforms.length === 0) {
+      throw buildSkillError('技能未安装，无法缓存', 'NOT_INSTALLED');
+    }
+
+    const sourcePlatformId = installedPlatforms[0];
+    const sourcePlatform = this.platforms[sourcePlatformId];
+    const sourceDir = sourcePlatform
+      ? this.resolveInstalledSkillDir(sourcePlatform, directory)
+      : null;
+
+    if (!sourceDir) {
+      throw buildSkillError('技能目录不存在，无法缓存', 'NOT_FOUND');
+    }
+
+    const cacheDir = this.resolveCacheDirectory(directory);
+    const allowFallback = options.allowFallback === true;
+
+    try {
+      this.ensureCacheDir();
+      this.ensureCacheSpace();
+      this.removeCacheDir(cacheDir);
+      fs.mkdirSync(cacheDir, { recursive: true });
+      this.copyDirRecursive(sourceDir, cacheDir);
+
+      const metadata = this.buildCacheMetadata(directory, sourceDir, {
+        installedPlatforms,
+        skill: options.skill,
+        isDisabled: options.isDisabled,
+        cacheAvailable: true
+      });
+
+      this.writeCacheMetadata(directory, metadata);
+      return metadata;
+    } catch (err) {
+      if (err.code === 'CACHE_CORRUPT') throw err;
+      const code = err.code || 'CACHE_ERROR';
+      const message = CACHE_ERROR_MESSAGES[code] || err.message || '缓存失败';
+      throw buildSkillError(message, code, { fallbackAvailable: allowFallback });
+    }
+  }
+
+  /**
+   * 从缓存恢复技能
+   */
+  restoreCache(directory, platforms = null) {
+    const metadata = this.readCacheMetadata(directory, { removeOnCorrupt: true });
+    if (!metadata) {
+      throw buildSkillError('缓存不存在，无法启用', 'CACHE_NOT_FOUND');
+    }
+
+    const cacheDir = this.resolveCacheDirectory(directory);
+    if (!fs.existsSync(cacheDir) || !this.hasCacheFiles(cacheDir)) {
+      throw buildSkillError('缓存不存在，无法启用', 'CACHE_NOT_FOUND');
+    }
+
+    const targetPlatforms = Array.isArray(platforms) && platforms.length > 0
+      ? platforms
+      : (metadata.installedPlatforms || []);
+
+    if (!Array.isArray(targetPlatforms) || targetPlatforms.length === 0) {
+      throw buildSkillError('恢复失败：未找到可恢复的平台', 'INVALID_PLATFORM');
+    }
+
+    // 目标位置已存在则阻止恢复
+    for (const platformId of targetPlatforms) {
+      const platform = this.platforms[platformId];
+      if (platform && this.isSkillDirPresent(platform, directory)) {
+        throw buildSkillError(CACHE_ERROR_MESSAGES.EEXIST, 'EEXIST');
+      }
+    }
+
+    const restoredPlatforms = [];
+    try {
+      for (const platformId of targetPlatforms) {
+        const platform = this.platforms[platformId];
+        if (!platform) continue;
+
+        this.ensurePlatformDir(platform.dir);
+        const dest = path.join(platform.dir, this.normalizeInstallDirectory(directory) || directory);
+        fs.mkdirSync(dest, { recursive: true });
+        this.copyDirRecursive(cacheDir, dest, {
+          filter: (entry, srcPath) => !(srcPath === cacheDir && entry.name === SKILL_CACHE_METADATA)
+        });
+        restoredPlatforms.push(platformId);
+      }
+    } catch (err) {
+      for (const platformId of restoredPlatforms) {
+        const platform = this.platforms[platformId];
+        if (!platform) continue;
+        const dest = path.join(platform.dir, this.normalizeInstallDirectory(directory) || directory);
+        try {
+          fs.rmSync(dest, { recursive: true, force: true });
+        } catch (e) {
+          // 忽略回滚错误
+        }
+      }
+      const code = err.code || 'RESTORE_ERROR';
+      const message = CACHE_ERROR_MESSAGES[code] || err.message || '恢复失败';
+      throw buildSkillError(message, code);
+    }
+
+    this.writeCacheMetadata(directory, {
+      ...metadata,
+      isDisabled: false,
+      cacheAvailable: true
+    });
+
+    this.skillsCache = null;
+    this.cacheTime = 0;
+
+    return {
+      success: true,
+      restoredPlatforms
+    };
+  }
+
+  /**
+   * 禁用技能（缓存并卸载）
+   */
+  disableSkill(directory, options = {}) {
+    const installedPlatforms = this.getInstalledPlatforms(directory);
+    if (installedPlatforms.length === 0) {
+      throw buildSkillError('技能未安装，无法禁用', 'NOT_INSTALLED');
+    }
+
+    if (!options.skipCache) {
+      this.cacheSkill(directory, {
+        installedPlatforms,
+        skill: options.skill,
+        isDisabled: true,
+        allowFallback: true
+      });
+    } else {
+      this.ensureCacheDir();
+      const sourcePlatform = this.platforms[installedPlatforms[0]];
+      const sourceDir = sourcePlatform
+        ? this.resolveInstalledSkillDir(sourcePlatform, directory)
+        : null;
+      const placeholder = this.buildCacheMetadata(directory, sourceDir, {
+        installedPlatforms,
+        skill: options.skill,
+        isDisabled: true,
+        cacheAvailable: false
+      });
+      try {
+        const cacheDir = this.resolveCacheDirectory(directory);
+        fs.mkdirSync(cacheDir, { recursive: true });
+        this.writeCacheMetadata(directory, placeholder);
+      } catch (err) {
+        // 跳过缓存时允许降级，不阻止禁用流程
+      }
+    }
+
+    const result = this.uninstallSkill(directory, installedPlatforms, { skipCache: true });
+    return {
+      success: true,
+      ...result
+    };
+  }
+
+  /**
+   * 启用技能（从缓存恢复）
+   */
+  enableSkill(directory) {
+    const metadata = this.readCacheMetadata(directory, { removeOnCorrupt: true });
+    if (!metadata || !metadata.cacheAvailable) {
+      throw buildSkillError('缓存不存在，无法启用', 'CACHE_NOT_FOUND');
+    }
+
+    const result = this.restoreCache(directory, metadata.installedPlatforms || []);
+    return {
+      success: true,
+      ...result
+    };
+  }
+
+  /**
+   * 删除缓存技能
+   */
+  deleteCachedSkill(directory) {
+    const cacheDir = this.resolveCacheDirectory(directory);
+    if (!fs.existsSync(cacheDir)) {
+      throw buildSkillError('缓存不存在', 'CACHE_NOT_FOUND');
+    }
+    this.removeCacheDir(cacheDir);
+    this.cachedMetaCache.delete(this.getDirectoryKey(directory));
+    return { success: true };
+  }
+
+  /**
+   * 递归收集缓存目录
+   */
+  collectCachedDirs(currentDir, result) {
+    let entries = [];
+    try {
+      entries = fs.readdirSync(currentDir, { withFileTypes: true });
+    } catch (err) {
+      return;
+    }
+
+    const hasMetadata = entries.some(entry => entry.isFile() && entry.name === SKILL_CACHE_METADATA);
+    if (hasMetadata) {
+      result.push(currentDir);
+      return;
+    }
+
+    for (const entry of entries) {
+      if (entry.isDirectory() && !entry.name.startsWith('.')) {
+        this.collectCachedDirs(path.join(currentDir, entry.name), result);
+      }
+    }
+  }
+
+  /**
+   * 判断缓存是否包含技能文件
+   */
+  hasCacheFiles(cacheDir) {
+    try {
+      const entries = fs.readdirSync(cacheDir, { withFileTypes: true });
+      return entries.some(entry => entry.name !== SKILL_CACHE_METADATA);
+    } catch (err) {
+      return false;
+    }
+  }
+
+  /**
+   * 构建缓存 metadata.json 数据
+   */
+  buildCacheMetadata(directory, sourceDir, options = {}) {
+    const metadata = sourceDir ? this.readSkillMetadataFromDir(sourceDir) : {};
+    const skill = options.skill;
+    const repoOwner = skill?.repoOwner || null;
+    const repoName = skill?.repoName || null;
+    const repoBranch = skill?.repoBranch || 'main';
+
+    const source = repoOwner && repoName
+      ? {
+        type: 'repository',
+        repoOwner,
+        repoName,
+        repoBranch,
+        repoUrl: `https://github.com/${repoOwner}/${repoName}`
+      }
+      : { type: 'local' };
+
+    return {
+      directory,
+      cachedAt: new Date().toISOString(),
+      installedPlatforms: options.installedPlatforms || [],
+      source,
+      metadata: {
+        name: metadata.name || null,
+        version: metadata.version || null,
+        description: metadata.description || null
+      },
+      isDisabled: Boolean(options.isDisabled),
+      cacheAvailable: options.cacheAvailable !== false
+    };
+  }
+
+  /**
+   * 读取技能目录中的 SKILL.md 元数据
+   */
+  readSkillMetadataFromDir(skillDir) {
+    try {
+      const skillMdPath = path.join(skillDir, 'SKILL.md');
+      if (!fs.existsSync(skillMdPath)) return {};
+      const content = fs.readFileSync(skillMdPath, 'utf-8');
+      return this.parseSkillMd(content);
+    } catch (err) {
+      return {};
     }
   }
 
@@ -759,6 +1353,7 @@ class SkillService {
     const result = {
       name: null,
       description: null,
+      version: null,
       license: null,
       allowedTools: [],
       metadata: {}
@@ -794,6 +1389,9 @@ class SkillService {
           break;
         case 'description':
           result.description = value;
+          break;
+        case 'version':
+          result.version = value;
           break;
         case 'license':
           result.license = value;
@@ -1184,16 +1782,19 @@ class SkillService {
   /**
    * 递归复制目录
    */
-  copyDirRecursive(src, dest) {
+  copyDirRecursive(src, dest, options = {}) {
     const entries = fs.readdirSync(src, { withFileTypes: true });
 
     for (const entry of entries) {
+      if (options.filter && !options.filter(entry, src)) {
+        continue;
+      }
       const srcPath = path.join(src, entry.name);
       const destPath = path.join(dest, entry.name);
 
       if (entry.isDirectory()) {
         fs.mkdirSync(destPath, { recursive: true });
-        this.copyDirRecursive(srcPath, destPath);
+        this.copyDirRecursive(srcPath, destPath, options);
       } else {
         fs.copyFileSync(srcPath, destPath);
       }
@@ -1281,12 +1882,33 @@ ${content}
   /**
    * 卸载技能
    */
-  uninstallSkill(directory, platforms = null) {
+  uninstallSkill(directory, platforms = null, options = {}) {
+    if (platforms && !Array.isArray(platforms)) {
+      options = platforms;
+      platforms = null;
+    }
     const uninstalledPlatforms = [];
     const notInstalledPlatforms = [];
 
     // 如果没有指定平台，则从所有已安装的平台卸载
-    const targetPlatforms = platforms || this.getInstalledPlatforms(directory);
+    const installedBefore = this.getInstalledPlatforms(directory);
+    const targetPlatforms = platforms || installedBefore;
+
+    const isLastUninstall = installedBefore.length > 0
+      && targetPlatforms.length === installedBefore.length
+      && targetPlatforms.every(p => installedBefore.includes(p));
+
+    let cacheResult = null;
+    if (isLastUninstall && !options.skipCache) {
+      const cachedSkill = this.skillsCache?.find(s =>
+        this.getDirectoryKey(s.directory) === this.getDirectoryKey(directory)
+      );
+      cacheResult = this.cacheSkill(directory, {
+        installedPlatforms: installedBefore,
+        skill: options.skill || cachedSkill,
+        allowFallback: true
+      });
+    }
 
     if (targetPlatforms.length === 0) {
       return { success: true, message: 'Not installed on any platform' };
@@ -1332,6 +1954,8 @@ ${content}
     return {
       success: true,
       message,
+      cached: Boolean(cacheResult),
+      cache: cacheResult,
       uninstalledPlatforms,
       notInstalledPlatforms
     };
@@ -1437,5 +2061,6 @@ ${content}
 module.exports = {
   SkillService,
   DEFAULT_REPOS,
-  PLATFORMS
+  PLATFORMS,
+  LRUSkillCache
 };

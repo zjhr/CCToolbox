@@ -23,23 +23,6 @@
 
           <!-- 右侧：图标按钮 -->
           <div class="action-right">
-            <!-- Skills 技能 -->
-            <n-tooltip trigger="hover">
-              <template #trigger>
-                <n-button
-                  text
-                  size="small"
-                  @click="handleShowSkills"
-                  class="recent-sessions-icon-btn"
-                >
-                  <template #icon>
-                    <n-icon :size="18"><ExtensionPuzzleOutline /></n-icon>
-                  </template>
-                </n-button>
-              </template>
-              Skills 技能
-            </n-tooltip>
-
             <!-- 最近对话 -->
             <n-tooltip trigger="hover">
               <template #trigger>
@@ -173,8 +156,6 @@
       <ProxyLogs :source="currentChannel" />
     </div>
 
-    <!-- Skills 抽屉 -->
-    <SkillsDrawer v-model:visible="showSkillsDrawer" />
   </div>
 </template>
 
@@ -184,12 +165,11 @@ import { useRoute } from 'vue-router'
 import {
   NButton, NIcon, NText, NSwitch, NTooltip, NTag, NSelect
 } from 'naive-ui'
-import { AddOutline, ChatbubblesOutline, ChevronDownOutline, ExtensionPuzzleOutline, CreateOutline } from '@vicons/ionicons5'
+import { AddOutline, ChatbubblesOutline, ChevronDownOutline, CreateOutline } from '@vicons/ionicons5'
 import ClaudeChannelPanel from './channel/ClaudeChannelPanel.vue'
 import CodexChannelPanel from './channel/CodexChannelPanel.vue'
 import GeminiChannelPanel from './channel/GeminiChannelPanel.vue'
 import ProxyLogs from './ProxyLogs.vue'
-import SkillsDrawer from './SkillsDrawer.vue'
 import { useGlobalStore } from '../stores/global'
 import { getSkills } from '../api/skills'
 
@@ -226,7 +206,6 @@ const claudePanelRef = ref(null)
 const codexPanelRef = ref(null)
 const geminiPanelRef = ref(null)
 const geminiCanClearConfig = ref(false)
-const showSkillsDrawer = ref(false)
 const installedSkillsCount = ref(0)
 const geminiClearTooltip = computed(() => geminiPanelRef.value?.getClearButtonTooltip?.() || '')
 const showGeminiClearTooltip = computed(() => geminiCanClearConfig.value && Boolean(geminiClearTooltip.value))
@@ -237,7 +216,12 @@ async function loadInstalledSkillsCount() {
   try {
     const result = await getSkills()
     if (result.success && result.skills) {
-      installedSkillsCount.value = result.skills.filter(s => s.installed).length
+      const platformId = currentChannel.value
+      installedSkillsCount.value = result.skills.filter(s => {
+        if (!s.installed) return false
+        if (!Array.isArray(s.installedPlatforms)) return false
+        return s.installedPlatforms.includes(platformId)
+      }).length
     }
   } catch (err) {
     console.error('Failed to load skills count:', err)
@@ -314,18 +298,6 @@ function handleShowRecent() {
   emit('show-recent')
 }
 
-// 处理显示 Skills
-function handleShowSkills() {
-  showSkillsDrawer.value = true
-}
-
-// 监听 drawer 关闭后刷新计数
-watch(showSkillsDrawer, (val) => {
-  if (!val) {
-    loadInstalledSkillsCount()
-  }
-})
-
 onMounted(() => {
   loadInstalledSkillsCount()
 })
@@ -334,7 +306,10 @@ function refreshChannel(channel) {
   channelRefs[channel]?.value?.refresh?.()
 }
 
-watch(() => currentChannel.value, refreshChannel)
+watch(() => currentChannel.value, (value) => {
+  refreshChannel(value)
+  loadInstalledSkillsCount()
+})
 watch(() => currentChannel.value, (value) => {
   if (value !== 'gemini') {
     geminiCanClearConfig.value = false

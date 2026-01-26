@@ -142,12 +142,20 @@
           @click="showPromptsDrawer = true"
         />
 
-        <!-- MCP Button -->
+        <!-- Skills Button -->
         <HeaderButton
           :icon="ExtensionPuzzleOutline"
+          tooltip="Skills 管理"
+          @click="showSkillsDrawer = true"
+        />
+
+        <!-- MCP Button -->
+        <HeaderButton
+          :icon="ServerOutline"
           tooltip="MCP 服务器管理"
           @click="showMcpDrawer = true"
         />
+
 
         <!-- Speed Test Button -->
         <HeaderButton
@@ -217,8 +225,12 @@
     <!-- Settings Drawer -->
     <SettingsDrawer v-model:visible="showSettingsDrawer" />
 
+    <!-- Skills Drawer -->
+    <SkillsDrawer v-model:visible="showSkillsDrawer" />
+
     <!-- MCP Drawer -->
     <McpDrawer v-model:visible="showMcpDrawer" />
+
 
     <!-- Prompts Drawer -->
     <PromptsDrawer v-model:visible="showPromptsDrawer" />
@@ -619,7 +631,13 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, h } from "vue";
 import { useRouter, useRoute } from "vue-router";
-import { NTooltip, NSwitch, NSpin, NModal, NIcon } from "naive-ui";
+import {
+  NTooltip,
+  NSwitch,
+  NSpin,
+  NModal,
+  NIcon,
+} from "naive-ui";
 import {
   ChatbubblesOutline,
   ServerOutline,
@@ -648,7 +666,9 @@ import SettingsDrawer from "./SettingsDrawer.vue";
 import McpDrawer from "./McpDrawer.vue";
 import PromptsDrawer from "./PromptsDrawer.vue";
 import SpeedTestDrawer from "./SpeedTestDrawer.vue";
+import SkillsDrawer from "./SkillsDrawer.vue";
 import HeaderButton from "./HeaderButton.vue";
+
 import UpdateDialog from "./UpdateDialog.vue";
 import UpdateBadge from "./UpdateBadge.vue";
 import EnvConflictModal from "./EnvConflictModal.vue";
@@ -700,10 +720,12 @@ const shouldShowRightPanel = computed(() => {
 const showRecentDrawer = ref(false);
 const showFavoritesDrawer = ref(false);
 const showSettingsDrawer = ref(false);
+const showSkillsDrawer = ref(false);
 const showMcpDrawer = ref(false);
 const showPromptsDrawer = ref(false);
 const showSpeedTestDrawer = ref(false);
 const showHelpModal = ref(false);
+
 
 // 环境变量冲突检测
 const envConflicts = ref([]);

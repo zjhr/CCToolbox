@@ -60,33 +60,32 @@
         </div>
       </n-popover>
 
-      <!-- Skills 区域 (仅 Claude) -->
-      <div v-if="channelType === 'claude'" class="claude-extra-area">
+      <!-- Skills 区域 (所有平台统一) -->
+      <div class="skills-extra-area">
         <!-- Skills 状态 -->
-        <n-popover v-if="installedSkillsCount > 0" trigger="click" placement="bottom" :width="340" class="skills-popover">
+        <n-popover v-if="platformSkillsCount > 0" trigger="click" placement="bottom" :width="340" class="skills-popover">
           <template #trigger>
             <n-tag
               type="success"
               size="small"
               :bordered="false"
+              round
               class="skills-count-tag clickable"
             >
-              {{ installedSkillsCount }} 个技能
+              {{ platformSkillsCount }} 个技能
             </n-tag>
           </template>
           <div class="skills-quick-panel">
             <div class="panel-title">
               <span>已安装的技能</span>
-              <n-button text size="tiny" @click="showSkillsPanel = true">
-                管理全部
-              </n-button>
+              <n-text depth="3" style="font-size: 11px;">{{ platformLabel }} 平台</n-text>
             </div>
-            <div v-if="installedSkills.length === 0" class="no-items">
+            <div v-if="platformInstalledSkills.length === 0" class="no-items">
               <n-text depth="3">暂无已安装的技能</n-text>
             </div>
             <div v-else class="skills-quick-list">
               <div
-                v-for="skill in installedSkills"
+                v-for="skill in platformInstalledSkills"
                 :key="skill.id"
                 class="skill-quick-item"
               >
@@ -97,41 +96,14 @@
                   <span class="skill-item-name">{{ skill.name }}</span>
                   <span class="skill-item-desc">{{ skill.description || '无描述' }}</span>
                 </div>
-                <n-button
-                  size="tiny"
-                  tertiary
-                  type="error"
-                  @click="handleUninstallSkill(skill)"
-                  :loading="skill._uninstalling"
-                >
-                  卸载
-                </n-button>
               </div>
             </div>
           </div>
         </n-popover>
-
-        <!-- Skills 管理按钮 -->
-        <n-tooltip trigger="hover">
-          <template #trigger>
-            <n-button
-              text
-              class="skills-button"
-              @click="showSkillsPanel = true"
-              title="Skills 技能管理"
-            >
-              <template #icon>
-                <n-icon :size="18">
-                  <ExtensionPuzzleOutline />
-                </n-icon>
-              </template>
-            </n-button>
-          </template>
-          Skills 技能管理
-        </n-tooltip>
       </div>
 
       <!-- 锁定按钮 -->
+
       <n-button
         text
         class="lock-button"
@@ -147,15 +119,9 @@
       </n-button>
     </div>
 
-    <!-- Skills 面板 (覆盖内容区) -->
-    <SkillsPanel
-      v-if="showSkillsPanel"
-      @back="showSkillsPanel = false"
-      @updated="loadInstalledSkills"
-    />
-
     <!-- 滚动内容区 -->
-    <div v-if="!isLocked && !showSkillsPanel" class="channel-content">
+
+    <div v-if="!isLocked" class="channel-content">
       <!-- 代理控制 -->
       <div class="card">
         <div class="card-header">
@@ -401,7 +367,7 @@
     </div>
 
     <!-- 锁定状态 UI -->
-    <div v-if="isLocked && !showSkillsPanel" class="locked-overlay" :class="`locked-${channelType}`">
+    <div v-if="isLocked" class="locked-overlay" :class="`locked-${channelType}`">
       <div class="locked-content">
         <div class="lock-icon">
           <n-icon :size="48">
@@ -451,7 +417,6 @@ import {
 import { useGlobalState } from '../../composables/useGlobalState'
 import { useDashboard } from '../../composables/useDashboard'
 import RecentSessionsDrawer from '../RecentSessionsDrawer.vue'
-import SkillsPanel from '../SkillsPanel.vue'
 import {
   getUIConfig,
   updateNestedUIConfig
@@ -466,7 +431,6 @@ import {
   getCodexTodayStatistics,
   getGeminiTodayStatistics
 } from '../../api/statistics'
-import { getSkills, uninstallSkill } from '../../api/skills'
 import { getAllServers as getMcpServers, toggleServerApp } from '../../api/mcp'
 
 const props = defineProps({
@@ -498,7 +462,16 @@ const {
 } = useGlobalState()
 
 // Dashboard 聚合数据
-const { dashboardData, isLoading: dashboardLoading, loadDashboard } = useDashboard()
+const { 
+  dashboardData, 
+  isLoading: dashboardLoading, 
+  loadDashboard,
+  skills: allSkills,
+  claudeSkillsCount,
+  codexSkillsCount,
+  geminiSkillsCount,
+  loadSkills: loadGlobalSkills
+} = useDashboard()
 
 // 渠道配置
 const channelConfig = {
@@ -523,7 +496,22 @@ const channelTitle = computed(() => channelConfig[props.channelType].title)
 const channelSubtitle = computed(() => channelConfig[props.channelType].subtitle)
 const channelIcon = computed(() => channelConfig[props.channelType].icon)
 
+// 技能统计 (从 useDashboard 获取)
+const platformSkillsCount = computed(() => {
+  if (props.channelType === 'claude') return claudeSkillsCount.value
+  if (props.channelType === 'codex') return codexSkillsCount.value
+  if (props.channelType === 'gemini') return geminiSkillsCount.value
+  return 0
+})
+
+const platformInstalledSkills = computed(() => {
+  return (allSkills.value || []).filter(s => 
+    s.installedPlatforms?.includes(props.channelType)
+  )
+})
+
 // 代理状态（根据渠道类型选择）
+
 const proxyState = computed(() => {
   if (props.channelType === 'claude') return claudeProxy.value
   if (props.channelType === 'codex') return codexProxy.value
@@ -614,11 +602,6 @@ function animateValue(key, startValue, endValue, duration = 600) {
 // 最新对话抽屉
 const showRecentSessions = ref(false)
 
-// Skills 面板（仅 Claude）
-const showSkillsPanel = ref(false)
-const installedSkillsCount = ref(0)
-const installedSkills = ref([])
-
 // MCP 服务（所有平台）
 const mcpEnabledCount = ref(0)
 const mcpEnabledServers = ref([])
@@ -628,21 +611,6 @@ const platformLabel = computed(() => {
   const labels = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini' }
   return labels[props.channelType] || ''
 })
-
-// 加载已安装技能
-async function loadInstalledSkills() {
-  if (props.channelType !== 'claude') return
-  try {
-    const result = await getSkills()
-    if (result.success && result.skills) {
-      const installed = result.skills.filter(s => s.installed)
-      installedSkillsCount.value = installed.length
-      installedSkills.value = installed.slice(0, 10).map(s => ({ ...s, _uninstalling: false }))
-    }
-  } catch (err) {
-    console.error('Failed to load skills:', err)
-  }
-}
 
 // 加载 MCP 服务
 async function loadMcpServers() {
@@ -676,29 +644,6 @@ async function handleMcpToggle(server, enabled) {
   }
 }
 
-// 卸载技能
-async function handleUninstallSkill(skill) {
-  skill._uninstalling = true
-  try {
-    const result = await uninstallSkill(skill.directory)
-    if (result.success) {
-      message.success(`已卸载 ${skill.name}`)
-      // 刷新列表
-      await loadInstalledSkills()
-    } else {
-      message.error(result.error || '卸载失败')
-    }
-  } catch (err) {
-    message.error('卸载失败: ' + (err.message || '未知错误'))
-  } finally {
-    skill._uninstalling = false
-  }
-}
-
-// 兼容旧方法名
-function loadInstalledSkillsCount() {
-  loadInstalledSkills()
-}
 
 // localStorage key
 const LOCK_STORAGE_KEY = 'channelLocks'
@@ -1098,23 +1043,17 @@ function setupStatsTimer() {
   }, delay)
 }
 
-// 监听 Skills 面板关闭后刷新计数
-watch(showSkillsPanel, (val) => {
-  if (!val && props.channelType === 'claude') {
-    loadInstalledSkillsCount()
-  }
-})
-
 onMounted(async () => {
   // 先加载 dashboard 聚合数据（只有第一个组件会真正发起请求，其他复用缓存）
   await loadDashboard()
+  // 加载全局技能数据
+  loadGlobalSkills()
 
   // 从缓存数据加载
   await loadStats()
   // 加载渠道统计数据
   await loadChannelStats()
-  // 加载已安装技能和 MCP 服务（仅 Claude）
-  loadInstalledSkills()
+  // 加载 MCP 服务
   loadMcpServers()
   // 渠道数据现在从 Pinia store 获取，由 store 自动管理
   loadShowLogs()
@@ -1129,6 +1068,7 @@ onMounted(async () => {
     currentTime.value = Date.now()
   }, 1000)
 })
+
 
 onUnmounted(() => {
   componentMounted = false
@@ -2089,8 +2029,8 @@ onUnmounted(() => {
   min-width: 55px;
 }
 
-/* Claude 额外区域样式 (MCP & Skills) */
-.claude-extra-area {
+/* Skills 区域样式 */
+.skills-extra-area {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -2258,44 +2198,7 @@ onUnmounted(() => {
   background: rgba(255, 255, 255, 0.15);
 }
 
-/* Skills 按钮样式 */
-.skills-button {
-  padding: 6px !important;
-  width: 30px;
-  height: 30px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 5px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-}
-
-.skills-button .n-icon {
-  color: var(--text-color-3);
-  transition: all 0.25s ease;
-}
-
-.skills-button:hover {
-  background: linear-gradient(135deg, rgba(24, 160, 88, 0.1), rgba(24, 160, 88, 0.05));
-  border-color: rgba(24, 160, 88, 0.3);
-  box-shadow: 0 4px 12px rgba(24, 160, 88, 0.15);
-  transform: translateY(-1px);
-}
-
-.skills-button:hover .n-icon {
-  color: #18a058;
-  transform: scale(1.1);
-}
-
-.skills-button:active {
-  transform: translateY(0);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-}
-
-/* 锁定按钮样式 - 与 Skills 按钮统一风格 */
+/* 锁定按钮样式 */
 .lock-button {
   margin-left: 6px;
   padding: 6px !important;
@@ -2769,12 +2672,6 @@ onUnmounted(() => {
     line-height: 18px;
   }
 
-  .skills-button {
-    padding: 4px 8px;
-    font-size: 10px;
-    gap: 4px;
-  }
-
   .lock-button {
     width: 26px;
     height: 26px;
@@ -2858,7 +2755,7 @@ onUnmounted(() => {
     font-size: 8px;
   }
 
-  .claude-extra-area {
+  .skills-extra-area {
     gap: 4px;
   }
 
@@ -2868,16 +2765,6 @@ onUnmounted(() => {
     padding: 0 4px;
     height: 16px;
     line-height: 16px;
-  }
-
-  .skills-button {
-    padding: 3px 6px;
-    font-size: 9px;
-    gap: 3px;
-  }
-
-  .skills-button .n-icon {
-    font-size: 12px !important;
   }
 
   .lock-button {

@@ -8,6 +8,23 @@ const { SkillService } = require('../services/skill-service');
 const router = express.Router();
 const skillService = new SkillService();
 
+function sendSkillError(res, err, status = 500) {
+  const code = err.code || 'SKILL_ERROR';
+  const payload = {
+    success: false,
+    message: err.message,
+    error: err.message,
+    code,
+    fallbackAvailable: Boolean(err.fallbackAvailable)
+  };
+
+  if (payload.fallbackAvailable || err.code) {
+    return res.json(payload);
+  }
+
+  return res.status(status).json(payload);
+}
+
 /**
  * 获取技能列表
  * GET /api/skills
@@ -216,7 +233,7 @@ router.post('/create', (req, res) => {
  */
 router.post('/uninstall', (req, res) => {
   try {
-    const { directory, platforms } = req.body;
+    const { directory, platforms, skipCache } = req.body;
 
     if (!directory) {
       return res.status(400).json({
@@ -234,7 +251,9 @@ router.post('/uninstall', (req, res) => {
       });
     }
 
-    const result = skillService.uninstallSkill(directory, targetPlatforms);
+    const result = skillService.uninstallSkill(directory, targetPlatforms, {
+      skipCache: Boolean(skipCache)
+    });
 
     res.json({
       success: true,
@@ -242,10 +261,106 @@ router.post('/uninstall', (req, res) => {
     });
   } catch (err) {
     console.error('[Skills API] Uninstall skill error:', err);
-    res.status(500).json({
-      success: false,
-      message: err.message
+    sendSkillError(res, err);
+  }
+});
+
+/**
+ * 禁用技能
+ * POST /api/skills/disable
+ * Body: { directory, skipCache?: boolean }
+ */
+router.post('/disable', (req, res) => {
+  try {
+    const { directory, skipCache } = req.body;
+
+    if (!directory) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing directory'
+      });
+    }
+
+    const result = skillService.disableSkill(directory, { skipCache: Boolean(skipCache) });
+
+    res.json({
+      success: true,
+      ...result
     });
+  } catch (err) {
+    console.error('[Skills API] Disable skill error:', err);
+    sendSkillError(res, err);
+  }
+});
+
+/**
+ * 启用技能
+ * POST /api/skills/enable
+ * Body: { directory }
+ */
+router.post('/enable', (req, res) => {
+  try {
+    const { directory } = req.body;
+
+    if (!directory) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing directory'
+      });
+    }
+
+    const result = skillService.enableSkill(directory);
+
+    res.json({
+      success: true,
+      ...result
+    });
+  } catch (err) {
+    console.error('[Skills API] Enable skill error:', err);
+    sendSkillError(res, err);
+  }
+});
+
+/**
+ * 获取缓存技能列表
+ * GET /api/skills/cached
+ */
+router.get('/cached', (req, res) => {
+  try {
+    const cached = skillService.listCached();
+    res.json({
+      success: true,
+      data: cached,
+      total: cached.length
+    });
+  } catch (err) {
+    console.error('[Skills API] List cached skills error:', err);
+    sendSkillError(res, err);
+  }
+});
+
+/**
+ * 删除缓存技能
+ * DELETE /api/skills/cached/:directory
+ */
+router.delete('/cached/*', (req, res) => {
+  try {
+    const directory = req.params[0];
+    if (!directory) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing directory'
+      });
+    }
+
+    const result = skillService.deleteCachedSkill(directory);
+    res.json({
+      success: true,
+      ...result
+    });
+  } catch (err) {
+    console.error('[Skills API] Delete cached skill error:', err);
+    sendSkillError(res, err);
   }
 });
 

@@ -1,6 +1,7 @@
 // 默认配置
 const path = require('path');
 const os = require('os');
+const { getAppDir } = require('../utils/app-path-manager');
 
 const DEFAULT_CONFIG = {
   projectsDir: path.join(os.homedir(), '.claude', 'projects'),
@@ -34,6 +35,11 @@ const DEFAULT_CONFIG = {
       input: 1.25,
       output: 5
     }
+  },
+  skillCache: {
+    dir: path.join(getAppDir(), 'skill-cache'),
+    ttl: 5 * 60 * 1000,
+    maxSize: 100
   }
 };
 

@@ -5,13 +5,8 @@
     placement="right"
     :mask-closable="true"
   >
-    <n-drawer-content closable>
-      <template #header>
-        <div class="drawer-header">
-          <span>Skills 技能管理</span>
-        </div>
-      </template>
-      <SkillsPanel @back="visible = false" :hide-back="true" :in-drawer="true" />
+    <n-drawer-content :show-header="false" closable>
+      <SkillsPanel @back="visible = false" />
     </n-drawer-content>
   </n-drawer>
 </template>
@@ -35,11 +30,3 @@ const visible = computed({
   set: (val) => emit('update:visible', val)
 })
 </script>
-
-<style scoped>
-.drawer-header {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-</style>

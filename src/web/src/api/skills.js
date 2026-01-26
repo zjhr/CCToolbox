@@ -56,8 +56,44 @@ export async function installSkill(directory, repo, platforms = ['claude']) {
  * @param {string} directory - 技能目录
  * @param {string[]|null} platforms - 目标平台列表，null 表示从所有已安装的平台卸载
  */
-export async function uninstallSkill(directory, platforms = null) {
-  const response = await client.post('/skills/uninstall', { directory, platforms })
+export async function uninstallSkill(directory, platforms = null, skipCache = false) {
+  const response = await client.post('/skills/uninstall', { directory, platforms, skipCache })
+  return response.data
+}
+
+/**
+ * 禁用技能
+ * @param {string} directory - 技能目录
+ * @param {boolean} skipCache - 是否跳过缓存
+ */
+export async function disableSkill(directory, skipCache = false) {
+  const response = await client.post('/skills/disable', { directory, skipCache })
+  return response.data
+}
+
+/**
+ * 启用技能
+ * @param {string} directory - 技能目录
+ */
+export async function enableSkill(directory) {
+  const response = await client.post('/skills/enable', { directory })
+  return response.data
+}
+
+/**
+ * 获取缓存技能列表
+ */
+export async function getCachedSkills() {
+  const response = await client.get('/skills/cached')
+  return response.data
+}
+
+/**
+ * 删除缓存技能
+ * @param {string} directory - 技能目录
+ */
+export async function deleteCachedSkill(directory) {
+  const response = await client.delete(`/skills/cached/${directory}`)
   return response.data
 }
 
