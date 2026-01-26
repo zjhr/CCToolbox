@@ -101,6 +101,26 @@
       />
     </div>
 
+    <n-alert
+      v-if="repoWarnings.length > 0"
+      type="warning"
+      :bordered="false"
+      size="small"
+      class="repo-warning"
+      closable
+      @close="handleDismissWarnings"
+    >
+      <div class="repo-warning-title">仓库拉取异常，已自动处理：</div>
+      <div
+        v-for="warning in repoWarnings"
+        :key="`${warning.repo}-${warning.message}`"
+        class="repo-warning-item"
+      >
+        <span class="repo-warning-repo">{{ warning.repo }}</span>
+        <span class="repo-warning-message">{{ warning.message }}</span>
+      </div>
+    </n-alert>
+
     <!-- 技能列表 -->
     <div class="skills-content">
       <n-spin :show="loading">
@@ -171,8 +191,8 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { NButton, NInput, NSelect, NIcon, NTag, NSpin, NEmpty } from 'naive-ui'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { NButton, NInput, NSelect, NIcon, NTag, NSpin, NEmpty, NAlert } from 'naive-ui'
 import {
   ArrowBackOutline,
   GitBranchOutline,
@@ -204,6 +224,7 @@ const props = defineProps({
 const emit = defineEmits(['back', 'updated'])
 
 const skills = ref([])
+const repoWarnings = ref([])
 const loading = ref(false)
 const searchQuery = ref('')
 const filterStatus = ref('all')
@@ -224,6 +245,8 @@ const filterOptions = [
   { label: '已安装', value: 'installed' },
   { label: '未安装', value: 'uninstalled' }
 ]
+
+let warningTimer = null
 
 const installedCount = computed(() => skills.value.filter(s => s.installed).length)
 
@@ -300,12 +323,36 @@ async function loadSkills(forceRefresh = false) {
     const result = await getSkills(forceRefresh)
     if (result.success) {
       skills.value = result.skills || []
+      repoWarnings.value = Array.isArray(result.warnings) ? result.warnings : []
+      scheduleWarningClear()
     }
   } catch (err) {
     message.error('加载技能列表失败: ' + err.message)
+    handleDismissWarnings()
   } finally {
     loading.value = false
   }
+}
+
+function clearWarningTimer() {
+  if (warningTimer) {
+    clearTimeout(warningTimer)
+    warningTimer = null
+  }
+}
+
+function scheduleWarningClear() {
+  clearWarningTimer()
+  if (repoWarnings.value.length === 0) return
+  warningTimer = setTimeout(() => {
+    repoWarnings.value = []
+    warningTimer = null
+  }, 8000)
+}
+
+function handleDismissWarnings() {
+  clearWarningTimer()
+  repoWarnings.value = []
 }
 
 // 强制刷新（用于刷新按钮）
@@ -396,6 +443,10 @@ function handleBack() {
 onMounted(() => {
   loadPlatforms()
   loadSkills()
+})
+
+onBeforeUnmount(() => {
+  clearWarningTimer()
 })
 </script>
 
@@ -528,6 +579,34 @@ onMounted(() => {
 .filter-select {
   width: 90px;
   flex-shrink: 0;
+}
+
+.repo-warning {
+  margin: 10px 16px 0;
+}
+
+.repo-warning-title {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: var(--text-primary);
+}
+
+.repo-warning-item {
+  display: flex;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.repo-warning-repo {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.repo-warning-message {
+  color: var(--text-secondary);
 }
 
 .skills-content {

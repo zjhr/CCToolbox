@@ -21,7 +21,8 @@ router.get('/', async (req, res) => {
       success: true,
       skills,
       total: skills.length,
-      installed: skills.filter(s => s.installed).length
+      installed: skills.filter(s => s.installed).length,
+      warnings: skillService.getLastRepoWarnings()
     });
   } catch (err) {
     console.error('[Skills API] List skills error:', err);

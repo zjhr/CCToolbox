@@ -59,6 +59,7 @@ class SkillService {
     // 内存缓存
     this.skillsCache = null;
     this.cacheTime = 0;
+    this.lastRepoWarnings = [];
 
     // 确保目录存在
     this.ensureDirs();
@@ -177,6 +178,72 @@ class SkillService {
   }
 
   /**
+   * 使技能缓存失效，确保仓库变更后及时刷新列表
+   */
+  invalidateSkillsCache() {
+    this.skillsCache = null;
+    this.cacheTime = 0;
+    try {
+      if (fs.existsSync(this.cachePath)) {
+        fs.unlinkSync(this.cachePath);
+      }
+    } catch (err) {
+      console.warn('[SkillService] Failed to delete cache file:', err.message);
+    }
+  }
+
+  /**
+   * 记录仓库提示信息，避免重复
+   */
+  addRepoWarning(repo, message) {
+    const repoKey = `${repo.owner}/${repo.name}`;
+    const warnings = this.lastRepoWarnings || [];
+    if (!warnings.some(item => item.repo === repoKey && item.message === message)) {
+      warnings.push({ repo: repoKey, message });
+    }
+    this.lastRepoWarnings = warnings;
+  }
+
+  /**
+   * 获取最近一次列表拉取的仓库提示
+   */
+  getLastRepoWarnings() {
+    return this.lastRepoWarnings || [];
+  }
+
+  /**
+   * 判断是否为 GitHub 404 错误
+   */
+  isGitHubNotFoundError(err) {
+    return Boolean(err && err.message && err.message.includes('GitHub API error: 404'));
+  }
+
+  /**
+   * 获取仓库默认分支
+   */
+  async getRepoDefaultBranch(owner, name) {
+    try {
+      const repoInfo = await this.fetchGitHubApi(`https://api.github.com/repos/${owner}/${name}`);
+      return repoInfo?.default_branch || null;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  /**
+   * 更新仓库分支配置
+   */
+  updateRepoBranch(owner, name, branch) {
+    const repos = this.loadRepos();
+    const repo = repos.find(item => item.owner === owner && item.name === name);
+    if (repo && repo.branch !== branch) {
+      repo.branch = branch;
+      this.saveRepos(repos);
+      this.invalidateSkillsCache();
+    }
+  }
+
+  /**
    * 添加仓库
    */
   addRepo(repo) {
@@ -190,6 +257,7 @@ class SkillService {
     }
 
     this.saveRepos(repos);
+    this.invalidateSkillsCache();
     return repos;
   }
 
@@ -200,6 +268,7 @@ class SkillService {
     const repos = this.loadRepos();
     const filtered = repos.filter(r => !(r.owner === owner && r.name === name));
     this.saveRepos(filtered);
+    this.invalidateSkillsCache();
     return filtered;
   }
 
@@ -212,6 +281,7 @@ class SkillService {
     if (repo) {
       repo.enabled = enabled;
       this.saveRepos(repos);
+      this.invalidateSkillsCache();
     }
     return repos;
   }
@@ -220,18 +290,10 @@ class SkillService {
    * 获取所有技能列表（带缓存）
    */
   async listSkills(forceRefresh = false) {
+    this.lastRepoWarnings = [];
     // 强制刷新时清除缓存
     if (forceRefresh) {
-      this.skillsCache = null;
-      this.cacheTime = 0;
-      // 删除文件缓存
-      try {
-        if (fs.existsSync(this.cachePath)) {
-          fs.unlinkSync(this.cachePath);
-        }
-      } catch (err) {
-        console.warn('[SkillService] Failed to delete cache file:', err.message);
-      }
+      this.invalidateSkillsCache();
     }
 
     // 检查内存缓存
@@ -271,11 +333,22 @@ class SkillService {
 
       for (let i = 0; i < results.length; i++) {
         const result = results[i];
-        const repoInfo = `${enabledRepos[i].owner}/${enabledRepos[i].name}`;
+        const repo = enabledRepos[i];
+        const repoInfo = `${repo.owner}/${repo.name}`;
         if (result.status === 'fulfilled') {
           skills.push(...result.value);
         } else {
-          console.warn(`[SkillService] Fetch repo ${repoInfo} failed:`, result.reason?.message);
+          const reason = result.reason?.message || '未知错误';
+          let warningMessage = `拉取失败：${reason}`;
+          if (reason === 'Fetch timeout') {
+            warningMessage = '拉取超时，请稍后重试或检查网络/代理';
+          } else if (reason.includes('GitHub API error: 403')) {
+            warningMessage = 'GitHub API 限流或无权限访问';
+          } else if (reason.includes('GitHub API error: 404')) {
+            warningMessage = '仓库不存在、无权限访问或分支不可用';
+          }
+          this.addRepoWarning(repo, warningMessage);
+          console.warn(`[SkillService] Fetch repo ${repoInfo} failed:`, reason);
         }
       }
     }
@@ -341,41 +414,62 @@ class SkillService {
    * 从 GitHub 仓库获取技能列表（使用 Tree API 一次性获取）
    */
   async fetchRepoSkills(repo) {
-    const skills = [];
+    const branch = repo.branch || 'main';
 
     try {
-      // 使用 GitHub Tree API 一次性获取所有文件
-      const treeUrl = `https://api.github.com/repos/${repo.owner}/${repo.name}/git/trees/${repo.branch}?recursive=1`;
-      const tree = await this.fetchGitHubApi(treeUrl);
-
-      if (!tree || !tree.tree) {
-        console.warn(`[SkillService] Empty tree for ${repo.owner}/${repo.name}`);
-        return skills;
-      }
-
-      // 找到所有 SKILL.md 文件
-      const skillFiles = tree.tree.filter(item =>
-        item.type === 'blob' && item.path.endsWith('/SKILL.md')
-      );
-
-      // 并行获取所有 SKILL.md 的内容（限制并发数）
-      const batchSize = 5;
-
-      for (let i = 0; i < skillFiles.length; i += batchSize) {
-        const batch = skillFiles.slice(i, i + batchSize);
-        const results = await Promise.allSettled(
-          batch.map(file => this.fetchAndParseSkill(file, repo))
-        );
-
-        for (const result of results) {
-          if (result.status === 'fulfilled' && result.value) {
-            skills.push(result.value);
-          }
+      return await this.fetchRepoSkillsForBranch(repo, branch);
+    } catch (err) {
+      if (this.isGitHubNotFoundError(err)) {
+        const defaultBranch = await this.getRepoDefaultBranch(repo.owner, repo.name);
+        if (defaultBranch && defaultBranch !== branch) {
+          this.addRepoWarning(
+            repo,
+            `分支 ${branch} 不存在，已自动切换为默认分支 ${defaultBranch}`
+          );
+          this.updateRepoBranch(repo.owner, repo.name, defaultBranch);
+          return await this.fetchRepoSkillsForBranch(repo, defaultBranch);
         }
       }
-    } catch (err) {
       console.error(`[SkillService] Fetch repo ${repo.owner}/${repo.name} error:`, err.message);
       throw err;
+    }
+  }
+
+  /**
+   * 按指定分支获取仓库技能
+   */
+  async fetchRepoSkillsForBranch(repo, branch) {
+    const skills = [];
+    const targetRepo = { ...repo, branch };
+
+    // 使用 GitHub Tree API 一次性获取所有文件
+    const treeUrl = `https://api.github.com/repos/${targetRepo.owner}/${targetRepo.name}/git/trees/${branch}?recursive=1`;
+    const tree = await this.fetchGitHubApi(treeUrl);
+
+    if (!tree || !tree.tree) {
+      console.warn(`[SkillService] Empty tree for ${targetRepo.owner}/${targetRepo.name}`);
+      return skills;
+    }
+
+    // 找到所有 SKILL.md 文件
+    const skillFiles = tree.tree.filter(item =>
+      item.type === 'blob' && item.path.endsWith('/SKILL.md')
+    );
+
+    // 并行获取所有 SKILL.md 的内容（限制并发数）
+    const batchSize = 5;
+
+    for (let i = 0; i < skillFiles.length; i += batchSize) {
+      const batch = skillFiles.slice(i, i + batchSize);
+      const results = await Promise.allSettled(
+        batch.map(file => this.fetchAndParseSkill(file, targetRepo))
+      );
+
+      for (const result of results) {
+        if (result.status === 'fulfilled' && result.value) {
+          skills.push(result.value);
+        }
+      }
     }
 
     return skills;
