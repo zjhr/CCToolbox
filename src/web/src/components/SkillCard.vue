@@ -59,11 +59,11 @@
       <div class="card-actions">
         <!-- 正常安装按钮 -->
         <n-button
-          v-if="!skill.installed && !skill.isDisabled"
+          v-if="!skill.isDisabled && (skill.installedPlatforms?.length || 0) < 3"
           size="tiny"
           type="primary"
           :loading="props.loading"
-          :disabled="props.loading || skill.installedPlatforms?.length >= 3 || (!skill.installed && !skill.repoOwner)"
+          :disabled="props.loading || (!skill.installed && !skill.repoOwner)"
           @click.stop="handleInstall"
         >
           安装
