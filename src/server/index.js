@@ -16,6 +16,7 @@ const { startGeminiProxyServer } = require('./gemini-proxy-server');
 const { getAppDir } = require('../utils/app-path-manager');
 const { startTrashCleanup } = require('./services/trash');
 const { startUpdateChecker } = require('./services/update-checker');
+const { SkillService } = require('./services/skill-service');
 
 async function startServer(port) {
   const config = loadConfig();
@@ -159,6 +160,7 @@ async function startServer(port) {
 
     startUpdateChecker();
     console.log(chalk.gray('✅ 更新检查服务已启动'));
+    startSkillUpdateCheck();
 
     // 自动恢复代理状态
     autoRestoreProxies();
@@ -176,6 +178,22 @@ async function startServer(port) {
   });
 
   return server;
+}
+
+// 启动时执行技能更新检测（不阻塞启动）
+function startSkillUpdateCheck() {
+  const skillService = new SkillService();
+  setTimeout(() => {
+    skillService.checkSkillUpdatesOnStartup()
+      .then((result) => {
+        if (result?.checked > 0) {
+          console.log(chalk.gray(`✅ 技能更新检测完成 (${result.checked})`));
+        }
+      })
+      .catch((err) => {
+        console.warn('[SkillService] Startup update check failed:', err.message);
+      });
+  }, 0);
 }
 
 // 自动恢复代理状态

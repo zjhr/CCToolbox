@@ -14,11 +14,11 @@
         </n-tag>
       </div>
       <div class="header-right">
-        <n-button text @click="showCreateModal = true" class="action-btn">
+        <n-button text @click="handleOpenUpload" class="action-btn" aria-label="新增技能">
           <template #icon>
             <n-icon><AddOutline /></n-icon>
           </template>
-          创建
+          新增技能
         </n-button>
         <n-button text @click="showRepoManager = true" class="action-btn">
           <template #icon>
@@ -123,6 +123,9 @@
             @disable="handleDisable"
             @enable="handleEnable"
             @delete="handleDelete"
+            @reinstall="handleReinstall"
+            @configure-update="handleOpenUpdateSource"
+            @update="handleManualUpdate"
             @click="handleCardClick"
           />
         </div>
@@ -143,9 +146,17 @@
     <!-- 创建技能弹窗 -->
     <SkillCreateModal
       v-model:visible="showCreateModal"
-      @created="loadSkills"
+      @created="handleCreateComplete"
     />
 
+    <!-- 上传技能弹窗 -->
+    <SkillUploadModal
+      v-model:visible="showUploadModal"
+      @uploaded="handleUploadComplete"
+      @open-create="handleOpenCreateFromUpload"
+    />
+
+    <!-- 更新检测弹窗 -->
     <!-- 技能详情弹窗 -->
     <SkillDetailModal
       v-model:visible="showDetailModal"
@@ -161,11 +172,17 @@
       :platforms="platforms"
       @confirm="confirmPlatformSelection"
     />
+
+    <SkillUpdateModal
+      v-model:visible="showUpdateSourceModal"
+      :skill="updateSourceSkill"
+      @saved="handleUpdateSourceSaved"
+    />
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import {
   NButton,
   NInput,
@@ -187,15 +204,17 @@ import {
 } from '@vicons/ionicons5'
 import {
   getSkills, installSkill, uninstallSkill, getPlatforms,
-  disableSkill, enableSkill, deleteCachedSkill
+  disableSkill, enableSkill, deleteCachedSkill, reinstallSkill, updateSkill
 } from '../api/skills'
 import message, { dialog } from '../utils/message'
 import { useDashboard } from '../composables/useDashboard'
 import SkillCard from './SkillCard.vue'
 import SkillRepoManager from './SkillRepoManager.vue'
 import SkillCreateModal from './SkillCreateModal.vue'
+import SkillUploadModal from './SkillUploadModal.vue'
 import SkillDetailModal from './SkillDetailModal.vue'
 import SkillPlatformModal from './SkillPlatformModal.vue'
+import SkillUpdateModal from './SkillUpdateModal.vue'
 
 const props = defineProps({
   hideBack: {
@@ -215,12 +234,17 @@ const platforms = ref([])
 const selectedPlatforms = ref([])
 const showRepoManager = ref(false)
 const showCreateModal = ref(false)
+const showUploadModal = ref(false)
 const showDetailModal = ref(false)
 const showPlatformModal = ref(false)
+const showUpdateSourceModal = ref(false)
 const platformModalMode = ref('install')
 const platformModalSkill = ref(null)
 const selectedSkill = ref(null)
+const updateSourceSkill = ref(null)
+const pendingUploadSkill = ref(null)
 const actionLoadingKeys = ref({}) // 记录正在执行操作的技能 key
+const lastFocusEl = ref(null)
 const { skills: globalSkills, skillsLoaded: globalSkillsLoaded } = useDashboard()
 
 const defaultFilterOptions = [
@@ -444,7 +468,7 @@ async function handleEnable(skill) {
 async function handleDelete(skill) {
   dialog.warning({
     title: '确认删除',
-    content: `确定要彻底删除已禁用的技能 "${skill.name}" 的本地缓存吗？`,
+    content: `确定要彻底删除技能 "${skill.name}" 的本地缓存吗？`,
     positiveText: '确认删除',
     negativeText: '取消',
     onPositiveClick: async () => {
@@ -471,12 +495,106 @@ async function handleDelete(skill) {
   })
 }
 
+async function handleReinstall(skill) {
+  const key = getSkillKey(skill)
+  actionLoadingKeys.value[key] = true
+  try {
+    const result = await reinstallSkill(skill.directory)
+    if (result.success) {
+      message.success(`技能 "${skill.name}" 已重新安装`)
+      await loadSkills(true)
+      emit('updated')
+    } else {
+      message.error(result.error || '重新安装失败')
+    }
+  } catch (err) {
+    message.error('重新安装失败: ' + err.message)
+  } finally {
+    delete actionLoadingKeys.value[key]
+  }
+}
+
+function handleOpenUpdateSource(skill) {
+  updateSourceSkill.value = skill
+  showUpdateSourceModal.value = true
+}
+
+async function handleUpdateSourceSaved() {
+  await loadSkills(true)
+  emit('updated')
+}
+
+async function handleCreateComplete() {
+  showCreateModal.value = false
+  showUploadModal.value = false
+  await loadSkills(true)
+  emit('updated')
+}
+
+async function handleManualUpdate(skill) {
+  const key = getSkillKey(skill)
+  actionLoadingKeys.value[key] = true
+  try {
+    const result = await updateSkill(skill.directory)
+    if (result.success) {
+      message.success(`技能 "${skill.name}" 已更新`)
+      await loadSkills(true)
+      emit('updated')
+    } else {
+      message.error(result.error || '更新失败')
+    }
+  } catch (err) {
+    message.error('更新失败: ' + err.message)
+  } finally {
+    delete actionLoadingKeys.value[key]
+  }
+}
+
+async function handleUploadComplete(result) {
+  await loadSkills(true)
+  emit('updated')
+  if (result?.directory) {
+    pendingUploadSkill.value = {
+      directory: result.directory,
+      name: result.metadata?.name || result.directory,
+      installedPlatforms: result.installedPlatforms || []
+    }
+    platformModalSkill.value = pendingUploadSkill.value
+    platformModalMode.value = 'upload'
+    showPlatformModal.value = true
+  }
+}
+
 async function confirmPlatformSelection(selectedPlatforms) {
   const skill = platformModalSkill.value
   const mode = platformModalMode.value
   showPlatformModal.value = false
 
-  if (mode === 'install') {
+  if (mode === 'upload') {
+    if (!skill?.directory) return
+    const key = getSkillKey(skill)
+    actionLoadingKeys.value[key] = true
+    try {
+      const allPlatforms = platforms.value.map(p => p.id)
+      const unselected = allPlatforms.filter(id => !selectedPlatforms.includes(id))
+      const installResult = await installSkill(skill.directory, null, selectedPlatforms)
+      if (!installResult.success) {
+        message.error(installResult.error || '安装失败')
+        return
+      }
+      if (unselected.length > 0) {
+        await uninstallSkill(skill.directory, unselected, true)
+      }
+      message.success(`技能 "${skill.name}" 已按选择安装`)
+      await loadSkills(true)
+      emit('updated')
+    } catch (err) {
+      message.error('安装异常: ' + err.message)
+    } finally {
+      delete actionLoadingKeys.value[key]
+      pendingUploadSkill.value = null
+    }
+  } else if (mode === 'install') {
     const repo = skill.repoOwner ? {
       owner: skill.repoOwner,
       name: skill.repoName,
@@ -526,6 +644,23 @@ function handleBack() {
   emit('back')
 }
 
+function handleOpenUpload(event) {
+  lastFocusEl.value = event?.currentTarget || null
+  showUploadModal.value = true
+}
+
+function handleOpenCreateFromUpload() {
+  showUploadModal.value = false
+  showCreateModal.value = true
+}
+
+function restoreFocus() {
+  if (lastFocusEl.value && typeof lastFocusEl.value.focus === 'function') {
+    lastFocusEl.value.focus()
+  }
+  lastFocusEl.value = null
+}
+
 onMounted(() => {
   loadPlatforms()
   loadSkills()
@@ -533,6 +668,12 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   clearWarningTimer()
+})
+
+watch(() => showUploadModal.value, (val) => {
+  if (!val) {
+    restoreFocus()
+  }
 })
 </script>
 
@@ -573,11 +714,23 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 4px;
+  flex-wrap: wrap;
 }
 
 .action-btn {
   font-size: 12px;
   padding: 4px 8px;
+}
+
+.action-btn:focus-visible {
+  outline: 2px solid #2080f0;
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  .action-btn {
+    min-height: 44px;
+  }
 }
 
 .filter-bar {

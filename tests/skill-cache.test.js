@@ -43,6 +43,11 @@ async function runTests() {
       installedPlatforms: ['claude']
     });
     assert.strictEqual(cachedMeta.installedPlatforms[0], 'claude');
+    assert.strictEqual(cachedMeta.canReinstall, false);
+    assert.strictEqual(cachedMeta.uninstalledAt, null);
+
+    const cachedMetaFromFile = service.readCacheMetadata('demo-skill');
+    assert.strictEqual(cachedMetaFromFile.canReinstall, false);
 
     const cachedList = service.listCached();
     assert.strictEqual(cachedList.length, 1);
@@ -70,6 +75,16 @@ async function runTests() {
     service.enableSkill('multi-skill');
     assert.ok(fs.existsSync(multiSkillClaude));
     assert.ok(fs.existsSync(multiSkillCodex));
+
+    const reinstallSkillDir = path.join(claudeDir, 'reinstall-skill');
+    writeSkill(reinstallSkillDir, 'Reinstall Skill', '测试重新安装');
+    const uninstallResult = service.uninstallSkill('reinstall-skill');
+    assert.strictEqual(uninstallResult.success, true);
+    assert.ok(uninstallResult.uninstalledAt);
+    const reinstallMeta = service.readCacheMetadata('reinstall-skill');
+    assert.strictEqual(reinstallMeta.canReinstall, true);
+    assert.ok(reinstallMeta.reinstallExpiresAt);
+    assert.deepStrictEqual(reinstallMeta.uninstalledPlatforms, ['claude']);
 
     service.deleteCachedSkill('multi-skill');
     const remaining = service.listCached().filter(item => item.directory === 'multi-skill');

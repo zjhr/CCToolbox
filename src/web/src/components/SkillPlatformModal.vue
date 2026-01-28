@@ -81,7 +81,7 @@ const props = defineProps({
   },
   mode: {
     type: String,
-    validator: (value) => ['install', 'uninstall'].includes(value),
+    validator: (value) => ['install', 'uninstall', 'upload'].includes(value),
     default: 'install'
   },
   skill: {
@@ -103,18 +103,20 @@ const visible = computed({
 
 const selectedPlatforms = ref([])
 
+const isInstallMode = computed(() => props.mode === 'install' || props.mode === 'upload')
+
 const title = computed(() => {
-  return props.mode === 'install' ? '安装到平台' : '从平台卸载'
+  return isInstallMode.value ? '安装到平台' : '从平台卸载'
 })
 
 const description = computed(() => {
-  return props.mode === 'install' 
+  return isInstallMode.value
     ? '选择要安装此技能的平台：' 
     : '选择要卸载此技能的平台：'
 })
 
 const confirmText = computed(() => {
-  return props.mode === 'install' ? '确认安装' : '确认卸载'
+  return isInstallMode.value ? '确认安装' : '确认卸载'
 })
 
 const displayPlatforms = computed(() => {
@@ -139,7 +141,9 @@ function handleConfirm() {
 // 初始化选中状态
 watch(() => [props.visible, props.mode], ([newVisible, newMode]) => {
   if (newVisible) {
-    if (newMode === 'install') {
+    if (newMode === 'upload') {
+      selectedPlatforms.value = props.platforms.map(p => p.id)
+    } else if (newMode === 'install') {
       // 安装模式：默认勾选已存在目录的平台
       selectedPlatforms.value = props.platforms
         .filter(p => p.exists)

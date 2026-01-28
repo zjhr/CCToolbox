@@ -143,3 +143,79 @@ export async function toggleSkillRepo(owner, name, enabled) {
   const response = await client.put(`/skills/repos/${owner}/${name}/toggle`, { enabled })
   return response.data
 }
+
+/**
+ * 上传技能（ZIP 或文件夹）
+ * @param {object} options - { files, force, onUploadProgress }
+ */
+export async function uploadSkill(options) {
+  const formData = new FormData()
+  const files = Array.isArray(options?.files) ? options.files : []
+  const force = Boolean(options?.force)
+
+  if (files.length === 0) {
+    throw new Error('缺少上传文件')
+  }
+
+  if (force) {
+    formData.append('force', 'true')
+  }
+
+  const paths = []
+  files.forEach((file) => {
+    const relativePath = file.__relativePath || file.webkitRelativePath || file.name
+    formData.append('files', file, relativePath)
+    paths.push(relativePath)
+  })
+
+  if (paths.length > 1 || paths.some(path => path.includes('/'))) {
+    paths.forEach((relativePath) => {
+      formData.append('paths', relativePath)
+    })
+  }
+
+  const response = await client.post('/skills/upload', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    },
+    onUploadProgress: options?.onUploadProgress
+  })
+  return response.data
+}
+
+/**
+ * 设置技能更新源
+ * @param {string} directory
+ * @param {string} repo
+ */
+export async function saveSkillUpdateSource(directory, repo) {
+  const response = await client.post('/skills/update-source', { directory, repo })
+  return response.data
+}
+
+/**
+ * 手动更新技能
+ * @param {string} directory
+ */
+export async function updateSkill(directory) {
+  const response = await client.post('/skills/update', { directory })
+  return response.data
+}
+
+/**
+ * 检查技能更新
+ * @param {string} repo
+ */
+export async function checkUpdate(repo) {
+  const response = await client.post('/skills/check-update', { repo })
+  return response.data
+}
+
+/**
+ * 重新安装技能
+ * @param {string} directory
+ */
+export async function reinstallSkill(directory) {
+  const response = await client.post('/skills/reinstall', { directory })
+  return response.data
+}

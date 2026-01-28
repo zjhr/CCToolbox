@@ -4,6 +4,7 @@
 
 const express = require('express');
 const { SkillService } = require('../services/skill-service');
+const { skillUploadMiddleware } = require('../middleware/upload');
 
 const router = express.Router();
 const skillService = new SkillService();
@@ -227,6 +228,29 @@ router.post('/create', (req, res) => {
 });
 
 /**
+ * 上传技能
+ * POST /api/skills/upload
+ */
+router.post('/upload', skillUploadMiddleware, async (req, res) => {
+  try {
+    const force = String(req.body?.force || '').toLowerCase() === 'true';
+    const result = await skillService.uploadSkill(req.uploadedFiles, {
+      force,
+      uploadType: req.uploadType,
+      uploadBaseDir: req.uploadBaseDir
+    });
+
+    res.json({
+      success: true,
+      ...result
+    });
+  } catch (err) {
+    console.error('[Skills API] Upload skill error:', err);
+    sendSkillError(res, err);
+  }
+});
+
+/**
  * 卸载技能
  * POST /api/skills/uninstall
  * Body: { directory, platforms?: string[] }
@@ -261,6 +285,84 @@ router.post('/uninstall', (req, res) => {
     });
   } catch (err) {
     console.error('[Skills API] Uninstall skill error:', err);
+    sendSkillError(res, err);
+  }
+});
+
+/**
+ * 检查技能更新
+ * POST /api/skills/check-update
+ * Body: { repo }
+ */
+router.post('/check-update', async (req, res) => {
+  try {
+    const { repo } = req.body;
+    if (!repo) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing repo'
+      });
+    }
+
+    const updates = await skillService.checkUpdate(repo);
+    res.json({
+      success: true,
+      data: updates
+    });
+  } catch (err) {
+    console.error('[Skills API] Check update error:', err);
+    sendSkillError(res, err);
+  }
+});
+
+/**
+ * 设置技能更新源
+ * POST /api/skills/update-source
+ * Body: { directory, repo }
+ */
+router.post('/update-source', async (req, res) => {
+  try {
+    const { directory, repo } = req.body;
+    if (!directory) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing directory'
+      });
+    }
+
+    const result = await skillService.setSkillUpdateSource(directory, repo);
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (err) {
+    console.error('[Skills API] Update source error:', err);
+    sendSkillError(res, err);
+  }
+});
+
+/**
+ * 手动更新技能
+ * POST /api/skills/update
+ * Body: { directory }
+ */
+router.post('/update', async (req, res) => {
+  try {
+    const { directory } = req.body;
+    if (!directory) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing directory'
+      });
+    }
+
+    const result = await skillService.updateSkillFromSource(directory);
+    res.json({
+      success: true,
+      ...result
+    });
+  } catch (err) {
+    console.error('[Skills API] Update skill error:', err);
     sendSkillError(res, err);
   }
 });
@@ -317,6 +419,32 @@ router.post('/enable', (req, res) => {
     });
   } catch (err) {
     console.error('[Skills API] Enable skill error:', err);
+    sendSkillError(res, err);
+  }
+});
+
+/**
+ * 重新安装技能
+ * POST /api/skills/reinstall
+ * Body: { directory }
+ */
+router.post('/reinstall', async (req, res) => {
+  try {
+    const { directory } = req.body;
+    if (!directory) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing directory'
+      });
+    }
+
+    const result = await skillService.reinstallSkill(directory);
+    res.json({
+      success: true,
+      ...result
+    });
+  } catch (err) {
+    console.error('[Skills API] Reinstall skill error:', err);
     sendSkillError(res, err);
   }
 });

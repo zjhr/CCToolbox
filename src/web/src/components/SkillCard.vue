@@ -27,12 +27,20 @@
             <span v-if="skill.isDisabled" class="disabled-dot">🔴</span>
             {{ skill.name }}
           </div>
-          <div class="skill-badges">
-            <n-tag v-if="skill.repoOwner" type="info" size="tiny" :bordered="false">
-              {{ skill.repoOwner }}
-            </n-tag>
-          </div>
+        <div class="skill-badges">
+          <n-tag v-if="skill.repoOwner" type="info" size="tiny" :bordered="false">
+            {{ skill.repoOwner }}
+          </n-tag>
+          <n-tag
+            v-if="showUpdateStatus"
+            :type="updateStatusType"
+            size="tiny"
+            :bordered="false"
+          >
+            {{ updateStatusLabel }}
+          </n-tag>
         </div>
+      </div>
 
         <div class="skill-desc" v-if="skill.description">
           {{ truncateDesc(skill.description) }}
@@ -56,76 +64,121 @@
         </div>
       </div>
 
-      <div class="card-actions">
-        <!-- 正常安装按钮 -->
-        <n-button
-          v-if="!skill.isDisabled && (skill.installedPlatforms?.length || 0) < 3"
-          size="tiny"
-          type="primary"
-          :loading="props.loading"
-          :disabled="props.loading || (!skill.installed && !skill.repoOwner)"
-          @click.stop="handleInstall"
-        >
-          安装
-        </n-button>
+      <div class="card-side">
+        <div class="card-actions">
+          <n-button
+            v-if="showUpdateAction"
+            size="tiny"
+            type="primary"
+            :loading="props.loading"
+            :disabled="props.loading"
+            :aria-label="`更新 ${skill.name} 技能`"
+            @click.stop="emit('update', skill)"
+          >
+            更新
+          </n-button>
+          <n-button
+            v-if="showReinstall"
+            size="tiny"
+            type="primary"
+            :loading="props.loading"
+            :disabled="props.loading"
+            :aria-label="`重新安装 ${skill.name} 技能`"
+            @click.stop="emit('reinstall', skill)"
+          >
+            重新安装
+          </n-button>
 
-        <!-- 已安装 -> 显示禁用 -->
-        <n-button
-          v-if="skill.installed && !skill.isDisabled"
-          size="tiny"
-          tertiary
-          type="warning"
-          :loading="props.loading"
-          :disabled="props.loading"
-          @click.stop="emit('disable', skill)"
-        >
-          禁用
-        </n-button>
+          <!-- 正常安装按钮 -->
+          <n-button
+            v-if="!skill.isDisabled && (skill.installed || skill.repoOwner) && (skill.installedPlatforms?.length || 0) < 3"
+            size="tiny"
+            type="primary"
+            :loading="props.loading"
+            :disabled="props.loading || (!skill.installed && !skill.repoOwner)"
+            @click.stop="handleInstall"
+          >
+            安装
+          </n-button>
 
-        <!-- 已禁用 -> 显示启用 -->
-        <n-button
-          v-if="skill.isDisabled"
-          size="tiny"
-          type="primary"
-          :loading="props.loading"
-          :disabled="props.loading"
-          @click.stop="emit('enable', skill)"
-        >
-          启用
-        </n-button>
+          <!-- 已安装 -> 显示禁用 -->
+          <n-button
+            v-if="skill.installed && !skill.isDisabled"
+            size="tiny"
+            tertiary
+            type="warning"
+            :loading="props.loading"
+            :disabled="props.loading"
+            @click.stop="emit('disable', skill)"
+          >
+            禁用
+          </n-button>
 
-        <!-- 已禁用且非仓库源 -> 显示删除 -->
-        <n-button
-          v-if="skill.isDisabled && !isRepoSkill"
-          size="tiny"
-          tertiary
-          type="error"
-          :loading="props.loading"
-          :disabled="props.loading"
-          @click.stop="emit('delete', skill)"
-        >
-          删除
-        </n-button>
+          <!-- 已禁用 -> 显示启用 -->
+          <n-button
+            v-if="skill.isDisabled"
+            size="tiny"
+            type="primary"
+            :loading="props.loading"
+            :disabled="props.loading"
+            @click.stop="emit('enable', skill)"
+          >
+            启用
+          </n-button>
 
-        <!-- 卸载按钮（仅在未禁用且已安装时显示） -->
-        <n-button
-          v-if="skill.installed && !skill.isDisabled"
-          size="tiny"
-          tertiary
-          type="error"
-          :loading="props.loading"
-          :disabled="props.loading"
-          @click.stop="handleUninstall"
+          <!-- 已禁用且非仓库源 -> 显示删除 -->
+          <n-button
+            v-if="showDeleteCache"
+            size="tiny"
+            tertiary
+            type="error"
+            :loading="props.loading"
+            :disabled="props.loading"
+            @click.stop="emit('delete', skill)"
+          >
+            {{ deleteLabel }}
+          </n-button>
+
+          <!-- 卸载按钮（仅在未禁用且已安装时显示） -->
+          <n-button
+            v-if="skill.installed && !skill.isDisabled"
+            size="tiny"
+            tertiary
+            type="error"
+            :loading="props.loading"
+            :disabled="props.loading"
+            @click.stop="handleUninstall"
+          >
+            卸载
+          </n-button>
+
+          <n-button
+            v-if="showUpdateConfig"
+            size="tiny"
+            text
+            :disabled="props.loading"
+            aria-label="设置更新"
+            @click.stop="emit('configure-update', skill)"
+          >
+            设置更新
+          </n-button>
+        </div>
+
+        <div
+          v-if="showReinstall"
+          class="card-countdown"
+          :style="{ color: reinstallCountdownColor }"
+          :aria-label="reinstallCountdownText"
         >
-          卸载
-        </n-button>
+          {{ reinstallCountdownText }}
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { NButton, NTag, NIcon } from 'naive-ui'
 import { FolderOutline, OpenOutline } from '@vicons/ionicons5'
 
@@ -152,9 +205,20 @@ const platformNames = {
   gemini: 'Gemini'
 }
 
-const emit = defineEmits(['install', 'uninstall', 'disable', 'enable', 'delete', 'click'])
+const emit = defineEmits([
+  'install',
+  'uninstall',
+  'disable',
+  'enable',
+  'delete',
+  'reinstall',
+  'update',
+  'configure-update',
+  'click'
+])
 
 const isRepoSkill = computed(() => Boolean(props.skill?.repoOwner || props.skill?.source?.type === 'repository'))
+const timeLeftMs = ref(0)
 
 function truncateDesc(desc) {
   if (!desc) return ''
@@ -168,6 +232,89 @@ function handleInstall() {
 function handleUninstall() {
   emit('uninstall', props.skill)
 }
+
+const reinstallExpiresAt = computed(() => {
+  if (!props.skill?.reinstallExpiresAt) return null
+  const timestamp = new Date(props.skill.reinstallExpiresAt).getTime()
+  return Number.isFinite(timestamp) ? timestamp : null
+})
+
+const canReinstall = computed(() => Boolean(props.skill?.canReinstall) && !props.skill?.installed)
+
+const showReinstall = computed(() => canReinstall.value && timeLeftMs.value > 0)
+
+const updateInfo = computed(() => props.skill?.update || null)
+const hasUpdateSource = computed(() => Boolean(updateInfo.value?.repoOwner && updateInfo.value?.repoName))
+const showUpdateConfig = computed(() => !isRepoSkill.value)
+const showUpdateAction = computed(() => (
+  showUpdateConfig.value
+  && Boolean(updateInfo.value?.hasUpdate)
+  && Boolean(props.skill?.installed)
+))
+const showUpdateStatus = computed(() => (
+  showUpdateConfig.value && Boolean(updateStatusLabel.value)
+))
+
+const updateStatusLabel = computed(() => {
+  if (!showUpdateConfig.value) return ''
+  if (!hasUpdateSource.value) return '未配置更新'
+  if (updateInfo.value?.error) return '检测失败'
+  if (updateInfo.value?.hasUpdate) return '有更新'
+  if (updateInfo.value?.lastCheckedAt) return '已是最新'
+  return '待检测'
+})
+
+const updateStatusType = computed(() => {
+  if (!showUpdateConfig.value) return 'default'
+  if (!hasUpdateSource.value) return 'default'
+  if (updateInfo.value?.error) return 'warning'
+  if (updateInfo.value?.hasUpdate) return 'error'
+  return updateInfo.value?.lastCheckedAt ? 'success' : 'warning'
+})
+
+const isReinstallExpired = computed(() => Boolean(reinstallExpiresAt.value) && timeLeftMs.value <= 0)
+
+const reinstallCountdownText = computed(() => {
+  if (!showReinstall.value) return ''
+  const totalMinutes = Math.max(0, Math.ceil(timeLeftMs.value / 60000))
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  return `可重新安装:剩余 ${hours} 小时 ${minutes} 分`
+})
+
+const reinstallCountdownColor = computed(() => (
+  timeLeftMs.value > 60 * 60 * 1000 ? '#4CAF50' : '#FF9800'
+))
+
+const showDeleteCache = computed(() => {
+  if (props.skill?.isDisabled) return true
+  if (!props.skill?.installed && props.skill?.cacheAvailable) return true
+  return false
+})
+
+const deleteLabel = computed(() => (
+  props.skill?.isDisabled ? '删除' : '删除缓存'
+))
+
+function updateCountdown() {
+  if (!reinstallExpiresAt.value) {
+    timeLeftMs.value = 0
+    return
+  }
+  timeLeftMs.value = Math.max(0, reinstallExpiresAt.value - Date.now())
+}
+
+watch(
+  () => [props.skill?.reinstallExpiresAt, props.skill?.canReinstall, props.skill?.installed],
+  (values, oldValues, onCleanup) => {
+    updateCountdown()
+    if (canReinstall.value && reinstallExpiresAt.value) {
+      const timer = setInterval(updateCountdown, 60 * 1000)
+      onCleanup(() => clearInterval(timer))
+    }
+  },
+  { immediate: true }
+)
 </script>
 
 <style scoped>
@@ -231,7 +378,7 @@ function handleUninstall() {
 
 .card-body {
   display: flex;
-  align-items: flex-start;
+  align-items: stretch;
   justify-content: space-between;
   gap: 12px;
   padding: 12px 14px;
@@ -309,6 +456,25 @@ function handleUninstall() {
   gap: 6px;
 }
 
+.card-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.card-actions :deep(.n-button):focus-visible {
+  outline: 2px solid #2080f0;
+  outline-offset: 2px;
+}
+
+.card-countdown {
+  font-size: 12px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
 /* ========== 响应式样式 ========== */
 
 /* 小屏幕 (640px - 768px) */
@@ -362,8 +528,20 @@ function handleUninstall() {
     justify-content: flex-start;
   }
 
+  .card-side {
+    width: 100%;
+    align-items: flex-end;
+    gap: 6px;
+  }
+
   .card-actions {
     justify-content: center;
+    width: 100%;
+  }
+
+  .card-actions :deep(.n-button) {
+    min-height: 44px;
+    min-width: 44px;
   }
 }
 
@@ -389,7 +567,8 @@ function handleUninstall() {
 
   .card-actions :deep(.n-button) {
     font-size: 10px;
-    height: 24px;
+    min-height: 44px;
+    min-width: 44px;
   }
 }
 </style>

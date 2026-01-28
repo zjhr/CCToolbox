@@ -13,8 +13,11 @@ const http = require('http');
 const { createWriteStream } = require('fs');
 const { pipeline } = require('stream/promises');
 const AdmZip = require('adm-zip');
+const semver = require('semver');
+const pLimit = require('p-limit');
 const { getAppDir } = require('../../utils/app-path-manager');
 const { loadConfig, expandHome } = require('../../config/loader');
+const { GitHubClient } = require('./github-client');
 
 // 默认仓库源 - 只预设官方仓库，其他由用户手动添加
 const DEFAULT_REPOS = [
@@ -28,6 +31,8 @@ const SKILL_CACHE_METADATA = 'metadata.json';
 const SKILL_CACHE_MIN_SPACE = 100 * 1024 * 1024; // 100MB
 const DEFAULT_SKILL_CACHE_TTL = 5 * 60 * 1000;
 const DEFAULT_SKILL_CACHE_MAX_SIZE = 100;
+const UPDATE_CHECK_CACHE_TTL = 5 * 60 * 1000;
+const SKILL_UPDATE_CONFIG_FILE = 'skill-updates.json';
 
 const CACHE_ERROR_MESSAGES = {
   ENOSPC: '缓存失败：磁盘空间不足，请清理磁盘后重试',
@@ -116,6 +121,7 @@ class SkillService {
     this.configDir = getAppDir();
     this.reposConfigPath = path.join(this.configDir, 'skill-repos.json');
     this.cachePath = path.join(this.configDir, 'skills-cache.json');
+    this.skillUpdateConfigPath = path.join(this.configDir, SKILL_UPDATE_CONFIG_FILE);
     this.skillCacheConfig = this.resolveSkillCacheConfig();
     this.skillCacheDir = this.skillCacheConfig.dir;
     this.cachedMetaCache = new LRUSkillCache(
@@ -130,9 +136,46 @@ class SkillService {
     this.skillsCache = null;
     this.cacheTime = 0;
     this.lastRepoWarnings = [];
+    this.githubClient = null;
+    this.uploadLimiter = pLimit(3);
+    this.updateCheckLimiter = pLimit(3);
+    this.skillLocks = new Map();
+    this.updateCheckCache = new Map();
+    this.skillUpdateCache = null;
 
     // 确保目录存在
     this.ensureDirs();
+  }
+
+  getGitHubClient() {
+    if (!this.githubClient) {
+      this.githubClient = new GitHubClient({ token: this.getGitHubToken() });
+    }
+    return this.githubClient;
+  }
+
+  async withSkillLock(directory, task) {
+    if (!directory) {
+      return task();
+    }
+    const key = this.getDirectoryKey(directory);
+    const pending = this.skillLocks.get(key);
+    let release = null;
+    const currentLock = new Promise(resolve => {
+      release = resolve;
+    });
+    this.skillLocks.set(key, currentLock);
+    if (pending) {
+      await pending;
+    }
+    try {
+      return await task();
+    } finally {
+      release();
+      if (this.skillLocks.get(key) === currentLock) {
+        this.skillLocks.delete(key);
+      }
+    }
   }
 
   ensureDirs() {
@@ -261,6 +304,27 @@ class SkillService {
   }
 
   /**
+   * 确保上传解压空间充足
+   */
+  ensureUploadSpace(baseDir, requiredBytes) {
+    if (!baseDir || typeof fs.statfsSync !== 'function' || !requiredBytes) return;
+    try {
+      const stats = fs.statfsSync(baseDir);
+      const available = stats.bavail * stats.bsize;
+      if (available < requiredBytes) {
+        throw buildSkillError('磁盘空间不足', 'ENOSPC');
+      }
+    } catch (err) {
+      if (err.code === 'EACCES') {
+        throw buildSkillError(CACHE_ERROR_MESSAGES.EACCES, 'EACCES');
+      }
+      if (err.code === 'ENOSPC') {
+        throw err;
+      }
+    }
+  }
+
+  /**
    * 查找本地已安装技能目录（存在 SKILL.md）
    */
   resolveInstalledSkillDir(platform, directory) {
@@ -281,6 +345,23 @@ class SkillService {
   isSkillDirPresent(platform, directory) {
     const candidates = this.getDirectoryCandidates(directory);
     return candidates.some(candidate => fs.existsSync(path.join(platform.dir, candidate)));
+  }
+
+  /**
+   * 清理残留的技能目录（目录存在但缺少 SKILL.md）
+   */
+  cleanupStaleSkillDirs(platform, directory) {
+    const candidates = this.getDirectoryCandidates(directory);
+    let removed = false;
+    for (const candidate of candidates) {
+      const skillDir = path.join(platform.dir, candidate);
+      if (!fs.existsSync(skillDir)) continue;
+      const skillMdPath = path.join(skillDir, 'SKILL.md');
+      if (fs.existsSync(skillMdPath)) continue;
+      fs.rmSync(skillDir, { recursive: true, force: true });
+      removed = true;
+    }
+    return removed;
   }
 
   /**
@@ -319,6 +400,78 @@ class SkillService {
    */
   saveRepos(repos) {
     fs.writeFileSync(this.reposConfigPath, JSON.stringify({ repos }, null, 2));
+  }
+
+  /**
+   * 读取技能更新源配置
+   */
+  loadSkillUpdateConfig() {
+    if (this.skillUpdateCache) {
+      return this.skillUpdateCache;
+    }
+
+    const config = { skills: {} };
+    try {
+      if (!fs.existsSync(this.skillUpdateConfigPath)) {
+        this.skillUpdateCache = config;
+        return config;
+      }
+      const raw = JSON.parse(fs.readFileSync(this.skillUpdateConfigPath, 'utf-8'));
+      const entries = raw && typeof raw === 'object'
+        ? (raw.skills && typeof raw.skills === 'object' ? raw.skills : raw)
+        : {};
+      for (const [key, value] of Object.entries(entries || {})) {
+        if (!value || typeof value !== 'object') continue;
+        const directory = value.directory || key;
+        if (!directory) continue;
+        const entryKey = this.getDirectoryKey(directory);
+        config.skills[entryKey] = {
+          directory,
+          repoOwner: value.repoOwner || value.owner || null,
+          repoName: value.repoName || value.name || null,
+          repoBranch: value.repoBranch || value.branch || null,
+          lastAppliedVersion: value.lastAppliedVersion || null,
+          lastCheckedAt: value.lastCheckedAt || null,
+          hasUpdate: Boolean(value.hasUpdate),
+          latestVersion: value.latestVersion || null,
+          error: value.error || null
+        };
+      }
+    } catch (err) {
+      console.warn('[SkillService] Load update config error:', err.message);
+    }
+
+    this.skillUpdateCache = config;
+    return config;
+  }
+
+  /**
+   * 保存技能更新源配置
+   */
+  saveSkillUpdateConfig(config) {
+    this.skillUpdateCache = config;
+    try {
+      fs.writeFileSync(this.skillUpdateConfigPath, JSON.stringify(config, null, 2));
+    } catch (err) {
+      console.warn('[SkillService] Save update config error:', err.message);
+    }
+  }
+
+  /**
+   * 合并技能更新状态到列表数据
+   */
+  applyUpdateStatus(skills) {
+    const config = this.loadSkillUpdateConfig();
+    const entries = config.skills || {};
+    for (const skill of skills) {
+      const key = this.getDirectoryKey(skill.directory);
+      const entry = entries[key];
+      if (entry && entry.repoOwner && entry.repoName) {
+        skill.update = { ...entry };
+      } else {
+        skill.update = null;
+      }
+    }
   }
 
   /**
@@ -444,6 +597,7 @@ class SkillService {
     if (!forceRefresh && this.skillsCache && (Date.now() - this.cacheTime < CACHE_TTL)) {
       this.mergeCachedSkills(this.skillsCache);
       this.updateInstallStatus(this.skillsCache);
+      this.applyUpdateStatus(this.skillsCache);
       return this.skillsCache;
     }
 
@@ -455,6 +609,7 @@ class SkillService {
         this.cacheTime = Date.now();
         this.mergeCachedSkills(this.skillsCache);
         this.updateInstallStatus(this.skillsCache);
+        this.applyUpdateStatus(this.skillsCache);
         return this.skillsCache;
       }
     }
@@ -507,6 +662,7 @@ class SkillService {
     // 去重并排序
     this.deduplicateSkills(skills);
     skills.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+    this.applyUpdateStatus(skills);
 
     // 更新缓存
     this.skillsCache = skills;
@@ -593,7 +749,11 @@ class SkillService {
       source: data.source || null,
       metadata: data.metadata || {},
       isDisabled: Boolean(data.isDisabled),
-      cacheAvailable: Boolean(data.cacheAvailable !== false)
+      cacheAvailable: Boolean(data.cacheAvailable !== false),
+      uninstalledAt: data.uninstalledAt || null,
+      uninstalledPlatforms: Array.isArray(data.uninstalledPlatforms) ? data.uninstalledPlatforms : [],
+      canReinstall: Boolean(data.canReinstall),
+      reinstallExpiresAt: data.reinstallExpiresAt || null
     };
   }
 
@@ -664,6 +824,9 @@ class SkillService {
         skills[index].isDisabled = cached.isDisabled;
         skills[index].cacheAvailable = cached.cacheAvailable;
         skills[index].cachedAt = cached.cachedAt;
+        skills[index].uninstalledAt = cached.uninstalledAt || null;
+        skills[index].canReinstall = Boolean(cached.canReinstall);
+        skills[index].reinstallExpiresAt = cached.reinstallExpiresAt || null;
         continue;
       }
 
@@ -684,6 +847,9 @@ class SkillService {
         isDisabled: cached.isDisabled,
         cacheAvailable: cached.cacheAvailable,
         cachedAt: cached.cachedAt,
+        uninstalledAt: cached.uninstalledAt || null,
+        canReinstall: Boolean(cached.canReinstall),
+        reinstallExpiresAt: cached.reinstallExpiresAt || null,
         source: cached.source || null,
         readmeUrl: repoOwner && repoName
           ? `https://github.com/${repoOwner}/${repoName}/tree/${repoBranch}/${cached.directory}`
@@ -713,6 +879,18 @@ class SkillService {
         const metadata = this.readCacheMetadata(relativeDir, { removeOnCorrupt: true });
         if (!metadata) continue;
         metadata.cacheAvailable = this.hasCacheFiles(cacheDir);
+        if (
+          metadata.cacheAvailable
+          && !metadata.isDisabled
+          && !metadata.uninstalledAt
+          && this.getInstalledPlatforms(metadata.directory).length === 0
+        ) {
+          const uninstalledAt = new Date().toISOString();
+          metadata.uninstalledAt = uninstalledAt;
+          metadata.reinstallExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+          metadata.canReinstall = true;
+          this.writeCacheMetadata(relativeDir, metadata);
+        }
         result.push(metadata);
       } catch (err) {
         if (err.code !== 'CACHE_CORRUPT') {
@@ -758,7 +936,11 @@ class SkillService {
         installedPlatforms,
         skill: options.skill,
         isDisabled: options.isDisabled,
-        cacheAvailable: true
+        cacheAvailable: true,
+        uninstalledAt: options.uninstalledAt || null,
+        uninstalledPlatforms: options.uninstalledPlatforms || [],
+        canReinstall: options.canReinstall || false,
+        reinstallExpiresAt: options.reinstallExpiresAt || null
       });
 
       this.writeCacheMetadata(directory, metadata);
@@ -774,7 +956,7 @@ class SkillService {
   /**
    * 从缓存恢复技能
    */
-  restoreCache(directory, platforms = null) {
+  restoreCache(directory, platforms = null, options = {}) {
     const metadata = this.readCacheMetadata(directory, { removeOnCorrupt: true });
     if (!metadata) {
       throw buildSkillError('缓存不存在，无法启用', 'CACHE_NOT_FOUND');
@@ -793,10 +975,20 @@ class SkillService {
       throw buildSkillError('恢复失败：未找到可恢复的平台', 'INVALID_PLATFORM');
     }
 
+    const allowCleanup = options.allowCleanup === true;
+
     // 目标位置已存在则阻止恢复
     for (const platformId of targetPlatforms) {
       const platform = this.platforms[platformId];
-      if (platform && this.isSkillDirPresent(platform, directory)) {
+      if (!platform) continue;
+      const installedDir = this.resolveInstalledSkillDir(platform, directory);
+      if (installedDir) {
+        throw buildSkillError(CACHE_ERROR_MESSAGES.EEXIST, 'EEXIST');
+      }
+      if (allowCleanup) {
+        this.cleanupStaleSkillDirs(platform, directory);
+      }
+      if (this.isSkillDirPresent(platform, directory)) {
         throw buildSkillError(CACHE_ERROR_MESSAGES.EEXIST, 'EEXIST');
       }
     }
@@ -854,13 +1046,18 @@ class SkillService {
     if (installedPlatforms.length === 0) {
       throw buildSkillError('技能未安装，无法禁用', 'NOT_INSTALLED');
     }
+    const existingMetadata = this.readCacheMetadata(directory) || {};
 
     if (!options.skipCache) {
       this.cacheSkill(directory, {
         installedPlatforms,
         skill: options.skill,
         isDisabled: true,
-        allowFallback: true
+        allowFallback: true,
+        uninstalledAt: existingMetadata.uninstalledAt || null,
+        uninstalledPlatforms: existingMetadata.uninstalledPlatforms || [],
+        canReinstall: existingMetadata.canReinstall || false,
+        reinstallExpiresAt: existingMetadata.reinstallExpiresAt || null
       });
     } else {
       this.ensureCacheDir();
@@ -872,7 +1069,11 @@ class SkillService {
         installedPlatforms,
         skill: options.skill,
         isDisabled: true,
-        cacheAvailable: false
+        cacheAvailable: false,
+        uninstalledAt: existingMetadata.uninstalledAt || null,
+        uninstalledPlatforms: existingMetadata.uninstalledPlatforms || [],
+        canReinstall: existingMetadata.canReinstall || false,
+        reinstallExpiresAt: existingMetadata.reinstallExpiresAt || null
       });
       try {
         const cacheDir = this.resolveCacheDirectory(directory);
@@ -904,6 +1105,54 @@ class SkillService {
       success: true,
       ...result
     };
+  }
+
+  /**
+   * 重新安装技能（从缓存恢复，24 小时内有效）
+   */
+  reinstallSkill(directory) {
+    return this.withSkillLock(directory, () => {
+      const metadata = this.readCacheMetadata(directory, { removeOnCorrupt: true });
+      if (!metadata || !metadata.cacheAvailable) {
+        throw buildSkillError('缓存不存在，无法重新安装', 'CACHE_NOT_FOUND');
+      }
+
+      if (!metadata.canReinstall || !metadata.reinstallExpiresAt) {
+        throw buildSkillError('重新安装已过期', 'REINSTALL_EXPIRED');
+      }
+
+      const expiresAt = new Date(metadata.reinstallExpiresAt).getTime();
+      if (!Number.isFinite(expiresAt) || Date.now() > expiresAt) {
+        this.writeCacheMetadata(directory, {
+          ...metadata,
+          canReinstall: false,
+          uninstalledAt: null,
+          reinstallExpiresAt: null,
+          uninstalledPlatforms: []
+        });
+        throw buildSkillError('重新安装已过期', 'REINSTALL_EXPIRED');
+      }
+
+      const result = this.restoreCache(
+        directory,
+        metadata.installedPlatforms || [],
+        { allowCleanup: true }
+      );
+      this.writeCacheMetadata(directory, {
+        ...metadata,
+        isDisabled: false,
+        cacheAvailable: true,
+        canReinstall: false,
+        uninstalledAt: null,
+        reinstallExpiresAt: null,
+        uninstalledPlatforms: []
+      });
+
+      return {
+        success: true,
+        ...result
+      };
+    });
   }
 
   /**
@@ -986,7 +1235,11 @@ class SkillService {
         description: metadata.description || null
       },
       isDisabled: Boolean(options.isDisabled),
-      cacheAvailable: options.cacheAvailable !== false
+      cacheAvailable: options.cacheAvailable !== false,
+      uninstalledAt: options.uninstalledAt || null,
+      uninstalledPlatforms: Array.isArray(options.uninstalledPlatforms) ? options.uninstalledPlatforms : [],
+      canReinstall: Boolean(options.canReinstall),
+      reinstallExpiresAt: options.reinstallExpiresAt || null
     };
   }
 
@@ -1002,6 +1255,416 @@ class SkillService {
     } catch (err) {
       return {};
     }
+  }
+
+  /**
+   * 校验 ZIP 内容安全性
+   */
+  validateZipEntries(zip) {
+    const entries = zip.getEntries();
+    if (entries.length === 0) {
+      throw buildSkillError('ZIP 文件内容为空', 'INVALID_ZIP');
+    }
+    if (entries.length > 1000) {
+      throw buildSkillError('ZIP 文件过大，请减少文件数量', 'INVALID_ZIP');
+    }
+    let totalSize = 0;
+    let compressedSize = 0;
+    for (const entry of entries) {
+      const entryName = entry.entryName.replace(/\\/g, '/');
+      if (entryName.startsWith('/') || entryName.includes('..')) {
+        throw buildSkillError('ZIP 文件路径非法', 'INVALID_ZIP');
+      }
+      totalSize += entry.header?.size || 0;
+      compressedSize += entry.header?.compressedSize || 0;
+      if (totalSize > 1024 * 1024 * 1024) {
+        throw buildSkillError('ZIP 文件内容过大，请检查内容大小', 'INVALID_ZIP');
+      }
+      if (compressedSize > 0 && totalSize / compressedSize > 100) {
+        throw buildSkillError('ZIP 文件压缩比异常，可能存在风险', 'INVALID_ZIP');
+      }
+    }
+    return totalSize;
+  }
+
+  /**
+   * 查找包含 SKILL.md 的目录
+   */
+  findSkillRootDir(baseDir, options = {}) {
+    const includeHidden = options.includeHidden === true;
+    const stack = [baseDir];
+    while (stack.length > 0) {
+      const current = stack.pop();
+      const skillMdPath = path.join(current, 'SKILL.md');
+      if (fs.existsSync(skillMdPath)) {
+        return current;
+      }
+      let entries = [];
+      try {
+        entries = fs.readdirSync(current, { withFileTypes: true });
+      } catch (err) {
+        continue;
+      }
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        if (!includeHidden && entry.name.startsWith('.')) continue;
+        if (includeHidden && (entry.name === '.git' || entry.name === 'node_modules')) continue;
+        if (entry.name.startsWith('.DS_Store')) continue;
+          stack.push(path.join(current, entry.name));
+      }
+    }
+    return null;
+  }
+
+  /**
+   * 在仓库目录中查找指定技能目录
+   */
+  findSkillDirInRepo(repoDir, directory) {
+    const candidates = this.getDirectoryCandidates(directory)
+      .map(item => item.replace(/\\/g, '/'));
+
+    for (const candidate of candidates) {
+      const fullPath = path.join(repoDir, candidate);
+      const skillMdPath = path.join(fullPath, 'SKILL.md');
+      if (fs.existsSync(skillMdPath)) {
+        return fullPath;
+      }
+    }
+
+    const targetKey = this.getDirectoryKey(directory);
+    const stack = [repoDir];
+    while (stack.length > 0) {
+      const current = stack.pop();
+      const skillMdPath = path.join(current, 'SKILL.md');
+      if (fs.existsSync(skillMdPath)) {
+        const relPath = path.relative(repoDir, current).replace(/\\/g, '/');
+        if (this.getDirectoryKey(relPath) === targetKey) {
+          return current;
+        }
+      }
+
+      let entries = [];
+      try {
+        entries = fs.readdirSync(current, { withFileTypes: true });
+      } catch (err) {
+        continue;
+      }
+
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        if (entry.name.startsWith('.')) continue;
+        if (entry.name === 'node_modules') continue;
+        stack.push(path.join(current, entry.name));
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * 归一化上传的相对路径
+   */
+  normalizeUploadRelativePath(input) {
+    if (!input) return '';
+    const normalized = input.replace(/\\/g, '/').replace(/^\/+/, '');
+    if (!normalized || normalized.includes('..')) return '';
+    return normalized;
+  }
+
+  /**
+   * 按上传文件列表复制目录内容（用于目录上传的兜底）
+   */
+  copyUploadedDirectoryFiles(uploadBaseDir, skillDir, files, dest) {
+    let skillRelPath = this.normalizeUploadRelativePath(path.relative(uploadBaseDir, skillDir));
+    if (skillRelPath === '.' || !skillRelPath) {
+      skillRelPath = '';
+    }
+
+    let copied = 0;
+    for (const file of files) {
+      let relativePath = this.normalizeUploadRelativePath(file.originalname || '');
+      if (!relativePath) {
+        relativePath = this.normalizeUploadRelativePath(path.relative(uploadBaseDir, file.path));
+      }
+      if (!relativePath) continue;
+      if (skillRelPath && !relativePath.startsWith(`${skillRelPath}/`)) {
+        relativePath = `${skillRelPath}/${relativePath}`;
+      }
+      const subPath = skillRelPath ? relativePath.slice(skillRelPath.length + 1) : relativePath;
+      if (!subPath) continue;
+      const destPath = path.join(dest, subPath);
+      fs.mkdirSync(path.dirname(destPath), { recursive: true });
+      fs.copyFileSync(file.path, destPath);
+      copied += 1;
+    }
+
+    if (copied === 0) {
+      this.copyDirRecursive(skillDir, dest);
+    }
+  }
+
+  /**
+   * 解析仓库输入
+   */
+  parseRepoInput(repo) {
+    if (!repo || typeof repo !== 'string') return null;
+    let input = repo.trim();
+    if (!input) return null;
+    let branch = null;
+
+    if (input.includes('#')) {
+      const parts = input.split('#');
+      input = parts[0];
+      branch = parts[1] ? parts[1].trim() : null;
+    }
+
+    if (input.startsWith('http://') || input.startsWith('https://')) {
+      try {
+        const url = new URL(input);
+        const segments = url.pathname.replace(/^\/+/, '').replace(/\.git$/, '').split('/');
+        if (segments.length >= 2) {
+          input = `${segments[0]}/${segments[1]}`;
+          if (segments[2] === 'tree' && segments[3]) {
+            branch = segments[3];
+          }
+        } else {
+          return null;
+        }
+      } catch (err) {
+        return null;
+      }
+    }
+
+    const match = input.match(/^([^/]+)\/([^/]+)$/);
+    if (!match) return null;
+    return {
+      owner: match[1],
+      name: match[2],
+      branch
+    };
+  }
+
+  /**
+   * 获取仓库最新版本
+   */
+  async getLatestRepoVersion(repoInfo, options = {}) {
+    if (!repoInfo?.owner || !repoInfo?.name) {
+      return null;
+    }
+
+    const cacheKey = `${repoInfo.owner}/${repoInfo.name}`.toLowerCase();
+    const cached = this.updateCheckCache.get(cacheKey);
+    if (!options.force && cached?.latestVersion && (Date.now() - cached.timestamp < UPDATE_CHECK_CACHE_TTL)) {
+      return cached.latestVersion;
+    }
+
+    const githubClient = this.getGitHubClient();
+    let tags = [];
+    try {
+      tags = await githubClient.fetchUpdates(repoInfo.owner, repoInfo.name);
+    } catch (err) {
+      throw buildSkillError('更新检测失败，请稍后重试', 'UPDATE_CHECK_FAILED');
+    }
+
+    const versions = tags
+      .map(tag => {
+        const raw = tag.name;
+        const valid = semver.valid(raw);
+        if (valid) return valid;
+        const coerced = semver.coerce(raw);
+        return coerced ? coerced.version : null;
+      })
+      .filter(Boolean)
+      .sort(semver.rcompare);
+
+    if (versions.length === 0) {
+      return null;
+    }
+
+    const latestVersion = versions[0];
+    this.updateCheckCache.set(cacheKey, {
+      ...(cached || {}),
+      latestVersion,
+      timestamp: Date.now()
+    });
+    return latestVersion;
+  }
+
+  /**
+   * 获取本地技能版本
+   */
+  getLocalSkillVersion(directory) {
+    const installedPlatforms = this.getInstalledPlatforms(directory);
+    const sourcePlatform = installedPlatforms.length > 0
+      ? this.platforms[installedPlatforms[0]]
+      : null;
+    const installedDir = sourcePlatform
+      ? this.resolveInstalledSkillDir(sourcePlatform, directory)
+      : null;
+    const localMeta = installedDir ? this.readSkillMetadataFromDir(installedDir) : {};
+    const localVersion = semver.valid(localMeta.version)
+      || (semver.coerce(localMeta.version)?.version)
+      || '0.0.0';
+    return { localVersion, installedPlatforms };
+  }
+
+  /**
+   * 刷新技能更新状态
+   */
+  async refreshSkillUpdateStatus(entry, options = {}) {
+    if (!entry || !entry.repoOwner || !entry.repoName) {
+      return entry;
+    }
+
+    const checkedAt = new Date().toISOString();
+    try {
+      const latestVersion = options.latestVersion ?? await this.getLatestRepoVersion({
+        owner: entry.repoOwner,
+        name: entry.repoName
+      }, options);
+      const { localVersion, installedPlatforms } = this.getLocalSkillVersion(entry.directory);
+      const appliedVersion = semver.valid(entry.lastAppliedVersion)
+        || (semver.coerce(entry.lastAppliedVersion)?.version);
+      entry.latestVersion = latestVersion || null;
+      if (appliedVersion && latestVersion && semver.gte(appliedVersion, latestVersion)) {
+        entry.hasUpdate = false;
+      } else {
+        entry.hasUpdate = Boolean(
+          latestVersion
+          && installedPlatforms.length > 0
+          && semver.gt(latestVersion, localVersion)
+        );
+      }
+      entry.lastCheckedAt = checkedAt;
+      entry.error = null;
+    } catch (err) {
+      entry.lastCheckedAt = checkedAt;
+      entry.hasUpdate = false;
+      entry.error = err.message;
+    }
+
+    return entry;
+  }
+
+  /**
+   * 设置技能更新源
+   */
+  async setSkillUpdateSource(directory, repoInput) {
+    const normalized = this.normalizeInstallDirectory(directory) || directory;
+    if (!normalized) {
+      throw buildSkillError('缺少技能目录', 'MISSING_DIRECTORY');
+    }
+
+    const config = this.loadSkillUpdateConfig();
+    const key = this.getDirectoryKey(normalized);
+
+    if (!repoInput || !String(repoInput).trim()) {
+      delete config.skills[key];
+      this.saveSkillUpdateConfig(config);
+      if (this.skillsCache) {
+        this.applyUpdateStatus(this.skillsCache);
+      }
+      return { removed: true };
+    }
+
+    const repoInfo = this.parseRepoInput(repoInput);
+    if (!repoInfo) {
+      throw buildSkillError('仓库地址格式不正确', 'INVALID_REPO_URL');
+    }
+
+    const existing = config.skills[key];
+    const entry = {
+      directory: normalized,
+      repoOwner: repoInfo.owner,
+      repoName: repoInfo.name,
+      repoBranch: repoInfo.branch
+        || (existing?.repoOwner === repoInfo.owner && existing?.repoName === repoInfo.name
+          ? existing.repoBranch
+          : null),
+      lastAppliedVersion: null,
+      lastCheckedAt: null,
+      hasUpdate: false,
+      latestVersion: null,
+      error: null
+    };
+
+    config.skills[key] = entry;
+    await this.refreshSkillUpdateStatus(entry);
+    this.saveSkillUpdateConfig(config);
+    if (this.skillsCache) {
+      this.applyUpdateStatus(this.skillsCache);
+    }
+    return entry;
+  }
+
+  /**
+   * 启动时检查技能更新
+   */
+  async checkSkillUpdatesOnStartup() {
+    const config = this.loadSkillUpdateConfig();
+    const entries = Object.values(config.skills || {})
+      .filter(item => item.repoOwner && item.repoName);
+    if (entries.length === 0) {
+      return { success: true, checked: 0 };
+    }
+
+    const limiter = this.updateCheckLimiter || ((fn) => fn());
+    const tasks = entries.map(entry => limiter(async () => {
+      await this.refreshSkillUpdateStatus(entry, { force: true });
+    }));
+    await Promise.allSettled(tasks);
+
+    this.saveSkillUpdateConfig(config);
+    if (this.skillsCache) {
+      this.applyUpdateStatus(this.skillsCache);
+    }
+    return { success: true, checked: entries.length };
+  }
+
+  /**
+   * 按更新源执行技能更新
+   */
+  async updateSkillFromSource(directory) {
+    const normalized = this.normalizeInstallDirectory(directory) || directory;
+    if (!normalized) {
+      throw buildSkillError('缺少技能目录', 'MISSING_DIRECTORY');
+    }
+
+    const config = this.loadSkillUpdateConfig();
+    const key = this.getDirectoryKey(normalized);
+    const entry = config.skills[key];
+    if (!entry || !entry.repoOwner || !entry.repoName) {
+      throw buildSkillError('未配置更新源', 'UPDATE_SOURCE_NOT_FOUND');
+    }
+
+    return this.withSkillLock(normalized, async () => {
+      const targetPlatforms = this.getInstalledPlatforms(normalized);
+      if (targetPlatforms.length === 0) {
+        throw buildSkillError('技能未安装，无法更新', 'SKILL_NOT_INSTALLED');
+      }
+
+      const repo = {
+        owner: entry.repoOwner,
+        name: entry.repoName,
+        branch: entry.repoBranch || 'main'
+      };
+
+      const latestVersion = await this.getLatestRepoVersion(repo, { force: true });
+      this.uninstallSkill(normalized, targetPlatforms, { skipCache: true });
+      const result = await this.installSkill(normalized, repo, targetPlatforms);
+      if (latestVersion) {
+        entry.lastAppliedVersion = latestVersion;
+      }
+      await this.refreshSkillUpdateStatus(entry, { force: true, latestVersion });
+      this.saveSkillUpdateConfig(config);
+      if (this.skillsCache) {
+        this.applyUpdateStatus(this.skillsCache);
+      }
+      return {
+        success: true,
+        ...result
+      };
+    });
   }
 
   /**
@@ -1537,6 +2200,200 @@ class SkillService {
   }
 
   /**
+   * 上传并安装技能（ZIP 或文件夹）
+   * @param {object|object[]} file - Multer 上传对象
+   * @param {object} options - 选项 { force, platforms, uploadType, uploadBaseDir }
+   */
+  async uploadSkill(file, options = {}) {
+    const files = Array.isArray(file) ? file : (file ? [file] : []);
+    if (files.length === 0) {
+      throw buildSkillError('未检测到上传文件', 'NO_FILE');
+    }
+
+    const uploadType = options.uploadType
+      || (files.length === 1 && path.extname(files[0].originalname || '').toLowerCase() === '.zip'
+        ? 'zip'
+        : 'directory');
+    const uploadBaseDir = options.uploadBaseDir || path.dirname(files[0].path);
+    const force = Boolean(options.force);
+
+    let workDir = uploadBaseDir;
+    try {
+      if (uploadType === 'zip') {
+        const zipFile = files[0];
+        let zip = null;
+        try {
+          zip = new AdmZip(zipFile.path);
+        } catch (err) {
+          throw buildSkillError('ZIP 文件损坏,请检查文件完整性', 'INVALID_ZIP');
+        }
+        const totalSize = this.validateZipEntries(zip);
+        this.ensureUploadSpace(uploadBaseDir, totalSize);
+
+        const extractDir = path.join(uploadBaseDir, 'extract');
+        fs.mkdirSync(extractDir, { recursive: true });
+        zip.extractAllTo(extractDir, true);
+        workDir = extractDir;
+      } else {
+        if (files.length > 1000) {
+          throw buildSkillError('上传文件过多，请减少文件数量', 'INVALID_ZIP');
+        }
+        const totalSize = files.reduce((sum, item) => sum + (item.size || 0), 0);
+        this.ensureUploadSpace(uploadBaseDir, totalSize);
+        if (totalSize > 1024 * 1024 * 1024) {
+          throw buildSkillError('解压后文件过大，请检查内容大小', 'INVALID_ZIP');
+        }
+      }
+
+      const skillDir = this.findSkillRootDir(workDir, { includeHidden: true });
+      if (!skillDir) {
+        throw buildSkillError('未找到 SKILL.md', 'NO_SKILL_MD');
+      }
+
+      const metadata = this.readSkillMetadataFromDir(skillDir);
+      let directory = path.relative(workDir, skillDir).replace(/\\/g, '/');
+      if (!directory || directory === '.') {
+        const originalName = files[0]?.originalname || '';
+        directory = path.basename(originalName, path.extname(originalName)) || directory;
+      }
+      if (!directory || directory.includes('..')) {
+        throw buildSkillError('技能目录非法', 'INVALID_ZIP');
+      }
+
+      const installDirectory = this.normalizeInstallDirectory(directory) || directory;
+      const installTask = async () => {
+        const installedBefore = this.getInstalledPlatforms(installDirectory);
+        const targetPlatforms = Array.isArray(options.platforms) && options.platforms.length > 0
+          ? options.platforms
+          : (installedBefore.length > 0 ? installedBefore : ['claude']);
+
+        if (installedBefore.length > 0) {
+          const sourcePlatform = this.platforms[installedBefore[0]];
+          const installedDir = sourcePlatform
+            ? this.resolveInstalledSkillDir(sourcePlatform, installDirectory)
+            : null;
+          const installedMeta = installedDir ? this.readSkillMetadataFromDir(installedDir) : {};
+          const localVersion = semver.valid(installedMeta.version) || '0.0.0';
+          const incomingVersion = semver.valid(metadata.version) || '0.0.0';
+
+          if (semver.eq(localVersion, incomingVersion) && !force) {
+            throw buildSkillError('版本相同,是否强制覆盖', 'VERSION_SAME');
+          }
+
+          this.uninstallSkill(installDirectory, targetPlatforms, { skipCache: true });
+        }
+
+        const installedPlatforms = [];
+        for (const platformId of targetPlatforms) {
+          const platform = this.platforms[platformId];
+          if (!platform) {
+            console.warn(`[SkillService] Unknown platform: ${platformId}`);
+            continue;
+          }
+          const dest = path.join(platform.dir, installDirectory);
+          this.ensurePlatformDir(platform.dir);
+          if (fs.existsSync(dest)) {
+            fs.rmSync(dest, { recursive: true, force: true });
+          }
+          fs.mkdirSync(dest, { recursive: true });
+          if (uploadType === 'directory') {
+            this.copyUploadedDirectoryFiles(uploadBaseDir, skillDir, files, dest);
+          } else {
+            this.copyDirRecursive(skillDir, dest);
+          }
+          installedPlatforms.push(platformId);
+        }
+
+        this.skillsCache = null;
+        this.cacheTime = 0;
+
+        return {
+          success: true,
+          directory: installDirectory,
+          installedPlatforms,
+          metadata: {
+            name: metadata.name || directory,
+            description: metadata.description || '',
+            version: metadata.version || null
+          }
+        };
+      };
+
+      return await this.uploadLimiter(() => this.withSkillLock(installDirectory, installTask));
+    } catch (err) {
+      if (err instanceof Error && !err.code) {
+        err.code = 'UPLOAD_FAILED';
+      }
+      throw err;
+    } finally {
+      try {
+        if (uploadBaseDir && fs.existsSync(uploadBaseDir)) {
+          fs.rmSync(uploadBaseDir, { recursive: true, force: true });
+        }
+      } catch (err) {
+        // 忽略清理错误
+      }
+    }
+  }
+
+  /**
+   * 检查技能更新
+   * @param {string} repo - GitHub 仓库地址
+   */
+  async checkUpdate(repo) {
+    const repoInfo = this.parseRepoInput(repo);
+    if (!repoInfo) {
+      throw buildSkillError('仓库地址格式不正确', 'INVALID_REPO_URL');
+    }
+
+    const cacheKey = `${repoInfo.owner}/${repoInfo.name}`.toLowerCase();
+    const cached = this.updateCheckCache.get(cacheKey);
+    if (cached && (Date.now() - cached.timestamp < UPDATE_CHECK_CACHE_TTL)) {
+      return cached.updates;
+    }
+
+    const latestVersion = await this.getLatestRepoVersion(repoInfo, { force: true });
+    if (!latestVersion) {
+      return [];
+    }
+    const skills = await this.listSkills(true);
+    const installedSkills = skills.filter(skill =>
+      skill.installed && skill.repoOwner === repoInfo.owner && skill.repoName === repoInfo.name
+    );
+
+    const updates = [];
+    for (const skill of installedSkills) {
+      const installedPlatforms = this.getInstalledPlatforms(skill.directory);
+      const sourcePlatform = installedPlatforms.length > 0 ? this.platforms[installedPlatforms[0]] : null;
+      const installedDir = sourcePlatform
+        ? this.resolveInstalledSkillDir(sourcePlatform, skill.directory)
+        : null;
+      const localMeta = installedDir ? this.readSkillMetadataFromDir(installedDir) : {};
+      const localVersion = semver.valid(localMeta.version) || '0.0.0';
+
+      if (semver.gt(latestVersion, localVersion)) {
+        updates.push({
+          directory: skill.directory,
+          name: skill.name,
+          currentVersion: localVersion,
+          latestVersion,
+          repoOwner: repoInfo.owner,
+          repoName: repoInfo.name,
+          repoBranch: skill.repoBranch || 'main',
+          installedPlatforms
+        });
+      }
+    }
+
+    this.updateCheckCache.set(cacheKey, {
+      latestVersion,
+      updates,
+      timestamp: Date.now()
+    });
+    return updates;
+  }
+
+  /**
    * 安装技能
    * @param {string} directory - 技能目录名
    * @param {object|null} repo - 仓库信息，为 null 时使用本地复制模式
@@ -1577,7 +2434,14 @@ class SkillService {
       }
 
       const repoDir = path.join(tempDir, extractedDirs[0]);
-      const sourceDir = path.join(repoDir, directory);
+      let sourceDir = path.join(repoDir, directory);
+
+      if (!fs.existsSync(sourceDir)) {
+        const resolved = this.findSkillDirInRepo(repoDir, directory);
+        if (resolved) {
+          sourceDir = resolved;
+        }
+      }
 
       if (!fs.existsSync(sourceDir)) {
         throw new Error(`Skill directory not found: ${directory}`);
@@ -1899,14 +2763,22 @@ ${content}
       && targetPlatforms.every(p => installedBefore.includes(p));
 
     let cacheResult = null;
+    let uninstalledAt = null;
+    let reinstallExpiresAt = null;
     if (isLastUninstall && !options.skipCache) {
+      uninstalledAt = new Date().toISOString();
+      reinstallExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
       const cachedSkill = this.skillsCache?.find(s =>
         this.getDirectoryKey(s.directory) === this.getDirectoryKey(directory)
       );
       cacheResult = this.cacheSkill(directory, {
         installedPlatforms: installedBefore,
         skill: options.skill || cachedSkill,
-        allowFallback: true
+        allowFallback: true,
+        uninstalledAt,
+        uninstalledPlatforms: installedBefore,
+        canReinstall: true,
+        reinstallExpiresAt
       });
     }
 
@@ -1956,6 +2828,8 @@ ${content}
       message,
       cached: Boolean(cacheResult),
       cache: cacheResult,
+      uninstalledAt,
+      reinstallExpiresAt,
       uninstalledPlatforms,
       notInstalledPlatforms
     };
@@ -1996,6 +2870,45 @@ ${content}
     }
 
     // 如果本地没有，尝试从缓存的技能列表中获取仓库信息
+    const cachedMeta = this.readCacheMetadata(directory, { removeOnCorrupt: true });
+    if (cachedMeta) {
+      const cacheDir = this.resolveCacheDirectory(directory);
+      const cacheSkillMd = path.join(cacheDir, 'SKILL.md');
+      if (cachedMeta.cacheAvailable && fs.existsSync(cacheSkillMd)) {
+        const content = fs.readFileSync(cacheSkillMd, 'utf-8');
+        const metadata = this.parseSkillMd(content);
+        const bodyMatch = content.match(/^---\s*\n[\s\S]*?\n---\s*\n([\s\S]*)$/);
+        const body = bodyMatch ? bodyMatch[1].trim() : content;
+        const sourceType = cachedMeta.source?.type === 'repository' ? 'github' : 'local';
+        return {
+          directory,
+          name: metadata.name || cachedMeta.metadata?.name || directory,
+          description: metadata.description || cachedMeta.metadata?.description || '',
+          content: body,
+          fullContent: content,
+          installed: false,
+          installedPlatforms: [],
+          source: sourceType,
+          repoOwner: cachedMeta.source?.repoOwner || null,
+          repoName: cachedMeta.source?.repoName || null
+        };
+      }
+
+      const sourceType = cachedMeta.source?.type === 'repository' ? 'github' : 'local';
+      return {
+        directory,
+        name: cachedMeta.metadata?.name || directory,
+        description: cachedMeta.metadata?.description || '',
+        content: '',
+        fullContent: '',
+        installed: false,
+        installedPlatforms: [],
+        source: sourceType,
+        repoOwner: cachedMeta.source?.repoOwner || null,
+        repoName: cachedMeta.source?.repoName || null
+      };
+    }
+
     const cachedSkill = this.skillsCache?.find(s => s.directory === directory);
 
     if (cachedSkill && cachedSkill.repoOwner && cachedSkill.repoName) {

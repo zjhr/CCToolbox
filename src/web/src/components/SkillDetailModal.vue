@@ -63,10 +63,18 @@
       <div class="modal-footer">
         <n-button @click="handleClose">关闭</n-button>
         <n-button
-          v-if="detail"
+          v-if="detail && showReinstall"
+          type="primary"
+          :loading="reinstalling"
+          @click="handleReinstall"
+        >
+          重新安装
+        </n-button>
+        <n-button
+          v-else-if="detail && (detail.installed || props.skill?.repoOwner)"
           type="primary"
           :loading="installing"
-          :disabled="installing || detail.installedPlatforms?.length >= 3 || (!detail.installed && !props.skill?.repoOwner)"
+          :disabled="installing || detail.installedPlatforms?.length >= 3"
           @click="handleInstall"
         >
           安装
@@ -98,7 +106,7 @@
 import { ref, computed, watch } from 'vue'
 import { NModal, NButton, NIcon, NTag, NSpin } from 'naive-ui'
 import { AlertCircleOutline, FolderOutline, CopyOutline } from '@vicons/ionicons5'
-import { getSkillDetail, installSkill, uninstallSkill, getPlatforms } from '../api/skills'
+import { getSkillDetail, installSkill, uninstallSkill, reinstallSkill, getPlatforms } from '../api/skills'
 import message from '../utils/message'
 import { marked } from 'marked'
 import SkillPlatformModal from './SkillPlatformModal.vue'
@@ -120,10 +128,23 @@ const error = ref('')
 const detail = ref(null)
 const installing = ref(false)
 const uninstalling = ref(false)
+const reinstalling = ref(false)
 const platforms = ref([])
 const showPlatformModal = ref(false)
 const platformModalMode = ref('install')
 const platformModalSkill = ref(null)
+
+const reinstallExpiresAt = computed(() => {
+  if (!props.skill?.reinstallExpiresAt) return null
+  const timestamp = new Date(props.skill.reinstallExpiresAt).getTime()
+  return Number.isFinite(timestamp) ? timestamp : null
+})
+
+const showReinstall = computed(() => (
+  !detail.value?.installed
+  && Boolean(props.skill?.canReinstall)
+  && (!reinstallExpiresAt.value || Date.now() < reinstallExpiresAt.value)
+))
 
 // 渲染 Markdown
 const renderedContent = computed(() => {
@@ -194,6 +215,25 @@ function handleUninstall() {
   platformModalSkill.value = detail.value
   platformModalMode.value = 'uninstall'
   showPlatformModal.value = true
+}
+
+async function handleReinstall() {
+  if (!props.skill?.directory) return
+  reinstalling.value = true
+  try {
+    const result = await reinstallSkill(props.skill.directory)
+    if (result.success) {
+      message.success('重新安装成功')
+      await loadDetail()
+      emit('updated')
+    } else {
+      message.error(result.error || '重新安装失败')
+    }
+  } catch (err) {
+    message.error('重新安装失败: ' + (err.response?.data?.message || err.message))
+  } finally {
+    reinstalling.value = false
+  }
 }
 
 async function confirmPlatformSelection(selectedPlatforms) {
