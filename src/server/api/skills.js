@@ -3,11 +3,11 @@
  */
 
 const express = require('express');
-const { SkillService } = require('../services/skill-service');
+const { skillServiceSingleton } = require('../services/skill-service');
 const { skillUploadMiddleware } = require('../middleware/upload');
 
 const router = express.Router();
-const skillService = new SkillService();
+const skillService = skillServiceSingleton;
 
 function sendSkillError(res, err, status = 500) {
   const code = err.code || 'SKILL_ERROR';

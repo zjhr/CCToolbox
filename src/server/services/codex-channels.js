@@ -441,8 +441,14 @@ function writeCodexConfigForMultiChannel(allChannels, reasoningEffort) {
   // 只有当未启用动态切换时，才更新 model_provider
   if (!isProxyMode) {
     const enabledChannels = allChannels.filter(c => c.enabled !== false);
-    const defaultProvider = enabledChannels[0]?.providerKey || allChannels[0]?.providerKey || 'openai';
-    config.model_provider = defaultProvider;
+    const fallbackProvider = enabledChannels[0]?.providerKey || allChannels[0]?.providerKey || 'openai';
+    const currentProvider = config.model_provider;
+    const currentChannel = allChannels.find(channel => channel.providerKey === currentProvider);
+    // 保留已存在且有效的当前渠道，避免新增/更新渠道时重置选择
+    config.model_provider =
+      currentChannel && currentChannel.enabled !== false
+        ? currentProvider
+        : fallbackProvider;
   }
 
   // 重建 model_providers 配置，先保留已有的非渠道 provider，避免丢失用户自定义配置

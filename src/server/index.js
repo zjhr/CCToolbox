@@ -182,7 +182,8 @@ async function startServer(port) {
 
 // 启动时执行技能更新检测（不阻塞启动）
 function startSkillUpdateCheck() {
-  const skillService = new SkillService();
+  const { skillServiceSingleton } = require('./services/skill-service');
+  const skillService = skillServiceSingleton;
   setTimeout(() => {
     skillService.checkSkillUpdatesOnStartup()
       .then((result) => {

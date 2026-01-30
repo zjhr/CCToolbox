@@ -2971,8 +2971,11 @@ ${content}
   }
 }
 
+const skillServiceSingleton = new SkillService();
+
 module.exports = {
   SkillService,
+  skillServiceSingleton,
   DEFAULT_REPOS,
   PLATFORMS,
   LRUSkillCache
