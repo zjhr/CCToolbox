@@ -2,10 +2,12 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
+const readline = require('readline');
 const { getAllSessions, parseSessionInfoFast } = require('../../utils/session');
 const { getAppDir } = require('../../utils/app-path-manager');
 const { loadAliases, deleteAlias } = require('./alias');
 const { getAllMetadata } = require('./session-metadata');
+const { buildMessageCounts } = require('./message-counts');
 const {
   getCachedProjects,
   setCachedProjects,
@@ -435,6 +437,25 @@ function scanSessionFileForMessages(filePath) {
   }
 }
 
+function extractProgressEntry(json) {
+  const data = json?.data || {};
+  const agentId = data.agentId || data.agent_id || json?.agentId || json?.agent_id || null;
+  const prompt = data.prompt || data.input?.prompt || json?.prompt || null;
+  const subagentType = data.subagentType || data.subagent_type || data.agentType || json?.subagentType || null;
+  const toolName = data.tool || data.toolName || data.name || data.tool_name || json?.toolName || null;
+  const slug = data.slug || json?.slug || null;
+  if (!agentId && !prompt && !subagentType && !toolName && !slug) return null;
+  return {
+    timestamp: json?.timestamp || null,
+    agentId,
+    prompt,
+    subagentType,
+    toolName,
+    slug,
+    raw: data
+  };
+}
+
 // Get sessions for a project
 function getSessionsForProject(config, projectName) {
   const projectConfig = { ...config, currentProject: projectName };
@@ -482,6 +503,152 @@ function getSessionsForProject(config, projectName) {
   return {
     sessions: orderedSessions,
     totalSize
+  };
+}
+
+async function getSubagentMessages(projectName, sessionId, agentId, options = {}) {
+  const pageNum = parseInt(options.page || 1);
+  const limitNum = parseInt(options.pageSize || options.limit || 20);
+  const order = options.order || 'desc';
+
+  const { fullPath } = parseRealProjectPath(projectName);
+  const possiblePaths = [
+    path.join(fullPath, '.claude', 'sessions', sessionId, 'subagents', `agent-${agentId}.jsonl`),
+    path.join(os.homedir(), '.claude', 'projects', projectName, sessionId, 'subagents', `agent-${agentId}.jsonl`)
+  ];
+
+  let subagentFile = null;
+  for (const testPath of possiblePaths) {
+    if (fs.existsSync(testPath)) {
+      subagentFile = testPath;
+      break;
+    }
+  }
+
+  if (!subagentFile) {
+    const error = new Error('Subagent not found');
+    error.code = 'SUBAGENT_NOT_FOUND';
+    error.triedPaths = possiblePaths;
+    throw error;
+  }
+
+  const allMessages = [];
+  const metadata = {};
+  const progressEntries = [];
+
+  const stream = fs.createReadStream(subagentFile, { encoding: 'utf8' });
+  const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+
+  try {
+    for await (const line of rl) {
+      if (!line.trim()) continue;
+      try {
+        const json = JSON.parse(line);
+
+        if (json.type === 'summary' && json.summary) {
+          metadata.summary = json.summary;
+        }
+        if (json.gitBranch) {
+          metadata.gitBranch = json.gitBranch;
+        }
+        if (json.cwd) {
+          metadata.cwd = json.cwd;
+        }
+
+        if (json.type === 'progress') {
+          const progressEntry = extractProgressEntry(json);
+          if (progressEntry) {
+            progressEntries.push(progressEntry);
+          }
+          continue;
+        }
+
+        if (json.type === 'user' || json.type === 'assistant') {
+          const message = {
+            type: json.type,
+            content: null,
+            timestamp: json.timestamp || null,
+            model: json.model || null,
+            agentId: json.agentId || json.agent_id || json?.data?.agentId || null,
+            slug: json.slug || json?.data?.slug || null
+          };
+
+          if (json.type === 'user') {
+            if (typeof json.message?.content === 'string') {
+              message.content = json.message.content;
+            } else if (Array.isArray(json.message?.content)) {
+              const parts = [];
+              for (const item of json.message.content) {
+                if (item.type === 'text' && item.text) {
+                  parts.push(item.text);
+                } else if (item.type === 'tool_result') {
+                  const resultContent = typeof item.content === 'string'
+                    ? item.content
+                    : JSON.stringify(item.content, null, 2);
+                  parts.push(`**[工具结果]**\n\`\`\`\n${resultContent}\n\`\`\``);
+                } else if (item.type === 'image') {
+                  parts.push('[图片]');
+                }
+              }
+              message.content = parts.join('\n\n') || '[工具交互]';
+            }
+          } else if (json.type === 'assistant') {
+            if (Array.isArray(json.message?.content)) {
+              const parts = [];
+              for (const item of json.message.content) {
+                if (item.type === 'text' && item.text) {
+                  parts.push(item.text);
+                } else if (item.type === 'tool_use') {
+                  const inputStr = JSON.stringify(item.input, null, 2);
+                  parts.push(`**[调用工具: ${item.name}]**\n\`\`\`json\n${inputStr}\n\`\`\``);
+                } else if (item.type === 'thinking' && item.thinking) {
+                  parts.push(`**[思考]**\n${item.thinking}`);
+                }
+              }
+              message.content = parts.join('\n\n') || '[处理中...]';
+            } else if (typeof json.message?.content === 'string') {
+              message.content = json.message.content;
+            }
+          }
+
+          if (message.content && message.content !== 'Warmup') {
+            allMessages.push(message);
+          }
+        }
+      } catch (err) {
+        // Skip invalid lines
+      }
+    }
+  } finally {
+    rl.close();
+    stream.destroy();
+  }
+
+  if (progressEntries.length > 0) {
+    metadata.progress = progressEntries;
+  }
+
+  if (order === 'desc') {
+    allMessages.reverse();
+  }
+
+  const total = allMessages.length;
+  const messageCounts = buildMessageCounts(allMessages);
+  const startIndex = (pageNum - 1) * limitNum;
+  const endIndex = startIndex + limitNum;
+  const messages = allMessages.slice(startIndex, endIndex);
+  const hasMore = endIndex < total;
+
+  return {
+    messages,
+    metadata,
+    messageCounts,
+    pagination: {
+      page: pageNum,
+      limit: limitNum,
+      total,
+      hasMore
+    }
   };
 }
 
@@ -875,5 +1042,6 @@ module.exports = {
   getForkRelations,
   saveForkRelations,
   hasActualMessages,
-  getProjectAndSessionCounts
+  getProjectAndSessionCounts,
+  getSubagentMessages
 };

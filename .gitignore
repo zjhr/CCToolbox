@@ -27,6 +27,7 @@ build/
 .claude/
 .serena
 .gemini
+.codex
 openspec
 __pycache__
 

@@ -18,13 +18,18 @@ function normalizeRole(message) {
   return 'assistant';
 }
 
+function isTaskToolName(name) {
+  return String(name || '').trim().toLowerCase() === 'task';
+}
+
 function countMessageSegments(content, role, counts) {
   const normalized = (content || '').replace(/\r\n/g, '\n');
   const matches = [];
 
   for (const match of normalized.matchAll(TOOL_CALL_REGEX)) {
+    const toolName = match[1] || '';
     matches.push({
-      type: 'tool',
+      type: isTaskToolName(toolName) ? 'subagent' : 'tool',
       start: match.index || 0,
       end: (match.index || 0) + match[0].length
     });
@@ -67,6 +72,8 @@ function countMessageSegments(content, role, counts) {
 
     if (match.type === 'thinking') {
       counts.thinking += 1;
+    } else if (match.type === 'subagent') {
+      counts.subagent += 1;
     } else {
       counts.tool += 1;
     }
@@ -86,7 +93,8 @@ function buildMessageCounts(messages = []) {
     user: 0,
     assistant: 0,
     tool: 0,
-    thinking: 0
+    thinking: 0,
+    subagent: 0
   };
 
   if (!Array.isArray(messages)) return counts;

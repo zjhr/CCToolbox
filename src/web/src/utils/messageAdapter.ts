@@ -14,6 +14,19 @@ export interface UnifiedMessage {
   content: any
   toolCalls?: ToolCall[]
   timestamp: number | null
+  agentId?: string | null
+  slug?: string | null
+}
+
+export interface SubagentMessage {
+  id?: string
+  type?: string
+  role?: MessageRole
+  content: any
+  timestamp?: number | null
+  model?: BackendSource
+  agentId?: string | null
+  slug?: string | null
 }
 
 const TOOL_CALL_REGEX = /\*\*\[调用工具:\s*([^\]]+)\]\*\*\s*```(?:json)?\n([\s\S]*?)```/g
@@ -39,6 +52,7 @@ export function adaptMessages(rawMessages: any[], backend: BackendSource): Unifi
     const model = normalizeModel(message?.model, backend)
     const timestamp = message?.timestamp ?? null
     const content = normalizeContent(message?.content)
+    const extraFields = extractExtraFields(message)
     const baseId = createMessageId(message, index, content, role, model)
 
     if (Array.isArray(content)) {
@@ -47,7 +61,8 @@ export function adaptMessages(rawMessages: any[], backend: BackendSource): Unifi
         role,
         model,
         content,
-        timestamp
+        timestamp,
+        ...extraFields
       })
       return
     }
@@ -61,7 +76,8 @@ export function adaptMessages(rawMessages: any[], backend: BackendSource): Unifi
           role,
           model,
           content: cleaned,
-          timestamp
+          timestamp,
+          ...extraFields
         })
       }
       return
@@ -78,7 +94,8 @@ export function adaptMessages(rawMessages: any[], backend: BackendSource): Unifi
           role,
           model,
           content: cleaned,
-          timestamp
+          timestamp,
+          ...extraFields
         })
       }
       buffer = ''
@@ -99,7 +116,8 @@ export function adaptMessages(rawMessages: any[], backend: BackendSource): Unifi
           model,
           content: '',
           toolCalls: [block.data],
-          timestamp
+          timestamp,
+          ...extraFields
         })
         return
       }
@@ -111,7 +129,8 @@ export function adaptMessages(rawMessages: any[], backend: BackendSource): Unifi
           model,
           content: '',
           toolCalls: [block.data],
-          timestamp
+          timestamp,
+          ...extraFields
         })
         return
       }
@@ -122,7 +141,8 @@ export function adaptMessages(rawMessages: any[], backend: BackendSource): Unifi
           role: 'thinking',
           model,
           content: cleanText(block.data),
-          timestamp
+          timestamp,
+          ...extraFields
         })
       }
     })
@@ -181,6 +201,16 @@ function hashString(value: string): string {
     hash |= 0
   }
   return Math.abs(hash).toString(36)
+}
+
+function extractExtraFields(message: any): { agentId?: string | null; slug?: string | null } {
+  if (!message || typeof message !== 'object') return {}
+  const agentId = message.agentId || message.agent_id || message?.data?.agentId || message?.data?.agent_id || null
+  const slug = message.slug || message?.data?.slug || null
+  const extra: { agentId?: string | null; slug?: string | null } = {}
+  if (agentId) extra.agentId = agentId
+  if (slug) extra.slug = slug
+  return extra
 }
 
 function normalizeRole(message: any): MessageRole {

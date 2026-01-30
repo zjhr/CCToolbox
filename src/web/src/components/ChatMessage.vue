@@ -73,7 +73,11 @@
       ></div>
       <!-- Tool message -->
       <div v-else-if="messageRole === 'tool'" class="tool-content">
-        <ToolCallRenderer :tool-calls="message.toolCalls || []" />
+        <ToolCallRenderer
+          :tool-calls="message.toolCalls || []"
+          :progress-entries="progressEntries"
+          @click-task="handleTaskClick"
+        />
       </div>
       <!-- Thinking message -->
       <div v-else-if="messageRole === 'thinking'" class="thinking-text">
@@ -118,8 +122,14 @@ const props = defineProps({
   message: {
     type: Object,
     required: true
+  },
+  progressEntries: {
+    type: Array,
+    default: () => []
   }
 })
+
+const emit = defineEmits(['click-task'])
 
 const messageRole = computed(() => props.message.role || props.message.type || 'assistant')
 const messageContent = computed(() => props.message.content ?? '')
@@ -155,6 +165,10 @@ const copied = ref(false)
 let copyTimer = null
 const copyIcon = computed(() => copied.value ? CheckmarkIcon : CopyIcon)
 const copyTitle = computed(() => copied.value ? '已复制' : '复制')
+
+function handleTaskClick(payload) {
+  emit('click-task', payload)
+}
 
 // Check if content is long
 const isLongContent = computed(() => {

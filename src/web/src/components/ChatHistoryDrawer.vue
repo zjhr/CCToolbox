@@ -1,113 +1,164 @@
 <template>
-  <n-drawer
-    v-model:show="visible"
-    :width="drawerWidth"
-    placement="right"
-    :auto-focus="false"
-    :trap-focus="false"
-    :block-scroll="false"
-    :z-index="1100"
-  >
-    <div class="drawer-wrapper">
-      <!-- Header -->
-      <div class="drawer-header">
-        <div class="header-row">
-          <n-icon :size="18" :component="ChatbubblesIcon" />
-          <span class="session-name">{{ sessionAlias || sessionId.substring(0, 8) }} ({{ totalMessages }})</span>
-          <n-tag v-if="metadata.gitBranch" size="small" type="info">
-            <template #icon>
-              <n-icon :component="GitBranchIcon" />
-            </template>
-            {{ metadata.gitBranch }}
-          </n-tag>
-          <span class="spacer"></span>
-          <n-icon
-            :size="20"
-            :component="CloseIcon"
-            class="close-btn"
-            @click="visible = false"
-          />
+  <div>
+    <n-drawer
+      v-model:show="visible"
+      :width="drawerWidth"
+      placement="right"
+      :auto-focus="false"
+      :trap-focus="false"
+      :block-scroll="false"
+      :z-index="1100"
+    >
+      <div class="drawer-wrapper">
+        <!-- Header -->
+        <div class="drawer-header">
+          <div class="header-row">
+            <n-icon :size="18" :component="ChatbubblesIcon" />
+            <span class="session-name">{{ sessionAlias || sessionId.substring(0, 8) }} ({{ totalMessages }})</span>
+            <n-tag v-if="metadata.gitBranch" size="small" type="info">
+              <template #icon>
+                <n-icon :component="GitBranchIcon" />
+              </template>
+              {{ metadata.gitBranch }}
+            </n-tag>
+            <span class="spacer"></span>
+            <n-icon
+              :size="20"
+              :component="CloseIcon"
+              class="close-btn"
+              @click="visible = false"
+            />
+          </div>
+          <div v-if="metadata.summary" class="session-summary">{{ metadata.summary }}</div>
         </div>
-        <div v-if="metadata.summary" class="session-summary">{{ metadata.summary }}</div>
-      </div>
 
-      <!-- Body -->
-      <div class="drawer-body">
-        <!-- Session Summary -->
-        <div v-if="!trashId && sessionId" class="summary-container">
-          <SessionSummaryCard
-            ref="summaryCardRef"
+        <!-- Body -->
+        <div class="drawer-body">
+          <!-- Session Summary -->
+          <div v-if="!trashId && sessionId" class="summary-container">
+            <SessionSummaryCard
+              ref="summaryCardRef"
+              :project-name="projectName"
+              :session-id="sessionId"
+            />
+          </div>
+
+          <!-- Loading state -->
+          <div v-if="loading && messages.length === 0" class="loading-container">
+            <n-spin size="medium">
+              <template #description>加载聊天记录...</template>
+            </n-spin>
+          </div>
+
+          <!-- Empty state -->
+          <div v-else-if="!loading && messages.length === 0" class="empty-container">
+            <n-empty description="暂无聊天记录" />
+          </div>
+
+          <!-- Messages list -->
+          <div v-else class="messages-container">
+            <FilterBar v-model="activeFilters" :counts="messageCounts" />
+            <n-virtual-list
+              ref="virtualListRef"
+              class="messages-list"
+              :items="virtualItems"
+              :item-size="estimatedItemSize"
+              :item-resizable="true"
+              key-field="id"
+              :items-style="{ padding: '8px 20px 16px' }"
+              :padding-top="8"
+              :padding-bottom="8"
+              @scroll="handleScroll"
+              @resize="handleItemResize"
+            >
+              <template #default="{ item }">
+                <div v-if="item.__type === 'load-more'" class="load-more-top">
+                  <n-button
+                    :loading="loading"
+                    @click="loadMore"
+                    size="small"
+                    secondary
+                  >
+                    <template #icon>
+                      <n-icon :component="ChevronUpIcon" />
+                    </template>
+                    加载更早的消息
+                  </n-button>
+                </div>
+                <div v-else class="message-item">
+                  <ChatMessage
+                    :key="item.id"
+                    :message="item"
+                    :progress-entries="progressEntries"
+                    @click-task="handleTaskClick"
+                  />
+                </div>
+              </template>
+            </n-virtual-list>
+          </div>
+
+          <!-- Scroll to bottom button -->
+          <div v-if="showScrollButton" class="scroll-btn" @click="scrollToBottom">
+            <n-icon :size="18" :component="ArrowDownIcon" />
+          </div>
+        </div>
+      </div>
+    </n-drawer>
+
+    <n-drawer
+      v-model:show="subagentVisible"
+      :width="drawerWidth"
+      placement="right"
+      :auto-focus="false"
+      :trap-focus="false"
+      :block-scroll="false"
+      :z-index="1200"
+    >
+      <div class="drawer-wrapper">
+        <div class="drawer-header">
+          <div class="header-row">
+            <n-button text size="small" class="back-btn" @click="handleSubagentBack">
+              <template #icon>
+                <n-icon :component="ArrowBackOutline" />
+              </template>
+              返回
+            </n-button>
+            <span class="session-name">子代理详情</span>
+            <span class="spacer"></span>
+            <n-icon
+              :size="20"
+              :component="CloseIcon"
+              class="close-btn"
+              @click="closeSubagentDrawer"
+            />
+          </div>
+        </div>
+        <div class="drawer-body">
+          <SubagentDetailView
+            v-if="currentSubagent"
             :project-name="projectName"
             :session-id="sessionId"
+            :agent-id="currentSubagent.agentId"
+            :prompt="currentSubagent.prompt"
+            :subagent-type="currentSubagent.subagentType"
+            :channel="channel"
+            @click-task="handleSubagentTaskClick"
+            @error="(msg) => emit('error', msg)"
           />
         </div>
-
-        <!-- Loading state -->
-        <div v-if="loading && messages.length === 0" class="loading-container">
-          <n-spin size="medium">
-            <template #description>加载聊天记录...</template>
-          </n-spin>
-        </div>
-
-        <!-- Empty state -->
-        <div v-else-if="!loading && messages.length === 0" class="empty-container">
-          <n-empty description="暂无聊天记录" />
-        </div>
-
-        <!-- Messages list -->
-        <div v-else class="messages-container">
-          <FilterBar v-model="activeFilters" :counts="messageCounts" />
-          <n-virtual-list
-            ref="virtualListRef"
-            class="messages-list"
-            :items="virtualItems"
-            :item-size="estimatedItemSize"
-            :item-resizable="true"
-            key-field="id"
-            :items-style="{ padding: '8px 20px 16px' }"
-            :padding-top="8"
-            :padding-bottom="8"
-            @scroll="handleScroll"
-            @resize="handleItemResize"
-          >
-            <template #default="{ item }">
-              <div v-if="item.__type === 'load-more'" class="load-more-top">
-                <n-button
-                  :loading="loading"
-                  @click="loadMore"
-                  size="small"
-                  secondary
-                >
-                  <template #icon>
-                    <n-icon :component="ChevronUpIcon" />
-                  </template>
-                  加载更早的消息
-                </n-button>
-              </div>
-              <div v-else class="message-item">
-                <ChatMessage :key="item.id" :message="item" />
-              </div>
-            </template>
-          </n-virtual-list>
-        </div>
-
-        <!-- Scroll to bottom button -->
-        <div v-if="showScrollButton" class="scroll-btn" @click="scrollToBottom">
-          <n-icon :size="18" :component="ArrowDownIcon" />
-        </div>
       </div>
-    </div>
-  </n-drawer>
+    </n-drawer>
+  </div>
 </template>
-
 <script setup>
 import { ref, computed, nextTick, watch } from 'vue'
 import { NDrawer, NIcon, NTag, NSpin, NEmpty, NButton, NVirtualList } from 'naive-ui'
 import { useResponsiveDrawer } from '../composables/useResponsiveDrawer'
-import { Chatbubbles as ChatbubblesIcon, GitBranch as GitBranchIcon, ChevronUp as ChevronUpIcon, ArrowDown as ArrowDownIcon, Close as CloseIcon } from '@vicons/ionicons5'
+import { Chatbubbles as ChatbubblesIcon, GitBranch as GitBranchIcon, ChevronUp as ChevronUpIcon, ArrowDown as ArrowDownIcon, Close as CloseIcon, ArrowBackOutline } from '@vicons/ionicons5'
 import ChatMessage from './ChatMessage.vue'
 import SessionSummaryCard from './SessionSummaryCard.vue'
 import FilterBar from './chat/FilterBar.vue'
+import SubagentDetailView from './chat/SubagentDetailView.vue'
 import { getSessionMessages } from '../api/sessions'
 import { getTrashMessages } from '../api/trash'
 import { adaptMessages } from '../utils/messageAdapter'
@@ -152,6 +203,7 @@ const visible = computed({
 const loading = ref(false)
 const messages = ref([])
 const metadata = ref({})
+const progressEntries = ref([])
 const currentPage = ref(1)
 const totalMessages = ref(0)
 const hasMore = ref(false)
@@ -164,33 +216,52 @@ const lastAutoLoadAt = ref(0)
 const lastUserScrollAt = ref(0)
 const isProgrammaticScroll = ref(false)
 const summaryCardRef = ref(null)
-const activeFilters = ref(['user', 'assistant', 'tool', 'thinking'])
-const allFilters = ['user', 'assistant', 'tool', 'thinking']
+const activeFilters = ref(['user', 'assistant', 'tool', 'thinking', 'subagent'])
+const allFilters = ['user', 'assistant', 'tool', 'thinking', 'subagent']
 const isFiltering = computed(() => activeFilters.value.length < allFilters.length)
 const messageCounts = ref({
   user: 0,
   assistant: 0,
   tool: 0,
-  thinking: 0
+  thinking: 0,
+  subagent: 0
 })
 const hasStableCounts = ref(false)
 const isAutoFilling = ref(false)
 const filterNoMatchStreak = ref(0)
 const FILTER_FILL_TARGET = 20
 const FILTER_MAX_PAGES = 5
+const MAX_SUBAGENT_STACK = 10
+const subagentVisible = ref(false)
+const subagentStack = ref([])
 
 const adaptedMessages = computed(() => adaptMessages(messages.value, props.channel))
+const currentSubagent = computed(() => subagentStack.value[subagentStack.value.length - 1] || null)
+
+function isSubagentMessage(item) {
+  if (!item || item.role !== 'tool') return false
+  const calls = Array.isArray(item.toolCalls) ? item.toolCalls : []
+  return calls.some((call) => String(call?.name || '').trim().toLowerCase() === 'task')
+}
+
+function getFilterRole(item) {
+  if (!item) return 'assistant'
+  if (item.role === 'tool' && isSubagentMessage(item)) return 'subagent'
+  return item.role || 'assistant'
+}
 
 function buildCounts(items) {
   const counts = {
     user: 0,
     assistant: 0,
     tool: 0,
-    thinking: 0
+    thinking: 0,
+    subagent: 0
   }
   ;(items || []).forEach((item) => {
-    if (counts[item.role] !== undefined) {
-      counts[item.role] += 1
+    const role = getFilterRole(item)
+    if (counts[role] !== undefined) {
+      counts[role] += 1
     }
   })
   return counts
@@ -198,11 +269,14 @@ function buildCounts(items) {
 
 function applyMessageCounts(counts) {
   if (!counts) return
+  const fallbackCounts = buildCounts(adaptedMessages.value)
   messageCounts.value = {
     user: 0,
     assistant: 0,
     tool: 0,
     thinking: 0,
+    subagent: 0,
+    ...fallbackCounts,
     ...counts
   }
   hasStableCounts.value = true
@@ -218,7 +292,7 @@ function extractResponseCounts(response) {
 
 const filteredMessages = computed(() => {
   const active = new Set(activeFilters.value)
-  return adaptedMessages.value.filter((item) => active.has(item.role))
+  return adaptedMessages.value.filter((item) => active.has(getFilterRole(item)))
 })
 
 const showLoadMore = computed(() => hasMore.value && !isFiltering.value)
@@ -247,6 +321,7 @@ async function loadMessages(page = 1) {
       // First load - reverse to show oldest first (newest at bottom)
       messages.value = newMessages.reverse()
       metadata.value = meta
+      progressEntries.value = Array.isArray(meta?.progress) ? meta.progress : []
     } else {
       // Load more (prepend older messages) - reverse new messages too
       messages.value = [...newMessages.reverse(), ...messages.value]
@@ -277,6 +352,50 @@ async function loadMessages(page = 1) {
     loading.value = false
     ensureFilteredCoverage()
   }
+}
+
+function openSubagentDrawer(payload) {
+  if (!payload || !payload.agentId) return
+  subagentStack.value = [{
+    agentId: payload.agentId,
+    prompt: payload.prompt || '',
+    subagentType: payload.subagentType || ''
+  }]
+  subagentVisible.value = true
+}
+
+function pushSubagentStack(payload) {
+  if (!payload || !payload.agentId) return
+  if (subagentStack.value.length >= MAX_SUBAGENT_STACK) {
+    emit('error', '子代理嵌套层级过深，无法继续打开详情')
+    return
+  }
+  subagentStack.value.push({
+    agentId: payload.agentId,
+    prompt: payload.prompt || '',
+    subagentType: payload.subagentType || ''
+  })
+}
+
+function handleTaskClick(payload) {
+  openSubagentDrawer(payload)
+}
+
+function handleSubagentTaskClick(payload) {
+  pushSubagentStack(payload)
+}
+
+function handleSubagentBack() {
+  if (subagentStack.value.length > 1) {
+    subagentStack.value.pop()
+    return
+  }
+  closeSubagentDrawer()
+}
+
+function closeSubagentDrawer() {
+  subagentVisible.value = false
+  subagentStack.value = []
 }
 
 async function ensureFilteredCoverage() {
@@ -438,6 +557,7 @@ function setProgrammaticScroll(action) {
 function open() {
   messages.value = []
   metadata.value = {}
+  progressEntries.value = []
   currentPage.value = 1
   totalMessages.value = 0
   hasMore.value = false
@@ -449,9 +569,11 @@ function open() {
     user: 0,
     assistant: 0,
     tool: 0,
-    thinking: 0
+    thinking: 0,
+    subagent: 0
   }
-  activeFilters.value = ['user', 'assistant', 'tool', 'thinking']
+  activeFilters.value = ['user', 'assistant', 'tool', 'thinking', 'subagent']
+  closeSubagentDrawer()
   loadMessages(1)
 }
 
@@ -462,6 +584,15 @@ watch(isFiltering, (value) => {
     })
   }
 })
+
+watch(
+  () => visible.value,
+  (value) => {
+    if (!value) {
+      closeSubagentDrawer()
+    }
+  }
+)
 
 defineExpose({
   generateSummary,
@@ -495,6 +626,12 @@ defineExpose({
 .session-name {
   font-size: 16px;
   font-weight: 600;
+  color: var(--n-text-color);
+}
+
+.back-btn {
+  display: inline-flex;
+  align-items: center;
   color: var(--n-text-color);
 }
 

@@ -77,6 +77,13 @@ export async function getSessionMessages(projectName, sessionId, page = 1, limit
   return response.data
 }
 
+export async function getSubagentMessages(projectName, sessionId, agentId, page = 1, pageSize = 20, order = 'desc', channel = 'claude') {
+  const response = await client.get(`/sessions/${projectName}/${sessionId}/subagent/${agentId}`, {
+    params: { page, pageSize, order, channel }
+  })
+  return response.data
+}
+
 export async function getRecentSessions(limit = 5, channel = 'claude') {
   const prefix = getChannelPrefix(channel)
   const response = await client.get(`${prefix}/sessions/recent/list?limit=${limit}`)

@@ -644,7 +644,7 @@ class SkillService {
           if (reason === 'Fetch timeout') {
             warningMessage = '拉取超时，请稍后重试或检查网络/代理';
           } else if (reason.includes('GitHub API error: 403')) {
-            warningMessage = 'GitHub API 限流或无权限访问';
+            warningMessage = 'GitHub API 限流或无权限访问，建议配置 Token（~/.claude/cctoolbox/github-token.txt 或 GITHUB_TOKEN）';
           } else if (reason.includes('GitHub API error: 404')) {
             warningMessage = '仓库不存在、无权限访问或分支不可用';
           }

@@ -9,6 +9,15 @@
         <n-icon :component="ToolIcon" size="14" />
         <span class="tool-call-name">{{ call.name || '工具调用' }}</span>
         <span class="spacer"></span>
+        <n-button
+          v-if="shouldShowTaskDetail(call)"
+          size="tiny"
+          secondary
+          class="task-detail-btn"
+          @click="handleTaskClick(call)"
+        >
+          查看详情
+        </n-button>
         <n-tag size="small" type="info" round>工具</n-tag>
       </div>
 
@@ -144,20 +153,27 @@
 
 <script setup>
 import { ref, watch, computed } from 'vue'
-import { NCheckbox, NCollapseTransition, NTag, NIcon } from 'naive-ui'
+import { NCheckbox, NCollapseTransition, NTag, NIcon, NButton } from 'naive-ui'
 import { BuildOutline as ToolIcon } from '@vicons/ionicons5'
 
 const props = defineProps({
   toolCalls: {
     type: Array,
     default: () => []
+  },
+  progressEntries: {
+    type: Array,
+    default: () => []
   }
 })
+
+const emit = defineEmits(['click-task'])
 
 const collapseStates = ref({})
 const terminalCollapseStates = ref({})
 const listCollapseStates = ref({})
 const toolCalls = computed(() => props.toolCalls || [])
+const progressEntries = computed(() => props.progressEntries || [])
 
 function getCallKey(call, index) {
   return call?.id || `${call?.name || 'tool'}-${index}`
@@ -175,6 +191,10 @@ function isAskUserQuestion(name = '') {
 function isUpdatePlan(name = '') {
   const normalized = name.toLowerCase().trim()
   return normalized === 'update_plan' || normalized === 'updateplan'
+}
+
+function isTaskTool(name = '') {
+  return name.toLowerCase().trim() === 'task'
 }
 
 function isTerminalTool(name = '') {
@@ -260,6 +280,120 @@ function getPlanList(call) {
       status: item?.status || 'pending'
     }))
     .filter((item) => item.step)
+}
+
+function extractAgentId(source) {
+  if (!source || typeof source !== 'object') return ''
+  return source.agentId
+    || source.agent_id
+    || source?.data?.agentId
+    || source?.data?.agent_id
+    || source?.result?.agentId
+    || source?.result?.agent_id
+    || source?.output?.agentId
+    || source?.output?.agent_id
+    || source?.progress?.agentId
+    || source?.progress?.agent_id
+    || ''
+}
+
+function extractPrompt(source) {
+  if (!source || typeof source !== 'object') return ''
+  return source.prompt
+    || source.task
+    || source.question
+    || source?.input?.prompt
+    || source?.input?.task
+    || source?.data?.prompt
+    || ''
+}
+
+function extractSubagentType(source) {
+  if (!source || typeof source !== 'object') return ''
+  return source.subagentType
+    || source.subagent_type
+    || source.agentType
+    || source.agent_type
+    || source?.data?.subagentType
+    || source?.data?.subagent_type
+    || ''
+}
+
+function normalizeText(value) {
+  return String(value || '').trim()
+}
+
+function findProgressMatch(prompt, subagentType) {
+  const entries = progressEntries.value
+  if (!Array.isArray(entries) || entries.length === 0) return null
+  const normalizedPrompt = normalizeText(prompt)
+  const normalizedType = normalizeText(subagentType)
+  let best = null
+  let bestScore = 0
+
+  entries.forEach((entry) => {
+    if (!entry || !entry.agentId) return
+    let score = 0
+    const toolName = normalizeText(entry.toolName).toLowerCase()
+    if (toolName === 'task') score += 1
+    const entryPrompt = normalizeText(entry.prompt)
+    if (normalizedPrompt && entryPrompt) {
+      if (entryPrompt === normalizedPrompt) {
+        score += 3
+      } else if (entryPrompt.includes(normalizedPrompt) || normalizedPrompt.includes(entryPrompt)) {
+        score += 1
+      }
+    }
+    const entryType = normalizeText(entry.subagentType)
+    if (normalizedType && entryType && entryType === normalizedType) {
+      score += 2
+    }
+    if (score > bestScore) {
+      bestScore = score
+      best = entry
+    }
+  })
+
+  if (!best && entries.length === 1 && entries[0]?.agentId) {
+    return entries[0]
+  }
+
+  return best
+}
+
+function getTaskInfo(call) {
+  const input = normalizeData(call?.input)
+  const output = normalizeData(call?.output)
+  let agentId = extractAgentId(input) || extractAgentId(output)
+  let prompt = extractPrompt(input) || extractPrompt(output)
+  let subagentType = extractSubagentType(input) || extractSubagentType(output)
+
+  if (!agentId || !prompt || !subagentType) {
+    const progressMatch = findProgressMatch(prompt, subagentType)
+    if (progressMatch) {
+      agentId = agentId || progressMatch.agentId
+      prompt = prompt || progressMatch.prompt
+      subagentType = subagentType || progressMatch.subagentType
+    }
+  }
+
+  return {
+    agentId: agentId || '',
+    prompt: prompt || '',
+    subagentType: subagentType || ''
+  }
+}
+
+function shouldShowTaskDetail(call) {
+  if (!isTaskTool(call?.name)) return false
+  const info = getTaskInfo(call)
+  return Boolean(info.agentId)
+}
+
+function handleTaskClick(call) {
+  const info = getTaskInfo(call)
+  if (!info.agentId) return
+  emit('click-task', info)
 }
 
 function getPlanStatus(status) {
@@ -591,6 +725,10 @@ watch(
 .tool-call-name {
   font-weight: 600;
   font-size: 12px;
+}
+
+.task-detail-btn {
+  padding: 0 8px;
 }
 
 .tool-call-body {

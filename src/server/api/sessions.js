@@ -4,10 +4,29 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const readline = require('readline');
-const { getSessionsForProject, deleteSession, forkSession, saveSessionOrder, parseRealProjectPath, searchSessions, getRecentSessions, searchSessionsAcrossProjects, hasActualMessages } = require('../services/sessions');
+const { getSessionsForProject, deleteSession, forkSession, saveSessionOrder, parseRealProjectPath, searchSessions, getRecentSessions, searchSessionsAcrossProjects, hasActualMessages, getSubagentMessages } = require('../services/sessions');
 const { loadAliases } = require('../services/alias');
 const { broadcastLog } = require('../websocket-server');
 const { buildMessageCounts } = require('../services/message-counts');
+
+function extractProgressEntry(json) {
+  const data = json?.data || {};
+  const agentId = data.agentId || data.agent_id || json?.agentId || json?.agent_id || null;
+  const prompt = data.prompt || data.input?.prompt || json?.prompt || null;
+  const subagentType = data.subagentType || data.subagent_type || data.agentType || json?.subagentType || null;
+  const toolName = data.tool || data.toolName || data.name || data.tool_name || json?.toolName || null;
+  const slug = data.slug || json?.slug || null;
+  if (!agentId && !prompt && !subagentType && !toolName && !slug) return null;
+  return {
+    timestamp: json?.timestamp || null,
+    agentId,
+    prompt,
+    subagentType,
+    toolName,
+    slug,
+    raw: data
+  };
+}
 
 module.exports = (config) => {
   // GET /api/sessions/search/global - Search sessions across all projects
@@ -138,6 +157,32 @@ module.exports = (config) => {
     }
   });
 
+  // GET /api/sessions/:projectName/:sessionId/subagent/:agentId - Get subagent messages with pagination
+  router.get('/:projectName/:sessionId/subagent/:agentId', async (req, res) => {
+    try {
+      const { projectName, sessionId, agentId } = req.params;
+      const { page = 1, pageSize = 20, order = 'desc', channel = 'claude' } = req.query;
+
+      if (channel !== 'claude') {
+        return res.status(400).json({ error: 'Subagent detail only supported for Claude channel' });
+      }
+
+      const response = await getSubagentMessages(projectName, sessionId, agentId, {
+        page,
+        pageSize,
+        order
+      });
+
+      res.json(response);
+    } catch (error) {
+      if (error?.code === 'SUBAGENT_NOT_FOUND') {
+        return res.status(404).json({ error: 'Subagent not found' });
+      }
+      console.error('Error fetching subagent messages:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // GET /api/sessions/:projectName/:sessionId/messages - Get session messages with pagination
 router.get('/:projectName/:sessionId/messages', async (req, res) => {
   try {
@@ -190,6 +235,7 @@ router.get('/:projectName/:sessionId/messages', async (req, res) => {
       // Read and parse session file
     const allMessages = [];
     const metadata = {};
+    const progressEntries = [];
 
     const stream = fs.createReadStream(sessionFile, { encoding: 'utf8' });
     const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
@@ -208,6 +254,14 @@ router.get('/:projectName/:sessionId/messages', async (req, res) => {
           }
           if (json.cwd) {
             metadata.cwd = json.cwd;
+          }
+
+          if (json.type === 'progress') {
+            const progressEntry = extractProgressEntry(json);
+            if (progressEntry) {
+              progressEntries.push(progressEntry);
+            }
+            continue;
           }
 
           if (json.type === 'user' || json.type === 'assistant') {
@@ -268,6 +322,10 @@ router.get('/:projectName/:sessionId/messages', async (req, res) => {
       rl.close();
       stream.destroy();
     }
+
+      if (progressEntries.length > 0) {
+        metadata.progress = progressEntries;
+      }
 
       // Sort messages (desc = newest first)
       if (order === 'desc') {

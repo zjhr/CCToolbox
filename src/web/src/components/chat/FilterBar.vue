@@ -40,7 +40,8 @@ const options = [
   { label: '用户', value: 'user' },
   { label: '助手', value: 'assistant' },
   { label: '工具', value: 'tool' },
-  { label: '思考', value: 'thinking' }
+  { label: '思考', value: 'thinking' },
+  { label: '子代理', value: 'subagent' }
 ]
 
 function isActive(value) {
