@@ -87,7 +87,8 @@ async function handleStart() {
       name: appName,
       script: path.join(__dirname, '../index.js'),
       args: ['ui', '--daemon'],
-      interpreter: 'node',
+      // 使用当前 Node 绝对路径，避免开机自启时 PATH 缺失导致无法启动
+      interpreter: process.execPath,
       autorestart: true,
       max_memory_restart: '500M',
       env: {

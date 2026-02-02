@@ -5,8 +5,54 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const pm2 = require('pm2');
+const { loadConfig } = require('../../config/loader');
+const { getLogFile } = require('../../utils/app-path-manager');
 
 const execAsync = promisify(exec);
+const CCTOOLBOX_PROCESS_NAMES = ['cctoolbox', 'coding-tool', 'cc-tool'];
+const CCTOOLBOX_DEFAULT_NAME = 'cctoolbox';
+
+function findCCToolboxProcess(processes) {
+  if (!Array.isArray(processes)) {
+    return null;
+  }
+  return processes.find(proc => CCTOOLBOX_PROCESS_NAMES.includes(proc.name)) || null;
+}
+
+function startCCToolboxProcess(existingProcess, callback) {
+  const config = loadConfig();
+  const port = config.ports?.webUI || 10099;
+  const appName = existingProcess?.name || CCTOOLBOX_DEFAULT_NAME;
+  const startOptions = {
+    name: appName,
+    script: path.join(__dirname, '..', '..', 'index.js'),
+    args: ['ui', '--daemon'],
+    interpreter: process.execPath,
+    autorestart: true,
+    max_memory_restart: '500M',
+    env: {
+      NODE_ENV: 'production',
+      CC_TOOL_PORT: port
+    },
+    output: getLogFile('out'),
+    error: getLogFile('error'),
+    merge_logs: true,
+    log_date_format: 'YYYY-MM-DD HH:mm:ss'
+  };
+
+  pm2.start(startOptions, (err) => {
+    if (!err) {
+      return callback(null);
+    }
+
+    const errorMessage = err.message || '';
+    if (existingProcess && (errorMessage.includes('already') || errorMessage.includes('exists'))) {
+      return pm2.restart(appName, (restartErr) => callback(restartErr || null));
+    }
+
+    return callback(err);
+  });
+}
 
 /**
  * Check if PM2 autostart is enabled
@@ -17,13 +63,17 @@ async function checkAutoStartStatus() {
     const platform = process.platform;
 
     if (platform === 'darwin') {
-      // macOS - check for LaunchDaemon
-      const launchDaemonsPath = path.join(os.homedir(), 'Library/LaunchDaemons');
-      const pm2Files = fs.existsSync(launchDaemonsPath)
-        ? fs.readdirSync(launchDaemonsPath).filter(f => f.includes('pm2'))
-        : [];
+      // macOS - check for LaunchAgent/LaunchDaemon
+      const launchAgentPath = path.join(os.homedir(), 'Library/LaunchAgents');
+      const legacyUserDaemonPath = path.join(os.homedir(), 'Library/LaunchDaemons');
+      const systemDaemonPath = '/Library/LaunchDaemons';
+      const candidatePaths = [launchAgentPath, legacyUserDaemonPath, systemDaemonPath];
+      const hasPm2Plist = candidatePaths.some((dirPath) => (
+        fs.existsSync(dirPath) &&
+        fs.readdirSync(dirPath).some(fileName => fileName.includes('pm2'))
+      ));
 
-      return { enabled: pm2Files.length > 0, platform: 'darwin' };
+      return { enabled: hasPm2Plist, platform: 'darwin' };
     } else if (platform === 'linux') {
       // Linux - check for systemd service
       const systemdPath = '/etc/systemd/system/pm2-root.service';
@@ -74,17 +124,30 @@ async function enableAutoStart() {
           });
         }
 
-        // If no processes are running, we can't really set up autostart
-        if (!processes || processes.length === 0) {
-          pm2.disconnect();
-          return resolve({
-            success: false,
-            message: '暂无运行中的进程，无法启用开机自启。请先启动服务：ct start'
-          });
-        }
+        const existingProcess = findCCToolboxProcess(processes);
+        const needsStart = !existingProcess || existingProcess.pm2_env?.status !== 'online';
 
-        // Save current process list
-        pm2.dump((saveErr) => {
+        const ensureRunning = (callback) => {
+          if (!needsStart) {
+            return callback(null);
+          }
+
+          // 自动启动后台服务，再继续配置开机自启
+          return startCCToolboxProcess(existingProcess, callback);
+        };
+
+        ensureRunning((startErr) => {
+          if (startErr) {
+            pm2.disconnect();
+            console.error('PM2 start error:', startErr);
+            return resolve({
+              success: false,
+              message: '自动启动服务失败：' + (startErr.message || '未知错误')
+            });
+          }
+
+          // Save current process list
+          pm2.dump((saveErr) => {
           if (saveErr) {
             pm2.disconnect();
             console.error('PM2 save error:', saveErr);
@@ -166,6 +229,7 @@ async function enableAutoStart() {
               message: '开机自启已启用。重启电脑后自动启动'
             });
           });
+          });
         });
       });
     });
@@ -189,32 +253,65 @@ async function disableAutoStart() {
 
       // Run unstartup command
       const platform = process.platform;
+      const user = os.userInfo().username;
+      const homeDir = os.homedir();
+      const homeArg = JSON.stringify(homeDir);
       const command = platform === 'darwin'
-        ? 'pm2 unstartup launchd -u $(whoami)'
+        ? `pm2 unstartup launchd -u ${user} --hp ${homeArg}`
         : platform === 'linux'
         ? 'pm2 unstartup systemd -u $(whoami)'
         : 'pm2 unstartup';
 
       console.log(`Running unstartup command: ${command}`);
 
-      exec(command, { shell: '/bin/bash', timeout: 30000 }, (execErr, stdout, stderr) => {
+      const runUnstartupCommand = (callback) => {
+        if (platform === 'darwin') {
+          const envPath = process.env.PATH || '';
+          const appleCommand = `env PATH=${JSON.stringify(envPath)} ${command}`;
+          const appleScript = `do shell script ${JSON.stringify(appleCommand)} with administrator privileges`;
+          return execFile('osascript', ['-e', appleScript], { timeout: 30000 }, callback);
+        }
+        return exec(command, { shell: '/bin/bash', timeout: 30000 }, callback);
+      };
+
+      runUnstartupCommand((execErr, stdout, stderr) => {
         pm2.disconnect();
+        const combinedOutput = [stdout, stderr].filter(Boolean).join('\n').trim();
+        const sudoLine = combinedOutput
+          .split('\n')
+          .map(line => line.trim())
+          .find(line => line.startsWith('sudo '));
 
         if (execErr) {
           console.error('Unstartup command error:', execErr);
-          console.error('stderr:', stderr);
+          if (stderr) {
+            console.error('stderr:', stderr);
+          }
+          if (stdout) {
+            console.error('stdout:', stdout);
+          }
 
           // Check if it's not set up
-          if (stderr && stderr.includes('not set')) {
+          if (combinedOutput.includes('not set')) {
             return resolve({
               success: true,
               message: '开机自启已禁用（或未启用）'
             });
           }
 
+          if (combinedOutput.includes('copy/paste the following command') || sudoLine) {
+            return resolve({
+              success: false,
+              message: sudoLine
+                ? '需要管理员权限，请在终端执行以下命令完成禁用自启：\n' + sudoLine
+                : '需要管理员权限，请在终端执行 PM2 提示的 sudo 命令完成禁用自启。' +
+                  (combinedOutput ? '\n' + combinedOutput : '')
+            });
+          }
+
           return resolve({
             success: false,
-            message: '禁用失败。' + (stderr || execErr.message || '请确保已安装 PM2 且有足够权限'),
+            message: '禁用失败。' + (combinedOutput || execErr.message || '请确保已安装 PM2 且有足够权限'),
             error: execErr.message
           });
         }
