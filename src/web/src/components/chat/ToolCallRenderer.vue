@@ -184,8 +184,14 @@ function isTodoWrite(name = '') {
 }
 
 function isAskUserQuestion(name = '') {
-  const normalized = name.toLowerCase().trim()
-  return normalized === 'askuserquestion' || normalized === 'ask_user_question'
+  const normalized = String(name || '').toLowerCase().trim()
+  const compact = normalized.replace(/[^a-z0-9]/g, '')
+  return normalized === 'askuserquestion'
+    || normalized === 'ask_user_question'
+    || normalized === 'request_user_input'
+    || normalized === 'requestuserinput'
+    || compact === 'askuserquestion'
+    || compact === 'requestuserinput'
 }
 
 function isUpdatePlan(name = '') {
@@ -236,7 +242,17 @@ function getTodoItems(input) {
 function getQuestionList(input) {
   const data = normalizeData(input)
   const rawText = typeof input === 'string' ? input : data?.raw
-  const questions = Array.isArray(data?.questions) ? data.questions : null
+
+  // 优先级: input.questions > payload.questions > data.questions > questions
+  const nestedQuestions = Array.isArray(data?.input?.questions)
+    ? data.input.questions
+    : Array.isArray(data?.payload?.questions)
+      ? data.payload.questions
+      : Array.isArray(data?.data?.questions)
+        ? data.data.questions
+        : null
+
+  const questions = Array.isArray(data?.questions) ? data.questions : nestedQuestions
   const baseList = questions?.length ? questions : [data]
 
   const normalized = (baseList || [])

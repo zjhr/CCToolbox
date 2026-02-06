@@ -34,3 +34,5 @@ __pycache__
 # Temporary files
 temp/
 *.tmp
+.ace-tool/
+CLAUDE.md
