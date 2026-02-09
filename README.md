@@ -71,7 +71,7 @@ ct --version
 ### 启动 Web UI（推荐）
 
 ```bash
-ct ui start
+ct ui
 ```
 
 浏览器自动打开 `http://localhost:9999`，即可开始管理会话和渠道。
