@@ -82,9 +82,10 @@ function validateProviderKey(value) {
 }
 
 function buildActiveTag(channel, helpers) {
-  const currentChannelId = typeof helpers.getCurrentChannelId === "function"
-    ? helpers.getCurrentChannelId()
-    : null;
+  const currentChannelId =
+    typeof helpers.getCurrentChannelId === "function"
+      ? helpers.getCurrentChannelId()
+      : null;
   if (currentChannelId && channel.id === currentChannelId) {
     return {
       text: "✓ 正在使用",
@@ -329,7 +330,7 @@ const channelPanelFactories = {
             presetId: form.presetId,
             modelConfig: form.modelConfig,
             proxyUrl: form.proxyUrl || "",
-          }
+          },
         );
       },
       update: async (channel, form) => {
@@ -480,7 +481,7 @@ const channelPanelFactories = {
       baseUrl: "",
       apiKey: "",
       websiteUrl: "",
-      modelName: "gpt-5.2-codex",
+      modelName: "gpt-5.3-codex",
       maxConcurrency: null,
       weight: 1,
       enabled: true,
@@ -491,7 +492,7 @@ const channelPanelFactories = {
       baseUrl: channel.baseUrl || "",
       apiKey: channel.apiKey || "",
       websiteUrl: channel.websiteUrl || "",
-      modelName: channel.modelName || "gpt-5.2-codex",
+      modelName: channel.modelName || "gpt-5.3-codex",
       maxConcurrency: channel.maxConcurrency ?? null,
       weight: channel.weight || 1,
       enabled: channel.enabled !== false,
@@ -517,7 +518,7 @@ const channelPanelFactories = {
             weight: normalizeWeight(form.weight),
             enabled: form.enabled,
             modelName: form.modelName,
-          }
+          },
         );
       },
       update: async (channel, form) => {
@@ -684,7 +685,7 @@ const channelPanelFactories = {
             maxConcurrency: normalizeConcurrency(form.maxConcurrency),
             weight: normalizeWeight(form.weight),
             enabled: form.enabled,
-          }
+          },
         );
       },
       update: async (channel, form) => {

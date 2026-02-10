@@ -1,12 +1,19 @@
-const fs = require('fs');
-const path = require('path');
-const crypto = require('crypto');
-const toml = require('toml');
-const tomlStringify = require('@iarna/toml').stringify;
-const { getCodexDir } = require('./codex-config');
-const { injectEnvToShell, removeEnvFromShell, isProxyConfig } = require('./codex-settings-manager');
-const { getAppDir } = require('../../utils/app-path-manager');
-const { normalizeEnvKey, buildEnvKeyFromProvider } = require('../../utils/env-key');
+const fs = require("fs");
+const path = require("path");
+const crypto = require("crypto");
+const toml = require("toml");
+const tomlStringify = require("@iarna/toml").stringify;
+const { getCodexDir } = require("./codex-config");
+const {
+  injectEnvToShell,
+  removeEnvFromShell,
+  isProxyConfig,
+} = require("./codex-settings-manager");
+const { getAppDir } = require("../../utils/app-path-manager");
+const {
+  normalizeEnvKey,
+  buildEnvKeyFromProvider,
+} = require("../../utils/env-key");
 
 /**
  * Codex 渠道管理服务（多渠道架构）
@@ -27,7 +34,7 @@ function getChannelsFilePath() {
   if (!fs.existsSync(appDir)) {
     fs.mkdirSync(appDir, { recursive: true });
   }
-  return path.join(appDir, 'codex-channels.json');
+  return path.join(appDir, "codex-channels.json");
 }
 
 // 读取所有渠道(从我们的存储文件)
@@ -40,30 +47,31 @@ function loadChannels() {
   }
 
   try {
-    const content = fs.readFileSync(filePath, 'utf8');
+    const content = fs.readFileSync(filePath, "utf8");
     const data = JSON.parse(content);
     // 确保渠道有 enabled 字段（兼容旧数据）
     if (data.channels) {
-      data.channels = data.channels.map(ch => ({
+      data.channels = data.channels.map((ch) => ({
         ...ch,
-        envKey: buildEnvKeyFromProvider(ch.providerKey) || normalizeEnvKey(ch.envKey),
+        envKey:
+          buildEnvKeyFromProvider(ch.providerKey) || normalizeEnvKey(ch.envKey),
         enabled: ch.enabled !== false, // 默认启用
         weight: ch.weight || 1,
         maxConcurrency: ch.maxConcurrency || null,
-        modelName: ch.modelName || 'gpt-5.2-codex'
+        modelName: ch.modelName || "gpt-5.3-codex",
       }));
     }
     return data;
   } catch (err) {
-    console.error('[Codex Channels] Failed to parse channels file:', err);
+    console.error("[Codex Channels] Failed to parse channels file:", err);
     return { channels: [] };
   }
 }
 
 // 从现有 config.toml 初始化渠道
 function initializeFromConfig() {
-  const configPath = path.join(getCodexDir(), 'config.toml');
-  const authPath = path.join(getCodexDir(), 'auth.json');
+  const configPath = path.join(getCodexDir(), "config.toml");
+  const authPath = path.join(getCodexDir(), "auth.json");
 
   const defaultData = { channels: [] };
 
@@ -74,31 +82,33 @@ function initializeFromConfig() {
 
   try {
     // 读取 config.toml
-    const configContent = fs.readFileSync(configPath, 'utf8');
+    const configContent = fs.readFileSync(configPath, "utf8");
     const config = toml.parse(configContent);
 
     // 读取 auth.json
     let auth = {};
     if (fs.existsSync(authPath)) {
-      auth = JSON.parse(fs.readFileSync(authPath, 'utf8'));
+      auth = JSON.parse(fs.readFileSync(authPath, "utf8"));
     }
 
     // 从 model_providers 提取渠道
     const channels = [];
     if (config.model_providers) {
-      for (const [providerKey, providerConfig] of Object.entries(config.model_providers)) {
+      for (const [providerKey, providerConfig] of Object.entries(
+        config.model_providers,
+      )) {
         // API Key 获取优先级：派生 env_key > 配置 env_key > OPENAI_API_KEY
         const derivedEnvKey = buildEnvKeyFromProvider(providerKey);
         const configuredEnvKey = normalizeEnvKey(providerConfig.env_key);
-        let apiKey = (derivedEnvKey && auth[derivedEnvKey]) || '';
+        let apiKey = (derivedEnvKey && auth[derivedEnvKey]) || "";
 
         if (!apiKey && configuredEnvKey) {
-          apiKey = auth[configuredEnvKey] || '';
+          apiKey = auth[configuredEnvKey] || "";
         }
 
         // 如果没找到，尝试 OPENAI_API_KEY 作为通用 fallback
-        if (!apiKey && auth['OPENAI_API_KEY']) {
-          apiKey = auth['OPENAI_API_KEY'];
+        if (!apiKey && auth["OPENAI_API_KEY"]) {
+          apiKey = auth["OPENAI_API_KEY"];
         }
 
         const envKey = derivedEnvKey || configuredEnvKey;
@@ -107,39 +117,41 @@ function initializeFromConfig() {
           id: crypto.randomUUID(),
           name: providerConfig.name || providerKey,
           providerKey,
-          baseUrl: providerConfig.base_url || '',
-          wireApi: providerConfig.wire_api || 'responses',
+          baseUrl: providerConfig.base_url || "",
+          wireApi: providerConfig.wire_api || "responses",
           envKey,
           apiKey,
-          websiteUrl: providerConfig.website_url || '',
+          websiteUrl: providerConfig.website_url || "",
           requiresOpenaiAuth: providerConfig.requires_openai_auth !== false,
           queryParams: providerConfig.query_params || null,
           enabled: config.model_provider === providerKey, // 当前激活的渠道启用
-          modelName: config.model || 'gpt-5.2-codex',
+          modelName: config.model || "gpt-5.3-codex",
           weight: 1,
           maxConcurrency: null,
           createdAt: Date.now(),
-          updatedAt: Date.now()
+          updatedAt: Date.now(),
         });
 
         // 自动注入环境变量（从 Codex 迁移过来时使用）
         if (apiKey && envKey) {
           const injectResult = injectEnvToShell(envKey, apiKey);
           if (injectResult.success) {
-            console.log(`[Codex Channels] Environment variable ${envKey} injected during initialization`);
+            console.log(
+              `[Codex Channels] Environment variable ${envKey} injected during initialization`,
+            );
           }
         }
       }
     }
 
     const data = {
-      channels
+      channels,
     };
 
     saveChannels(data);
     return data;
   } catch (err) {
-    console.error('[Codex Channels] Failed to initialize from config:', err);
+    console.error("[Codex Channels] Failed to initialize from config:", err);
     saveChannels(defaultData);
     return defaultData;
   }
@@ -148,13 +160,13 @@ function initializeFromConfig() {
 // 保存渠道数据
 function saveChannels(data) {
   const filePath = getChannelsFilePath();
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf8");
 }
 
-const VALID_REASONING_EFFORTS = new Set(['xhigh', 'high', 'medium', 'low']);
+const VALID_REASONING_EFFORTS = new Set(["xhigh", "high", "medium", "low"]);
 
 function normalizeReasoningEffort(effort) {
-  if (typeof effort !== 'string') return null;
+  if (typeof effort !== "string") return null;
   const normalized = effort.trim().toLowerCase();
   if (!VALID_REASONING_EFFORTS.has(normalized)) return null;
   return normalized;
@@ -164,16 +176,23 @@ function normalizeReasoningEffort(effort) {
 function getChannels() {
   const data = loadChannels();
   return {
-    channels: data.channels || []
+    channels: data.channels || [],
   };
 }
 
 // 添加渠道
-function createChannel(name, providerKey, baseUrl, apiKey, wireApi = 'responses', extraConfig = {}) {
+function createChannel(
+  name,
+  providerKey,
+  baseUrl,
+  apiKey,
+  wireApi = "responses",
+  extraConfig = {},
+) {
   const data = loadChannels();
 
   // 检查 providerKey 是否已存在
-  const existing = data.channels.find(c => c.providerKey === providerKey);
+  const existing = data.channels.find((c) => c.providerKey === providerKey);
   if (existing) {
     throw new Error(`Provider key "${providerKey}" already exists`);
   }
@@ -188,15 +207,15 @@ function createChannel(name, providerKey, baseUrl, apiKey, wireApi = 'responses'
     wireApi,
     envKey,
     apiKey,
-    websiteUrl: extraConfig.websiteUrl || '',
+    websiteUrl: extraConfig.websiteUrl || "",
     requiresOpenaiAuth: extraConfig.requiresOpenaiAuth !== false,
     queryParams: extraConfig.queryParams || null,
     enabled: extraConfig.enabled !== false, // 默认启用
     weight: extraConfig.weight || 1,
     maxConcurrency: extraConfig.maxConcurrency || null,
-    modelName: extraConfig.modelName || 'gpt-5.2-codex',
+    modelName: extraConfig.modelName || "gpt-5.3-codex",
     createdAt: Date.now(),
-    updatedAt: Date.now()
+    updatedAt: Date.now(),
   };
 
   data.channels.push(newChannel);
@@ -206,9 +225,13 @@ function createChannel(name, providerKey, baseUrl, apiKey, wireApi = 'responses'
   if (apiKey && envKey) {
     const injectResult = injectEnvToShell(envKey, apiKey);
     if (injectResult.success) {
-      console.log(`[Codex Channels] Environment variable ${envKey} injected for new channel`);
+      console.log(
+        `[Codex Channels] Environment variable ${envKey} injected for new channel`,
+      );
     } else {
-      console.warn(`[Codex Channels] Failed to inject ${envKey}: ${injectResult.error}`);
+      console.warn(
+        `[Codex Channels] Failed to inject ${envKey}: ${injectResult.error}`,
+      );
     }
   }
 
@@ -220,17 +243,19 @@ function createChannel(name, providerKey, baseUrl, apiKey, wireApi = 'responses'
 // 更新渠道
 function updateChannel(channelId, updates) {
   const data = loadChannels();
-  const index = data.channels.findIndex(c => c.id === channelId);
+  const index = data.channels.findIndex((c) => c.id === channelId);
 
   if (index === -1) {
-    throw new Error('Channel not found');
+    throw new Error("Channel not found");
   }
 
   const oldChannel = data.channels[index];
 
   // 检查 providerKey 冲突
   if (updates.providerKey && updates.providerKey !== oldChannel.providerKey) {
-    const existing = data.channels.find(c => c.providerKey === updates.providerKey && c.id !== channelId);
+    const existing = data.channels.find(
+      (c) => c.providerKey === updates.providerKey && c.id !== channelId,
+    );
     if (existing) {
       throw new Error(`Provider key "${updates.providerKey}" already exists`);
     }
@@ -241,30 +266,40 @@ function updateChannel(channelId, updates) {
     ...updates,
     id: channelId, // 保持 ID 不变
     createdAt: oldChannel.createdAt, // 保持创建时间
-    updatedAt: Date.now()
+    updatedAt: Date.now(),
   };
-  newChannel.envKey = buildEnvKeyFromProvider(newChannel.providerKey) || normalizeEnvKey(newChannel.envKey);
+  newChannel.envKey =
+    buildEnvKeyFromProvider(newChannel.providerKey) ||
+    normalizeEnvKey(newChannel.envKey);
 
   data.channels[index] = newChannel;
   saveChannels(data);
 
   // 处理环境变量更新
   // 如果 envKey 或 apiKey 变化，需要更新环境变量
-  const oldEnvKey = buildEnvKeyFromProvider(oldChannel.providerKey) || normalizeEnvKey(oldChannel.envKey);
-  const newEnvKey = buildEnvKeyFromProvider(newChannel.providerKey) || normalizeEnvKey(newChannel.envKey);
+  const oldEnvKey =
+    buildEnvKeyFromProvider(oldChannel.providerKey) ||
+    normalizeEnvKey(oldChannel.envKey);
+  const newEnvKey =
+    buildEnvKeyFromProvider(newChannel.providerKey) ||
+    normalizeEnvKey(newChannel.envKey);
   const oldApiKey = oldChannel.apiKey;
   const newApiKey = newChannel.apiKey;
 
   // 如果 envKey 改变，删除旧的，注入新的
   if (oldEnvKey !== newEnvKey) {
-    const envKeysToRemove = new Set([oldEnvKey, normalizeEnvKey(oldChannel.envKey)].filter(Boolean));
+    const envKeysToRemove = new Set(
+      [oldEnvKey, normalizeEnvKey(oldChannel.envKey)].filter(Boolean),
+    );
     for (const envKey of envKeysToRemove) {
       if (!envKey || envKey === newEnvKey) {
         continue;
       }
       const removeResult = removeEnvFromShell(envKey);
       if (removeResult.success) {
-        console.log(`[Codex Channels] Old environment variable ${envKey} removed`);
+        console.log(
+          `[Codex Channels] Old environment variable ${envKey} removed`,
+        );
       }
     }
   }
@@ -285,7 +320,7 @@ function updateChannel(channelId, updates) {
 function updateReasoningEffort(effort) {
   const normalized = normalizeReasoningEffort(effort);
   if (!normalized) {
-    throw new Error('Invalid reasoning effort');
+    throw new Error("Invalid reasoning effort");
   }
 
   const codexDir = getCodexDir();
@@ -293,15 +328,17 @@ function updateReasoningEffort(effort) {
     fs.mkdirSync(codexDir, { recursive: true });
   }
 
-  const configPath = path.join(codexDir, 'config.toml');
+  const configPath = path.join(codexDir, "config.toml");
   let config = {};
 
   if (fs.existsSync(configPath)) {
     try {
-      const content = fs.readFileSync(configPath, 'utf8');
+      const content = fs.readFileSync(configPath, "utf8");
       config = toml.parse(content) || {};
     } catch (err) {
-      console.warn('[Codex Channels] Failed to read config.toml, only updating reasoning effort');
+      console.warn(
+        "[Codex Channels] Failed to read config.toml, only updating reasoning effort",
+      );
       config = {};
     }
   }
@@ -317,29 +354,31 @@ function updateReasoningEffort(effort) {
 
 ${tomlContent}`;
 
-    fs.writeFileSync(configPath, annotatedContent, 'utf8');
+    fs.writeFileSync(configPath, annotatedContent, "utf8");
   } catch (err) {
-    console.error('[Codex Channels] Failed to write reasoning effort:', err);
-    throw new Error('Failed to write config.toml: ' + err.message);
+    console.error("[Codex Channels] Failed to write reasoning effort:", err);
+    throw new Error("Failed to write config.toml: " + err.message);
   }
 
   return { effort: normalized };
 }
 
 function getReasoningEffort() {
-  const configPath = path.join(getCodexDir(), 'config.toml');
+  const configPath = path.join(getCodexDir(), "config.toml");
   if (!fs.existsSync(configPath)) {
-    return { effort: 'high' };
+    return { effort: "high" };
   }
 
   try {
-    const content = fs.readFileSync(configPath, 'utf8');
+    const content = fs.readFileSync(configPath, "utf8");
     const config = toml.parse(content);
     const normalized = normalizeReasoningEffort(config?.model_reasoning_effort);
-    return { effort: normalized || 'high' };
+    return { effort: normalized || "high" };
   } catch (err) {
-    console.warn('[Codex Channels] Failed to read reasoning effort, fallback to high');
-    return { effort: 'high' };
+    console.warn(
+      "[Codex Channels] Failed to read reasoning effort, fallback to high",
+    );
+    return { effort: "high" };
   }
 }
 
@@ -347,9 +386,9 @@ function getReasoningEffort() {
 function deleteChannel(channelId) {
   const data = loadChannels();
 
-  const index = data.channels.findIndex(c => c.id === channelId);
+  const index = data.channels.findIndex((c) => c.id === channelId);
   if (index === -1) {
-    throw new Error('Channel not found');
+    throw new Error("Channel not found");
   }
 
   const deletedChannel = data.channels[index];
@@ -357,18 +396,22 @@ function deleteChannel(channelId) {
   saveChannels(data);
 
   // 从 shell 配置文件移除该渠道的环境变量
-  const envKeysToRemove = new Set([
-    buildEnvKeyFromProvider(deletedChannel.providerKey),
-    deletedChannel.envKey,
-    normalizeEnvKey(deletedChannel.envKey)
-  ].filter(Boolean));
+  const envKeysToRemove = new Set(
+    [
+      buildEnvKeyFromProvider(deletedChannel.providerKey),
+      deletedChannel.envKey,
+      normalizeEnvKey(deletedChannel.envKey),
+    ].filter(Boolean),
+  );
 
   for (const envKey of envKeysToRemove) {
     const removeResult = removeEnvFromShell(envKey);
     if (removeResult.success) {
       console.log(`[Codex Channels] Environment variable ${envKey} removed`);
     } else {
-      console.warn(`[Codex Channels] Failed to remove ${envKey}: ${removeResult.error}`);
+      console.warn(
+        `[Codex Channels] Failed to remove ${envKey}: ${removeResult.error}`,
+      );
     }
   }
 
@@ -392,22 +435,22 @@ function writeCodexConfigForMultiChannel(allChannels, reasoningEffort) {
     fs.mkdirSync(codexDir, { recursive: true });
   }
 
-  const configPath = path.join(codexDir, 'config.toml');
-  const authPath = path.join(codexDir, 'auth.json');
+  const configPath = path.join(codexDir, "config.toml");
+  const authPath = path.join(codexDir, "auth.json");
 
   // 读取现有配置，保留所有现有字段（特别是 mcp_servers, projects 等）
   let config = {
-    model: 'gpt-4',
-    model_reasoning_effort: 'high',
-    model_reasoning_summary_format: 'experimental',
-    network_access: 'enabled',
+    model: "gpt-4",
+    model_reasoning_effort: "high",
+    model_reasoning_summary_format: "experimental",
+    network_access: "enabled",
     disable_response_storage: false,
-    show_raw_agent_reasoning: true
+    show_raw_agent_reasoning: true,
   };
 
   if (fs.existsSync(configPath)) {
     try {
-      const content = fs.readFileSync(configPath, 'utf8');
+      const content = fs.readFileSync(configPath, "utf8");
       const parsedConfig = toml.parse(content);
 
       // 深度合并，保留原有的所有配置
@@ -415,11 +458,20 @@ function writeCodexConfigForMultiChannel(allChannels, reasoningEffort) {
         ...parsedConfig,
         // 只覆盖这些字段
         model: parsedConfig.model || config.model,
-        model_reasoning_effort: parsedConfig.model_reasoning_effort || config.model_reasoning_effort,
-        model_reasoning_summary_format: parsedConfig.model_reasoning_summary_format || config.model_reasoning_summary_format,
+        model_reasoning_effort:
+          parsedConfig.model_reasoning_effort || config.model_reasoning_effort,
+        model_reasoning_summary_format:
+          parsedConfig.model_reasoning_summary_format ||
+          config.model_reasoning_summary_format,
         network_access: parsedConfig.network_access || config.network_access,
-        disable_response_storage: parsedConfig.disable_response_storage !== undefined ? parsedConfig.disable_response_storage : config.disable_response_storage,
-        show_raw_agent_reasoning: parsedConfig.show_raw_agent_reasoning !== undefined ? parsedConfig.show_raw_agent_reasoning : config.show_raw_agent_reasoning,
+        disable_response_storage:
+          parsedConfig.disable_response_storage !== undefined
+            ? parsedConfig.disable_response_storage
+            : config.disable_response_storage,
+        show_raw_agent_reasoning:
+          parsedConfig.show_raw_agent_reasoning !== undefined
+            ? parsedConfig.show_raw_agent_reasoning
+            : config.show_raw_agent_reasoning,
         // mcp_servers 和 projects 会从 parsedConfig 自动继承
         // model_provider 会根据动态切换情况决定是否更新
       };
@@ -434,16 +486,24 @@ function writeCodexConfigForMultiChannel(allChannels, reasoningEffort) {
   }
 
   // 判断是否已启用动态切换
-  const isProxyMode = config.model_provider === 'cc-proxy';
-  const existingProviders = (config && typeof config.model_providers === 'object') ? config.model_providers : {};
-  const existingProxyProvider = existingProviders['cc-proxy'];
+  const isProxyMode = config.model_provider === "cc-proxy";
+  const existingProviders =
+    config && typeof config.model_providers === "object"
+      ? config.model_providers
+      : {};
+  const existingProxyProvider = existingProviders["cc-proxy"];
 
   // 只有当未启用动态切换时，才更新 model_provider
   if (!isProxyMode) {
-    const enabledChannels = allChannels.filter(c => c.enabled !== false);
-    const fallbackProvider = enabledChannels[0]?.providerKey || allChannels[0]?.providerKey || 'openai';
+    const enabledChannels = allChannels.filter((c) => c.enabled !== false);
+    const fallbackProvider =
+      enabledChannels[0]?.providerKey ||
+      allChannels[0]?.providerKey ||
+      "openai";
     const currentProvider = config.model_provider;
-    const currentChannel = allChannels.find(channel => channel.providerKey === currentProvider);
+    const currentChannel = allChannels.find(
+      (channel) => channel.providerKey === currentProvider,
+    );
     // 保留已存在且有效的当前渠道，避免新增/更新渠道时重置选择
     config.model_provider =
       currentChannel && currentChannel.enabled !== false
@@ -457,14 +517,14 @@ function writeCodexConfigForMultiChannel(allChannels, reasoningEffort) {
   // 在代理模式下，先保留 cc-proxy provider，避免被覆盖导致缺少 provider
   if (isProxyMode) {
     if (existingProxyProvider) {
-      config.model_providers['cc-proxy'] = existingProxyProvider;
+      config.model_providers["cc-proxy"] = existingProxyProvider;
     } else {
       // 回退默认的代理配置（使用默认端口），确保 provider 存在
-      config.model_providers['cc-proxy'] = {
-        name: 'cc-proxy',
-        base_url: 'http://127.0.0.1:10089/v1',
-        wire_api: 'responses',
-        env_key: 'CC_PROXY_KEY'
+      config.model_providers["cc-proxy"] = {
+        name: "cc-proxy",
+        base_url: "http://127.0.0.1:10089/v1",
+        wire_api: "responses",
+        env_key: "CC_PROXY_KEY",
       };
     }
   }
@@ -474,10 +534,12 @@ function writeCodexConfigForMultiChannel(allChannels, reasoningEffort) {
       name: channel.name,
       base_url: channel.baseUrl,
       wire_api: channel.wireApi,
-      requires_openai_auth: channel.requiresOpenaiAuth !== false
+      requires_openai_auth: channel.requiresOpenaiAuth !== false,
     };
 
-    const envKey = buildEnvKeyFromProvider(channel.providerKey) || normalizeEnvKey(channel.envKey);
+    const envKey =
+      buildEnvKeyFromProvider(channel.providerKey) ||
+      normalizeEnvKey(channel.envKey);
     if (envKey) {
       providerConfig.env_key = envKey;
     }
@@ -500,33 +562,38 @@ function writeCodexConfigForMultiChannel(allChannels, reasoningEffort) {
 
 ${tomlContent}`;
 
-    fs.writeFileSync(configPath, annotatedContent, 'utf8');
+    fs.writeFileSync(configPath, annotatedContent, "utf8");
   } catch (err) {
-    console.error('[Codex Channels] Failed to write config with TOML stringify:', err);
+    console.error(
+      "[Codex Channels] Failed to write config with TOML stringify:",
+      err,
+    );
     // 降级处理：如果 tomlStringify 失败，使用手工拼接（但这样会丢失注释）
     const fallbackContent = JSON.stringify(config, null, 2);
-    fs.writeFileSync(configPath, fallbackContent, 'utf8');
+    fs.writeFileSync(configPath, fallbackContent, "utf8");
   }
 
   // 更新 auth.json
   let auth = {};
   if (fs.existsSync(authPath)) {
     try {
-      auth = JSON.parse(fs.readFileSync(authPath, 'utf8'));
+      auth = JSON.parse(fs.readFileSync(authPath, "utf8"));
     } catch (err) {
-      console.warn('[Codex Channels] Failed to read auth.json, creating new');
+      console.warn("[Codex Channels] Failed to read auth.json, creating new");
     }
   }
 
   // 更新所有渠道的 API Key
   for (const channel of allChannels) {
-    const envKey = buildEnvKeyFromProvider(channel.providerKey) || normalizeEnvKey(channel.envKey);
+    const envKey =
+      buildEnvKeyFromProvider(channel.providerKey) ||
+      normalizeEnvKey(channel.envKey);
     if (channel.apiKey && envKey) {
       auth[envKey] = channel.apiKey;
     }
   }
 
-  fs.writeFileSync(authPath, JSON.stringify(auth, null, 2), 'utf8');
+  fs.writeFileSync(authPath, JSON.stringify(auth, null, 2), "utf8");
 
   // 注意：环境变量注入在 createChannel 和 updateChannel 时已经处理
   // 这里不再重复注入，避免多次写入 shell 配置文件
@@ -535,7 +602,7 @@ ${tomlContent}`;
 // 获取所有启用的渠道（供调度器使用）
 function getEnabledChannels() {
   const data = loadChannels();
-  return data.channels.filter(c => c.enabled !== false);
+  return data.channels.filter((c) => c.enabled !== false);
 }
 
 // 保存渠道顺序
@@ -545,7 +612,7 @@ function saveChannelOrder(order) {
   // 按照给定的顺序重新排列
   const orderedChannels = [];
   for (const id of order) {
-    const channel = data.channels.find(c => c.id === id);
+    const channel = data.channels.find((c) => c.id === id);
     if (channel) {
       orderedChannels.push(channel);
     }
@@ -553,7 +620,7 @@ function saveChannelOrder(order) {
 
   // 添加不在顺序中的渠道(新添加的)
   for (const channel of data.channels) {
-    if (!orderedChannels.find(c => c.id === channel.id)) {
+    if (!orderedChannels.find((c) => c.id === channel.id)) {
       orderedChannels.push(channel);
     }
   }
@@ -580,7 +647,9 @@ function syncAllChannelEnvVars() {
     const results = [];
 
     for (const channel of channels) {
-      const envKey = buildEnvKeyFromProvider(channel.providerKey) || normalizeEnvKey(channel.envKey);
+      const envKey =
+        buildEnvKeyFromProvider(channel.providerKey) ||
+        normalizeEnvKey(channel.envKey);
       if (channel.apiKey && envKey) {
         const injectResult = injectEnvToShell(envKey, channel.apiKey);
         if (injectResult.success) {
@@ -595,7 +664,7 @@ function syncAllChannelEnvVars() {
     console.log(`[Codex Channels] Synced ${syncedCount} environment variables`);
     return { success: true, synced: syncedCount, results };
   } catch (err) {
-    console.error('[Codex Channels] Failed to sync env vars:', err);
+    console.error("[Codex Channels] Failed to sync env vars:", err);
     return { success: false, error: err.message };
   }
 }
@@ -609,10 +678,10 @@ function syncAllChannelEnvVars() {
  */
 function applyChannelToSettings(channelId) {
   const data = loadChannels();
-  const channel = data.channels.find(c => c.id === channelId);
+  const channel = data.channels.find((c) => c.id === channelId);
 
   if (!channel) {
-    throw new Error('Channel not found');
+    throw new Error("Channel not found");
   }
 
   const codexDir = getCodexDir();
@@ -621,33 +690,35 @@ function applyChannelToSettings(channelId) {
     fs.mkdirSync(codexDir, { recursive: true });
   }
 
-  const configPath = path.join(codexDir, 'config.toml');
-  const authPath = path.join(codexDir, 'auth.json');
+  const configPath = path.join(codexDir, "config.toml");
+  const authPath = path.join(codexDir, "auth.json");
 
   // 读取现有配置，保留 mcp_servers, projects 等
   let config = {
-    model: 'gpt-4',
-    model_reasoning_effort: 'high',
-    model_reasoning_summary_format: 'experimental',
-    network_access: 'enabled',
+    model: "gpt-4",
+    model_reasoning_effort: "high",
+    model_reasoning_summary_format: "experimental",
+    network_access: "enabled",
     disable_response_storage: false,
-    show_raw_agent_reasoning: true
+    show_raw_agent_reasoning: true,
   };
 
   if (fs.existsSync(configPath)) {
     try {
-      const content = fs.readFileSync(configPath, 'utf8');
+      const content = fs.readFileSync(configPath, "utf8");
       const parsedConfig = toml.parse(content);
       // 深度合并，保留原有的所有配置
       config = { ...parsedConfig };
     } catch (err) {
-      console.warn('[Codex Channels] Failed to read existing config, using defaults');
+      console.warn(
+        "[Codex Channels] Failed to read existing config, using defaults",
+      );
     }
   }
 
   // 设置当前渠道为 model_provider
   config.model_provider = channel.providerKey;
-  config.model = channel.modelName || config.model || 'gpt-5.2-codex';
+  config.model = channel.modelName || config.model || "gpt-5.3-codex";
 
   // 确保 model_providers 对象存在
   if (!config.model_providers) {
@@ -658,11 +729,13 @@ function applyChannelToSettings(channelId) {
   const providerConfig = {
     name: channel.name,
     base_url: channel.baseUrl,
-    wire_api: channel.wireApi || 'responses',
-    requires_openai_auth: channel.requiresOpenaiAuth !== false
+    wire_api: channel.wireApi || "responses",
+    requires_openai_auth: channel.requiresOpenaiAuth !== false,
   };
 
-  const envKey = buildEnvKeyFromProvider(channel.providerKey) || normalizeEnvKey(channel.envKey);
+  const envKey =
+    buildEnvKeyFromProvider(channel.providerKey) ||
+    normalizeEnvKey(channel.envKey);
   if (envKey) {
     providerConfig.env_key = envKey;
   }
@@ -683,20 +756,25 @@ function applyChannelToSettings(channelId) {
 
 ${tomlContent}`;
 
-    fs.writeFileSync(configPath, annotatedContent, 'utf8');
-    console.log(`[Codex Channels] Applied channel ${channel.name} to config.toml`);
+    fs.writeFileSync(configPath, annotatedContent, "utf8");
+    console.log(
+      `[Codex Channels] Applied channel ${channel.name} to config.toml`,
+    );
   } catch (err) {
-    console.error('[Codex Channels] Failed to write config with TOML stringify:', err);
-    throw new Error('Failed to write config.toml: ' + err.message);
+    console.error(
+      "[Codex Channels] Failed to write config with TOML stringify:",
+      err,
+    );
+    throw new Error("Failed to write config.toml: " + err.message);
   }
 
   // 更新 auth.json
   let auth = {};
   if (fs.existsSync(authPath)) {
     try {
-      auth = JSON.parse(fs.readFileSync(authPath, 'utf8'));
+      auth = JSON.parse(fs.readFileSync(authPath, "utf8"));
     } catch (err) {
-      console.warn('[Codex Channels] Failed to read auth.json, creating new');
+      console.warn("[Codex Channels] Failed to read auth.json, creating new");
     }
   }
 
@@ -705,7 +783,7 @@ ${tomlContent}`;
     auth[envKey] = channel.apiKey;
   }
 
-  fs.writeFileSync(authPath, JSON.stringify(auth, null, 2), 'utf8');
+  fs.writeFileSync(authPath, JSON.stringify(auth, null, 2), "utf8");
 
   // 注入环境变量到 shell 配置文件
   if (channel.apiKey && envKey) {
@@ -725,22 +803,25 @@ function writeCodexConfigForSingleChannel(channelId) {
 
 // 获取当前使用的渠道
 function getCurrentChannel() {
-  const configPath = path.join(getCodexDir(), 'config.toml');
+  const configPath = path.join(getCodexDir(), "config.toml");
   if (!fs.existsSync(configPath)) {
     return null;
   }
 
   try {
-    const content = fs.readFileSync(configPath, 'utf8');
+    const content = fs.readFileSync(configPath, "utf8");
     const config = toml.parse(content);
     if (!config.model_provider) {
       return null;
     }
 
     const data = loadChannels();
-    return data.channels.find(ch => ch.providerKey === config.model_provider) || null;
+    return (
+      data.channels.find((ch) => ch.providerKey === config.model_provider) ||
+      null
+    );
   } catch (err) {
-    console.error('[Codex Channels] Failed to read current channel:', err);
+    console.error("[Codex Channels] Failed to read current channel:", err);
     return null;
   }
 }
@@ -753,7 +834,7 @@ try {
   }
 } catch (err) {
   // 静默失败，不影响模块加载
-  console.warn('[Codex Channels] Auto sync env vars failed:', err.message);
+  console.warn("[Codex Channels] Auto sync env vars failed:", err.message);
 }
 
 module.exports = {
@@ -769,5 +850,5 @@ module.exports = {
   writeCodexConfigForMultiChannel,
   writeCodexConfigForSingleChannel,
   applyChannelToSettings,
-  getCurrentChannel
+  getCurrentChannel,
 };
