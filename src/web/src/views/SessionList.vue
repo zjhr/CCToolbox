@@ -140,6 +140,14 @@
           </n-space>
         </div>
 
+        <ProgressBar
+          v-if="deleteProgressVisible"
+          :progress="deleteProgressState"
+          :status="deleteProgressStatus"
+          :error="deleteProgressError"
+          @retry="handleRetryFailedDeletes"
+        />
+
         <!-- Sessions List with Draggable -->
         <draggable
         v-if="filteredSessions.length > 0"
@@ -437,6 +445,7 @@ import {
 import draggable from 'vuedraggable'
 import { useSessionsStore } from '../stores/sessions'
 import { useFavorites } from '../composables/useFavorites'
+import { useDeleteProgress } from '../composables/useDeleteProgress'
 import message, { dialog } from '../utils/message'
 import { searchSessions as searchSessionsApi } from '../api/sessions'
 import { getTagColor } from '../utils/tag-color'
@@ -448,6 +457,9 @@ import AliasModal from '../components/AliasModal.vue'
 import TrashModal from '../components/TrashModal.vue'
 import DeleteConfirmModal from '../components/DeleteConfirmModal.vue'
 import AliasConflictModal from '../components/AliasConflictModal.vue'
+import ProgressBar from '../components/ProgressBar.vue'
+
+const DELETE_PROGRESS_AUTO_HIDE_MS = 1800
 
 const props = defineProps({
   projectName: {
@@ -460,6 +472,8 @@ const router = useRouter()
 const route = useRoute()
 const store = useSessionsStore()
 const { addFavorite, removeFavorite, isFavorite } = useFavorites()
+const deleteProgress = useDeleteProgress()
+let deleteProgressHideTimer = null
 
 // 当前渠道
 const currentChannel = computed(() => route.meta.channel || 'claude')
@@ -582,6 +596,17 @@ const indeterminate = computed(() => {
 })
 const trashCount = computed(() => store.trashItems.length)
 const trashSessionIds = computed(() => new Set(store.trashItems.map(item => item.sessionId)))
+const deleteProgressVisible = computed(() => deleteProgress.status.value !== 'idle')
+const deleteProgressState = computed(() => deleteProgress.progress.value)
+const deleteProgressStatus = computed(() => deleteProgress.status.value)
+const deleteProgressError = computed(() => deleteProgress.error.value || '')
+
+function clearDeleteProgressHideTimer() {
+  if (deleteProgressHideTimer) {
+    clearTimeout(deleteProgressHideTimer)
+    deleteProgressHideTimer = null
+  }
+}
 
 const clearMenuOptions = computed(() => ([
   {
@@ -785,18 +810,74 @@ async function confirmBatchDelete() {
   if (ids.length === 0) return
   try {
     const result = await store.batchDelete(ids)
-    await store.fetchTrash()
-    if (result.failed) {
-      message.warning(`部分会话删除失败：成功 ${result.deleted}，失败 ${result.failed}`)
-    } else {
-      message.success('会话已移入回收站')
+    if (!result.taskId) {
+      message.warning('删除任务创建失败')
+      return
     }
+    clearDeleteProgressHideTimer()
+    deleteProgress.start(result.taskId)
+    message.info(`已开始删除，共 ${result.totalCount} 个会话`)
     showDeleteConfirm.value = false
     pendingDeleteSessions.value = []
   } catch (err) {
     message.error('删除失败: ' + err.message)
   }
 }
+
+async function handleRetryFailedDeletes(sessionIds = []) {
+  const ids = Array.isArray(sessionIds) ? sessionIds.filter(Boolean) : []
+  if (ids.length === 0) {
+    message.info('没有可重试的失败会话')
+    return
+  }
+
+  try {
+    const result = await store.batchDelete(ids)
+    if (!result.taskId) {
+      message.warning('重试任务创建失败')
+      return
+    }
+    clearDeleteProgressHideTimer()
+    deleteProgress.start(result.taskId)
+    message.info(`已发起重试，共 ${result.totalCount} 个会话`)
+  } catch (err) {
+    message.error('重试失败: ' + err.message)
+  }
+}
+
+watch(() => deleteProgress.status.value, async (nextStatus) => {
+  clearDeleteProgressHideTimer()
+  if (!['completed', 'failed'].includes(nextStatus)) {
+    return
+  }
+
+  try {
+    await Promise.all([
+      store.fetchSessions(props.projectName, { force: true }),
+      store.fetchTrash()
+    ])
+
+    const failedCount = Array.isArray(deleteProgress.progress.value.errors)
+      ? deleteProgress.progress.value.errors.length
+      : 0
+
+    if (nextStatus === 'failed' || failedCount > 0) {
+      message.warning(`删除完成：成功 ${deleteProgress.progress.value.completed - failedCount}，失败 ${failedCount}`)
+    } else {
+      message.success(`已删除 ${deleteProgress.progress.value.completed} 个会话`)
+    }
+  } catch (err) {
+    message.error('刷新会话列表失败: ' + err.message)
+  } finally {
+    store.clearDeleteTask()
+    if (nextStatus === 'completed') {
+      deleteProgressHideTimer = setTimeout(() => {
+        deleteProgress.stop({ reset: true })
+        deleteProgressHideTimer = null
+      }, DELETE_PROGRESS_AUTO_HIDE_MS)
+    }
+  }
+})
 
 async function openTrashModal() {
   showTrashModal.value = true
@@ -1016,12 +1097,21 @@ watch(() => props.projectName, (newProject) => {
 })
 
 onMounted(() => {
+  if (store.deleteTaskId) {
+    try {
+      deleteProgress.start(store.deleteTaskId)
+    } catch (err) {
+      store.clearDeleteTask()
+    }
+  }
   // 【暂时移除】添加事件监听 - 每次切换回来就刷新，体验不好
   // document.addEventListener('visibilitychange', handleVisibilityChange)
   // window.addEventListener('focus', handleWindowFocus)
 })
 
 onUnmounted(() => {
+  clearDeleteProgressHideTimer()
+  deleteProgress.stop({ reset: true })
   // 【暂时移除】清理事件监听
   // document.removeEventListener('visibilitychange', handleVisibilityChange)
   // window.removeEventListener('focus', handleWindowFocus)

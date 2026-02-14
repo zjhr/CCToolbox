@@ -1,6 +1,6 @@
 const express = require('express');
 const {
-  moveToTrash,
+  getBatchDeleteManager,
   listTrash,
   restoreFromTrash,
   permanentDelete,
@@ -34,6 +34,8 @@ function validateChannel(channel) {
 }
 
 module.exports = (config) => {
+  const batchDeleteManager = getBatchDeleteManager();
+
   router.post('/:channel/sessions/:project/batch-delete', async (req, res) => {
     try {
       const { channel, project } = req.params;
@@ -44,30 +46,104 @@ module.exports = (config) => {
         return res.status(400).json({ error: 'sessionIds must be a non-empty array' });
       }
 
-      const results = [];
-      for (const sessionId of sessionIds) {
-        try {
-          const result = await moveToTrash(config, project, sessionId, channel);
-          results.push({ sessionId, trashId: result.trashId, success: true });
-        } catch (err) {
-          results.push({ sessionId, error: err.message, success: false });
-        }
-      }
+      const task = batchDeleteManager.createTask({
+        config,
+        projectName: project,
+        channel,
+        sessionIds
+      });
 
-      const deleted = results.filter(r => r.success).length;
-      const failed = results.filter(r => !r.success).length;
-
-      res.json({
-        success: failed === 0,
-        deleted,
-        failed,
-        trashIds: results.filter(r => r.success).map(r => r.trashId),
-        failures: results.filter(r => !r.success)
+      res.status(202).json({
+        taskId: task.taskId,
+        totalCount: task.totalCount
       });
     } catch (err) {
       console.error('[Trash API] Failed to batch delete sessions:', err);
       res.status(err.statusCode || 500).json({ error: err.message });
     }
+  });
+
+  router.get('/delete-progress', (req, res) => {
+    const { taskId } = req.query;
+    if (!taskId) {
+      return res.status(400).json({ error: 'taskId is required' });
+    }
+
+    const task = batchDeleteManager.getTask(taskId);
+    if (!task) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+
+    if (typeof res.flushHeaders === 'function') {
+      res.flushHeaders();
+    }
+
+    const sendEvent = (eventRecord) => {
+      res.write(`id: ${eventRecord.id}\n`);
+      res.write(`event: ${eventRecord.event}\n`);
+      res.write(`data: ${JSON.stringify(eventRecord.data)}\n\n`);
+    };
+
+    const lastEventId = req.get('Last-Event-ID') || req.query.lastEventId || null;
+    const history = batchDeleteManager.getTaskEventsSince(taskId, lastEventId);
+    history.forEach(sendEvent);
+
+    if (task.status !== 'running') {
+      return res.end();
+    }
+
+    const onProgress = (payload) => {
+      if (payload.taskId !== taskId) return;
+      const currentTask = batchDeleteManager.getTask(taskId);
+      const eventRecord = currentTask?.events?.find(item => item.id === payload.eventId);
+      if (eventRecord) {
+        sendEvent(eventRecord);
+      }
+    };
+
+    const onError = (payload) => {
+      if (payload.taskId !== taskId) return;
+      const currentTask = batchDeleteManager.getTask(taskId);
+      const eventRecord = currentTask?.events?.find(item => item.id === payload.eventId);
+      if (eventRecord) {
+        sendEvent(eventRecord);
+      }
+    };
+
+    const onComplete = (payload) => {
+      if (payload.taskId !== taskId) return;
+      const currentTask = batchDeleteManager.getTask(taskId);
+      const eventRecord = currentTask?.events?.find(item => item.id === payload.eventId);
+      if (eventRecord) {
+        sendEvent(eventRecord);
+      }
+      cleanup();
+      res.end();
+    };
+
+    const keepAlive = setInterval(() => {
+      res.write(': keep-alive\n\n');
+    }, 15000);
+
+    const cleanup = () => {
+      clearInterval(keepAlive);
+      batchDeleteManager.off('progress', onProgress);
+      batchDeleteManager.off('error', onError);
+      batchDeleteManager.off('complete', onComplete);
+    };
+
+    batchDeleteManager.on('progress', onProgress);
+    batchDeleteManager.on('error', onError);
+    batchDeleteManager.on('complete', onComplete);
+
+    req.on('close', () => {
+      cleanup();
+    });
   });
 
   router.get('/:channel/sessions/:project/trash', async (req, res) => {

@@ -1,6 +1,6 @@
 {
   "name": "cctoolbox",
-  "version": "3.3.1",
+  "version": "3.3.2",
   "description": "CCToolbox - Vibe Coding 增强工作助手 - 智能会话管理、动态渠道切换、全局搜索、实时监控",
   "main": "src/index.js",
   "bin": {
@@ -8,7 +8,7 @@
   },
   "scripts": {
     "start": "node bin/ct.js",
-    "test": "node tests/utils/app-path-manager.test.js && node tests/trash-service.test.js && node tests/ai-config.test.js && node tests/ai-service.test.js && node tests/ai-api.test.js && node tests/ai-metadata.test.js && node tests/ai-summary.test.js && node tests/ai-integration.test.js && node tests/skill-cache.test.js && node tests/github-client.test.js && node tests/skill-upload.test.js && node tests/skill-upload-service.test.js && node tests/skill-check-update.test.js && node tests/skill-reinstall.test.js && node tests/skill-performance.test.js && node tests/skill-accessibility.test.js && node tests/skill-responsive.test.js && node tests/skill-ui-components.test.js",
+    "test": "node tests/utils/app-path-manager.test.js && node tests/session-list-cache.test.js && node tests/batch-delete-manager.test.js && node tests/trash-service.test.js && node tests/ai-config.test.js && node tests/ai-service.test.js && node tests/ai-api.test.js && node tests/ai-metadata.test.js && node tests/ai-summary.test.js && node tests/ai-integration.test.js && node tests/skill-cache.test.js && node tests/github-client.test.js && node tests/skill-upload.test.js && node tests/skill-upload-service.test.js && node tests/skill-check-update.test.js && node tests/skill-reinstall.test.js && node tests/skill-performance.test.js && node tests/skill-accessibility.test.js && node tests/skill-responsive.test.js && node tests/skill-ui-components.test.js",
     "build:web": "cd src/web && npm run build",
     "dev:web": "cd src/web && npm run dev",
     "dev:server": "nodemon"

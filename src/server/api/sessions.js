@@ -4,10 +4,24 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const readline = require('readline');
-const { getSessionsForProject, deleteSession, forkSession, saveSessionOrder, parseRealProjectPath, searchSessions, getRecentSessions, searchSessionsAcrossProjects, hasActualMessages, getSubagentMessages } = require('../services/sessions');
+const {
+  getSessionsForProject,
+  deleteSession,
+  forkSession,
+  saveSessionOrder,
+  parseRealProjectPath,
+  searchSessions,
+  searchSessionsAcrossProjects,
+  hasActualMessages,
+  getSubagentMessages,
+  getSessionListCache,
+  getSessionListCacheKey,
+  getRecentSessionsOptimized
+} = require('../services/sessions');
 const { loadAliases } = require('../services/alias');
 const { broadcastLog } = require('../websocket-server');
 const { buildMessageCounts } = require('../services/message-counts');
+const { startSessionCacheWatcher } = require('../services/cache-watcher');
 
 function extractProgressEntry(json) {
   const data = json?.data || {};
@@ -29,6 +43,9 @@ function extractProgressEntry(json) {
 }
 
 module.exports = (config) => {
+  const sessionListCache = getSessionListCache();
+  startSessionCacheWatcher(config, sessionListCache);
+
   // GET /api/sessions/search/global - Search sessions across all projects
   router.get('/search/global', (req, res) => {
     try {
@@ -53,10 +70,19 @@ module.exports = (config) => {
   });
 
   // GET /api/sessions/recent - Get recent sessions across all projects
-  router.get('/recent/list', (req, res) => {
+  router.get('/recent/list', async (req, res) => {
     try {
-      const limit = parseInt(req.query.limit) || 5;
-      const sessions = getRecentSessions(config, limit);
+      const limit = Math.max(1, parseInt(req.query.limit, 10) || 5);
+      const cacheKey = getSessionListCacheKey('claude', limit);
+      const cached = sessionListCache.get(cacheKey);
+      if (cached) {
+        res.set('X-Session-Cache', 'HIT');
+        return res.json({ sessions: cached });
+      }
+
+      const sessions = await getRecentSessionsOptimized(config, limit);
+      sessionListCache.set(cacheKey, sessions);
+      res.set('X-Session-Cache', 'MISS');
       res.json({ sessions });
     } catch (error) {
       console.error('Error fetching recent sessions:', error);

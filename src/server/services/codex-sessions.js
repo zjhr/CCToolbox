@@ -4,6 +4,73 @@ const { getCodexDir } = require('./codex-config');
 const { parseSession, parseSessionMeta, extractSessionMeta, readJSONL } = require('./codex-parser');
 const { getAllMetadata } = require('./session-metadata');
 
+class MinHeap {
+  constructor(compareFn) {
+    this.compareFn = compareFn;
+    this.items = [];
+  }
+
+  size() {
+    return this.items.length;
+  }
+
+  peek() {
+    return this.items[0] || null;
+  }
+
+  push(value) {
+    this.items.push(value);
+    this.bubbleUp(this.items.length - 1);
+  }
+
+  replaceTop(value) {
+    if (this.items.length === 0) {
+      this.items[0] = value;
+      return;
+    }
+    this.items[0] = value;
+    this.bubbleDown(0);
+  }
+
+  toArray() {
+    return [...this.items];
+  }
+
+  bubbleUp(index) {
+    let current = index;
+    while (current > 0) {
+      const parent = Math.floor((current - 1) / 2);
+      if (this.compareFn(this.items[current], this.items[parent]) >= 0) {
+        break;
+      }
+      [this.items[current], this.items[parent]] = [this.items[parent], this.items[current]];
+      current = parent;
+    }
+  }
+
+  bubbleDown(index) {
+    let current = index;
+    const length = this.items.length;
+    while (true) {
+      const left = current * 2 + 1;
+      const right = left + 1;
+      let next = current;
+
+      if (left < length && this.compareFn(this.items[left], this.items[next]) < 0) {
+        next = left;
+      }
+      if (right < length && this.compareFn(this.items[right], this.items[next]) < 0) {
+        next = right;
+      }
+      if (next === current) {
+        break;
+      }
+      [this.items[current], this.items[next]] = [this.items[next], this.items[current]];
+      current = next;
+    }
+  }
+}
+
 /**
  * 获取会话目录
  */
@@ -63,6 +130,70 @@ function scanSessionFiles() {
       date: match[1].split('T')[0]
     };
   }).filter(Boolean);
+}
+
+async function scanDirectoryRecursiveAsync(dir) {
+  const results = [];
+
+  try {
+    const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+    await Promise.all(entries.map(async (entry) => {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        const children = await scanDirectoryRecursiveAsync(fullPath);
+        results.push(...children);
+        return;
+      }
+
+      if (!entry.isFile() || !entry.name.match(/^rollout-.*\.jsonl$/)) {
+        return;
+      }
+
+      const match = entry.name.match(/rollout-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})-([\w-]+)\.jsonl/);
+      if (!match) {
+        return;
+      }
+
+      results.push({
+        filePath: fullPath,
+        timestamp: match[1],
+        sessionId: match[2],
+        date: match[1].split('T')[0]
+      });
+    }));
+  } catch (err) {
+    return [];
+  }
+
+  return results;
+}
+
+async function scanSessionFilesAsync() {
+  const sessionsDir = getSessionsDir();
+  try {
+    await fs.promises.access(sessionsDir);
+  } catch (err) {
+    return [];
+  }
+  return scanDirectoryRecursiveAsync(sessionsDir);
+}
+
+function resolveProjectMeta(meta = {}) {
+  const cwd = meta.cwd || '';
+  let projectName = path.basename(cwd || '') || 'unknown';
+
+  if (meta.git?.repositoryUrl) {
+    const repoName = meta.git.repositoryUrl.split('/').pop().replace('.git', '');
+    if (repoName) {
+      projectName = repoName;
+    }
+  }
+
+  return {
+    projectName,
+    projectDisplayName: projectName,
+    projectFullPath: cwd
+  };
 }
 
 /**
@@ -545,6 +676,75 @@ function getRecentSessions(limit = 5) {
     .slice(0, limit);
 }
 
+async function getRecentSessionsOptimized(limit = 5) {
+  const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 5;
+  const files = await scanSessionFilesAsync();
+  if (files.length === 0) {
+    return [];
+  }
+
+  const minHeap = new MinHeap((a, b) => a.mtimeMs - b.mtimeMs);
+
+  await Promise.all(files.map(async (file) => {
+    try {
+      const stats = await fs.promises.stat(file.filePath);
+      if (!stats.isFile()) {
+        return;
+      }
+
+      const candidate = {
+        ...file,
+        size: stats.size,
+        mtimeMs: stats.mtimeMs,
+        mtime: stats.mtime.toISOString()
+      };
+
+      if (minHeap.size() < safeLimit) {
+        minHeap.push(candidate);
+        return;
+      }
+
+      const oldest = minHeap.peek();
+      if (oldest && candidate.mtimeMs > oldest.mtimeMs) {
+        minHeap.replaceTop(candidate);
+      }
+    } catch (err) {
+      // 忽略单个会话文件读取异常
+    }
+  }));
+
+  const { getForkRelations } = require('./sessions');
+  const { loadAliases } = require('./alias');
+  const forkRelations = getForkRelations();
+  const aliases = loadAliases();
+
+  const candidates = minHeap.toArray().sort((a, b) => b.mtimeMs - a.mtimeMs);
+  const sessions = [];
+
+  for (const candidate of candidates) {
+    const parsed = parseSessionMeta(candidate.filePath);
+    const meta = parsed?.meta || {};
+    const projectMeta = resolveProjectMeta(meta);
+
+    sessions.push({
+      sessionId: candidate.sessionId,
+      mtime: candidate.mtime,
+      size: candidate.size,
+      filePath: candidate.filePath,
+      gitBranch: meta.git?.branch || null,
+      firstMessage: parsed?.preview || null,
+      forkedFrom: forkRelations[candidate.sessionId] || null,
+      alias: aliases[candidate.sessionId] || null,
+      projectName: projectMeta.projectName,
+      projectDisplayName: projectMeta.projectDisplayName,
+      projectFullPath: projectMeta.projectFullPath,
+      source: 'codex'
+    });
+  }
+
+  return sessions.slice(0, safeLimit);
+}
+
 /**
  * 删除一个会话
  * @param {string} sessionId - 会话 ID
@@ -697,6 +897,7 @@ module.exports = {
   deleteSession,
   deleteProject,
   getRecentSessions,
+  getRecentSessionsOptimized,
   getSessionOrder,
   saveSessionOrder,
   getProjectOrder,

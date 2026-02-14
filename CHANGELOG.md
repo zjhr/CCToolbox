@@ -6,6 +6,18 @@
 
 ## [Unreleased]
 
+## [3.3.2] - 2026-02-14
+
+### Added
+
+- ⚡ **会话列表缓存** - 内存缓存（LRU + TTL 30s）+ chokidar 文件监听智能失效，会话列表响应时间从 >5s 优化至 <2s
+- 🗑️ **批量删除并发优化** - 动态并发控制（自适应 CPU 核心数）+ 单操作超时保护 + SSE 实时推送删除进度，前端 ProgressBar 组件可视化展示
+- 🎨 **Codex 工具渲染增强** - 支持 Codex `request_user_input` 样式渲染，与 Claude AskUserQuestion 保持一致的视觉效果
+
+### Changed
+
+- 🔄 **批量删除 API 异步化** - 批量删除 API 从同步串行改为异步并发，返回 taskId + SSE 推送进度
+
 ## [3.3.1] - 2026-01-30
 
 ### Added

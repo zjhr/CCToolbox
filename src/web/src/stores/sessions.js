@@ -100,6 +100,7 @@ export const useSessionsStore = defineStore('sessions', () => {
   const selectedSessions = ref(new Set())
   const trashItems = ref([])
   const trashLoading = ref(false)
+  const deleteTaskId = ref(null)
 
   // Computed
   const sessionsWithAlias = computed(() => {
@@ -384,25 +385,11 @@ export const useSessionsStore = defineStore('sessions', () => {
   async function batchDelete(sessionIds = null) {
     try {
       const ids = sessionIds && sessionIds.length ? sessionIds : Array.from(selectedSessions.value)
-      if (!ids.length) return { success: false, deleted: 0 }
+      if (!ids.length) {
+        return { taskId: null, totalCount: 0 }
+      }
       const result = await batchDeleteSessions(currentProject.value, ids, currentChannel.value)
-      sessions.value = sessions.value.filter(session => !ids.includes(session.sessionId))
-      totalSize.value = sessions.value.reduce((sum, session) => sum + (session.size || 0), 0)
-      ids.forEach(id => {
-        if (aliases.value[id]) {
-          delete aliases.value[id]
-        }
-        if (metadata.value[id]) {
-          delete metadata.value[id]
-        }
-      })
-      setCachedSessions(currentChannel.value, currentProject.value, {
-        sessions: sessions.value,
-        aliases: aliases.value,
-        metadata: metadata.value,
-        totalSize: totalSize.value,
-        projectInfo: currentProjectInfo.value
-      })
+      deleteTaskId.value = result.taskId || null
       selectedSessions.value = new Set()
       selectionMode.value = false
       return result
@@ -410,6 +397,10 @@ export const useSessionsStore = defineStore('sessions', () => {
       error.value = err.message
       throw err
     }
+  }
+
+  function clearDeleteTask() {
+    deleteTaskId.value = null
   }
 
   async function fetchTrash(projectName = null) {
@@ -486,6 +477,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     selectedSessions,
     trashItems,
     trashLoading,
+    deleteTaskId,
     sessionsWithAlias,
     loadMetadata,
     setMetadataCache,
@@ -503,6 +495,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     exitSelectionMode,
     toggleSelection,
     batchDelete,
+    clearDeleteTask,
     fetchTrash,
     restoreFromTrash,
     deleteTrashItem,

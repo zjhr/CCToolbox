@@ -1,7 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const os = require('os');
 const readline = require('readline');
+const EventEmitter = require('events');
+const pLimit = require('p-limit');
 const { getAppDir } = require('../../utils/app-path-manager');
 const { parseSessionInfoFast } = require('../../utils/session');
 const {
@@ -24,6 +27,229 @@ const TRASH_CHANNELS = ['claude', 'codex', 'gemini'];
 const LOCK_RETRY_DELAY_MS = 50;
 const LOCK_MAX_RETRIES = 40;
 const LOCK_STALE_MS = 10000;
+const BATCH_DELETE_TIMEOUT_MS = 10 * 1000;
+const BATCH_DELETE_TIMEOUT_GRACE_MS = 50;
+const BATCH_DELETE_TASK_TTL_MS = 5 * 60 * 1000;
+const BATCH_DELETE_MAX_EVENT_HISTORY = 5000;
+
+function getDynamicConcurrency() {
+  const cpuCount = Array.isArray(os.cpus()) ? os.cpus().length : 2;
+  const halfCpu = Math.floor(cpuCount / 2);
+  return Math.max(2, Math.min(8, halfCpu || 2));
+}
+
+function createBatchTaskId() {
+  if (crypto.randomUUID) {
+    return `delete-${crypto.randomUUID()}`;
+  }
+  return `delete-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+}
+
+function runWithTimeout(taskFn, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    let finished = false;
+    const timer = setTimeout(() => {
+      if (finished) return;
+      finished = true;
+      reject(new Error(`Delete operation timeout after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    Promise.resolve()
+      .then(taskFn)
+      .then((result) => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+        resolve(result);
+      })
+      .catch((err) => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+        reject(err);
+      });
+  });
+}
+
+class BatchDeleteManager extends EventEmitter {
+  constructor(options = {}) {
+    super();
+    this.timeoutMs = Number.isFinite(options.timeoutMs) ? options.timeoutMs : BATCH_DELETE_TIMEOUT_MS;
+    this.taskTtlMs = Number.isFinite(options.taskTtlMs) ? options.taskTtlMs : BATCH_DELETE_TASK_TTL_MS;
+    this.concurrency = Number.isFinite(options.concurrency) ? options.concurrency : getDynamicConcurrency();
+    this.moveToTrashFn = options.moveToTrashFn || moveToTrash;
+    this.taskIdFactory = options.taskIdFactory || createBatchTaskId;
+    this.tasks = new Map();
+    // Node.js 对 `error` 事件要求至少有一个监听器，否则会抛出未处理异常
+    this.on('error', () => {});
+  }
+
+  getTask(taskId) {
+    return this.tasks.get(taskId) || null;
+  }
+
+  getTaskEventsSince(taskId, lastEventId = null) {
+    const task = this.getTask(taskId);
+    if (!task) {
+      return [];
+    }
+    if (!lastEventId) {
+      return [...task.events];
+    }
+    const startId = Number.parseInt(lastEventId, 10);
+    if (!Number.isFinite(startId)) {
+      return [...task.events];
+    }
+    return task.events.filter(event => event.id > startId);
+  }
+
+  createTask(params) {
+    const { config, projectName, channel, sessionIds } = params || {};
+    if (!Array.isArray(sessionIds) || sessionIds.length === 0) {
+      throw new Error('sessionIds must be a non-empty array');
+    }
+
+    const taskId = this.taskIdFactory();
+    const task = {
+      taskId,
+      config,
+      projectName,
+      channel,
+      sessionIds: [...sessionIds],
+      total: sessionIds.length,
+      completed: 0,
+      status: 'running',
+      results: [],
+      errors: [],
+      events: [],
+      nextEventId: 1,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+
+    this.tasks.set(taskId, task);
+    this.executeTask(task).catch((err) => {
+      this.pushEvent(task, 'error', {
+        taskId,
+        status: 'failed',
+        error: err.message
+      });
+      task.status = 'failed';
+      task.updatedAt = Date.now();
+      this.scheduleCleanup(taskId);
+    });
+
+    return {
+      taskId,
+      totalCount: task.total
+    };
+  }
+
+  pushEvent(task, eventName, payload) {
+    const eventRecord = {
+      id: task.nextEventId,
+      event: eventName,
+      data: payload
+    };
+    task.nextEventId += 1;
+    task.updatedAt = Date.now();
+    task.events.push(eventRecord);
+
+    if (task.events.length > BATCH_DELETE_MAX_EVENT_HISTORY) {
+      task.events.splice(0, task.events.length - BATCH_DELETE_MAX_EVENT_HISTORY);
+    }
+
+    this.emit(eventName, {
+      ...payload,
+      eventId: eventRecord.id
+    });
+  }
+
+  async executeTask(task) {
+    const limit = pLimit(this.concurrency);
+
+    await Promise.all(task.sessionIds.map(sessionId => limit(async () => {
+      const startedAt = Date.now();
+      let itemResult;
+      try {
+        const result = await runWithTimeout(
+          () => this.moveToTrashFn(task.config, task.projectName, sessionId, task.channel),
+          this.timeoutMs
+        );
+        const durationMs = Date.now() - startedAt;
+        if (durationMs > this.timeoutMs + BATCH_DELETE_TIMEOUT_GRACE_MS) {
+          throw new Error(`Delete operation timeout after ${this.timeoutMs}ms`);
+        }
+        itemResult = {
+          sessionId,
+          success: true,
+          trashId: result?.trashId || null,
+          durationMs
+        };
+      } catch (err) {
+        itemResult = {
+          sessionId,
+          success: false,
+          error: err.message,
+          durationMs: Date.now() - startedAt
+        };
+        task.errors.push({
+          sessionId,
+          error: err.message
+        });
+        this.pushEvent(task, 'error', {
+          taskId: task.taskId,
+          sessionId,
+          error: err.message,
+          status: 'running'
+        });
+      }
+
+      task.results.push(itemResult);
+      task.completed += 1;
+      const percentage = task.total === 0 ? 100 : Math.round((task.completed / task.total) * 100);
+      this.pushEvent(task, 'progress', {
+        taskId: task.taskId,
+        completed: task.completed,
+        total: task.total,
+        percentage,
+        status: 'running',
+        current: sessionId
+      });
+    })));
+
+    task.status = task.errors.length > 0 ? 'failed' : 'completed';
+    this.pushEvent(task, 'complete', {
+      taskId: task.taskId,
+      completed: task.completed,
+      total: task.total,
+      percentage: 100,
+      status: task.status,
+      errors: task.errors,
+      results: task.results
+    });
+
+    this.scheduleCleanup(task.taskId);
+  }
+
+  scheduleCleanup(taskId) {
+    const timer = setTimeout(() => {
+      this.tasks.delete(taskId);
+    }, this.taskTtlMs);
+    if (typeof timer.unref === 'function') {
+      timer.unref();
+    }
+  }
+}
+
+let batchDeleteManager = null;
+
+function getBatchDeleteManager() {
+  if (!batchDeleteManager) {
+    batchDeleteManager = new BatchDeleteManager();
+  }
+  return batchDeleteManager;
+}
 
 function getTrashBaseDir() {
   return path.join(getAppDir(), 'trash');
@@ -223,6 +449,19 @@ function moveFileSync(sourcePath, targetPath) {
   }
 }
 
+async function moveFile(sourcePath, targetPath) {
+  try {
+    await fs.promises.rename(sourcePath, targetPath);
+  } catch (err) {
+    if (err.code === 'EXDEV') {
+      await fs.promises.copyFile(sourcePath, targetPath);
+      await fs.promises.unlink(sourcePath);
+      return;
+    }
+    throw err;
+  }
+}
+
 function getClaudeSessionFile(config, projectName, sessionId) {
   const projectDir = path.join(config.projectsDir, projectName);
   return path.join(projectDir, `${sessionId}.jsonl`);
@@ -351,6 +590,18 @@ function getGeminiFirstMessage(filePath) {
   }
 }
 
+async function getGeminiFirstMessageAsync(filePath) {
+  try {
+    const content = await fs.promises.readFile(filePath, 'utf8');
+    const session = JSON.parse(content);
+    const messages = session.messages || [];
+    const firstUserMessage = messages.find(msg => msg.type === 'user');
+    return firstUserMessage?.content || '';
+  } catch (err) {
+    return '';
+  }
+}
+
 async function moveToTrash(config, projectName, sessionId, channel) {
   ensureTrashStorage();
   const now = Date.now();
@@ -378,7 +629,7 @@ async function moveToTrash(config, projectName, sessionId, channel) {
       throw new Error('Session not found');
     }
     const info = parseSessionInfoFast(sessionFilePath);
-    const stats = fs.statSync(sessionFilePath);
+    const stats = await fs.promises.stat(sessionFilePath);
     backup = {
       ...backup,
       forkedFrom,
@@ -396,7 +647,7 @@ async function moveToTrash(config, projectName, sessionId, channel) {
     }
     sessionFilePath = session.filePath;
     const meta = parseSessionMeta(sessionFilePath);
-    const stats = fs.statSync(sessionFilePath);
+    const stats = await fs.promises.stat(sessionFilePath);
     projectKey = `codex-${projectName}`;
     backup = {
       ...backup,
@@ -418,7 +669,7 @@ async function moveToTrash(config, projectName, sessionId, channel) {
       .filter(item => item.forkedFrom === sessionId)
       .map(item => item.sessionId);
     sessionFilePath = session.filePath;
-    const stats = fs.statSync(sessionFilePath);
+    const stats = await fs.promises.stat(sessionFilePath);
     backup = {
       ...backup,
       forkedFrom,
@@ -426,7 +677,7 @@ async function moveToTrash(config, projectName, sessionId, channel) {
       sessionOrderIndex: null,
       fileSize: stats.size,
       lastModified: stats.mtimeMs,
-      firstMessage: getGeminiFirstMessage(sessionFilePath)
+      firstMessage: await getGeminiFirstMessageAsync(sessionFilePath)
     };
   } else {
     throw new Error('Invalid channel');
@@ -436,7 +687,7 @@ async function moveToTrash(config, projectName, sessionId, channel) {
   const trashFilePath = resolveTrashFilePath(channel, projectName, sessionId, extension);
   const trashId = generateTrashId(sessionId);
 
-  moveFileSync(sessionFilePath, trashFilePath);
+  await moveFile(sessionFilePath, trashFilePath);
 
   if (channel === 'gemini') {
     cleanupGeminiForkRelations(sessionId);
@@ -966,6 +1217,8 @@ function startTrashCleanup() {
 module.exports = {
   ensureTrashStorage,
   moveToTrash,
+  BatchDeleteManager,
+  getBatchDeleteManager,
   listTrash,
   restoreFromTrash,
   permanentDelete,

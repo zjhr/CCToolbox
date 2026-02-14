@@ -8,17 +8,22 @@ const {
   searchSessions,
   forkSession,
   deleteSession,
-  getRecentSessions,
+  getRecentSessionsOptimized,
   saveSessionOrder,
   getProjectPath,
   getAllSessions
 } = require('../services/gemini-sessions');
+const { getSessionListCache, getSessionListCacheKey } = require('../services/sessions');
+const { startSessionCacheWatcher } = require('../services/cache-watcher');
 const { isGeminiInstalled } = require('../services/gemini-config');
 const { loadAliases } = require('../services/alias');
 const { getTerminalLaunchCommand } = require('../services/terminal-config');
 const { buildMessageCounts } = require('../services/message-counts');
 
 module.exports = (config) => {
+  const sessionListCache = getSessionListCache();
+  startSessionCacheWatcher(config, sessionListCache);
+
   /**
    * GET /api/gemini/sessions/search/global?keyword=xxx
    * 全局搜索
@@ -53,15 +58,27 @@ module.exports = (config) => {
    * GET /api/gemini/sessions/recent/list?limit=10
    * 获取最近会话
    */
-  router.get('/recent/list', (req, res) => {
+  router.get('/recent/list', async (req, res) => {
     try {
       if (!isGeminiInstalled()) {
         return res.status(404).json({ error: 'Gemini CLI not installed' });
       }
 
-      const limit = parseInt(req.query.limit) || 5;
-      const sessions = getRecentSessions(limit);
+      const limit = Math.max(1, parseInt(req.query.limit, 10) || 5);
+      const cacheKey = getSessionListCacheKey('gemini', limit);
+      const cached = sessionListCache.get(cacheKey);
+      if (cached) {
+        res.set('X-Session-Cache', 'HIT');
+        return res.json({
+          sessions: cached,
+          source: 'gemini'
+        });
+      }
 
+      const sessions = await getRecentSessionsOptimized(limit);
+      sessionListCache.set(cacheKey, sessions);
+
+      res.set('X-Session-Cache', 'MISS');
       res.json({
         sessions,
         source: 'gemini'

@@ -16,6 +16,182 @@ const {
   rememberHasMessages
 } = require('./session-cache');
 
+const SESSION_LIST_CACHE_TTL_MS = 30 * 1000;
+const SESSION_LIST_CACHE_MAX_ENTRIES = 100;
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function wildcardToRegExp(pattern) {
+  if (pattern instanceof RegExp) {
+    return pattern;
+  }
+  const source = String(pattern || '')
+    .split('*')
+    .map(escapeRegExp)
+    .join('.*');
+  return new RegExp(`^${source}$`);
+}
+
+class SessionListCache {
+  constructor(options = {}) {
+    this.maxEntries = Number.isFinite(options.maxEntries) ? options.maxEntries : SESSION_LIST_CACHE_MAX_ENTRIES;
+    this.ttlMs = Number.isFinite(options.ttlMs) ? options.ttlMs : SESSION_LIST_CACHE_TTL_MS;
+    this.store = new Map();
+  }
+
+  get(key) {
+    const cacheKey = String(key);
+    const entry = this.store.get(cacheKey);
+    if (!entry) {
+      return null;
+    }
+
+    if (entry.expiresAt <= Date.now()) {
+      this.store.delete(cacheKey);
+      return null;
+    }
+
+    // LRU: 访问后移动到末尾
+    this.store.delete(cacheKey);
+    this.store.set(cacheKey, entry);
+    return entry.value;
+  }
+
+  set(key, value) {
+    const cacheKey = String(key);
+    const entry = {
+      value,
+      expiresAt: Date.now() + this.ttlMs
+    };
+
+    if (this.store.has(cacheKey)) {
+      this.store.delete(cacheKey);
+    }
+
+    this.store.set(cacheKey, entry);
+    this.evictIfNeeded();
+  }
+
+  invalidate(pattern = null) {
+    if (!pattern) {
+      const removed = this.store.size;
+      this.store.clear();
+      return removed;
+    }
+
+    const matcher = wildcardToRegExp(pattern);
+    let removed = 0;
+    for (const cacheKey of Array.from(this.store.keys())) {
+      if (matcher.test(cacheKey)) {
+        this.store.delete(cacheKey);
+        removed += 1;
+      }
+    }
+    return removed;
+  }
+
+  clear() {
+    const removed = this.store.size;
+    this.store.clear();
+    return removed;
+  }
+
+  size() {
+    return this.store.size;
+  }
+
+  evictIfNeeded() {
+    while (this.store.size > this.maxEntries) {
+      const oldestKey = this.store.keys().next().value;
+      if (!oldestKey) {
+        break;
+      }
+      this.store.delete(oldestKey);
+    }
+  }
+}
+
+class MinHeap {
+  constructor(compareFn) {
+    this.compareFn = compareFn;
+    this.items = [];
+  }
+
+  size() {
+    return this.items.length;
+  }
+
+  peek() {
+    return this.items[0] || null;
+  }
+
+  push(value) {
+    this.items.push(value);
+    this.bubbleUp(this.items.length - 1);
+  }
+
+  replaceTop(value) {
+    if (this.items.length === 0) {
+      this.items[0] = value;
+      return;
+    }
+    this.items[0] = value;
+    this.bubbleDown(0);
+  }
+
+  toArray() {
+    return [...this.items];
+  }
+
+  bubbleUp(index) {
+    let current = index;
+    while (current > 0) {
+      const parent = Math.floor((current - 1) / 2);
+      if (this.compareFn(this.items[current], this.items[parent]) >= 0) {
+        break;
+      }
+      [this.items[current], this.items[parent]] = [this.items[parent], this.items[current]];
+      current = parent;
+    }
+  }
+
+  bubbleDown(index) {
+    let current = index;
+    const length = this.items.length;
+    while (true) {
+      const left = current * 2 + 1;
+      const right = left + 1;
+      let next = current;
+
+      if (left < length && this.compareFn(this.items[left], this.items[next]) < 0) {
+        next = left;
+      }
+      if (right < length && this.compareFn(this.items[right], this.items[next]) < 0) {
+        next = right;
+      }
+      if (next === current) {
+        break;
+      }
+      [this.items[current], this.items[next]] = [this.items[next], this.items[current]];
+      current = next;
+    }
+  }
+}
+
+function getSessionListCacheKey(channel, limit) {
+  const safeChannel = channel || 'claude';
+  const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 5;
+  return `${safeChannel}:${safeLimit}`;
+}
+
+const sessionListCache = new SessionListCache();
+
+function getSessionListCache() {
+  return sessionListCache;
+}
+
 // Base directory for CCToolbox data
 function getCcToolDir() {
   return getAppDir();
@@ -938,6 +1114,95 @@ function getRecentSessions(config, limit = 5) {
   return allSessions.slice(0, limit);
 }
 
+async function getRecentSessionsOptimized(config, limit = 5) {
+  const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 5;
+  const projects = getProjects(config);
+  if (projects.length === 0) {
+    return [];
+  }
+
+  const minHeap = new MinHeap((a, b) => a.mtimeMs - b.mtimeMs);
+  const promisesFs = fs.promises;
+
+  await Promise.all(projects.map(async (projectName) => {
+    const projectDir = path.join(config.projectsDir, projectName);
+    let entries;
+
+    try {
+      entries = await promisesFs.readdir(projectDir, { withFileTypes: true });
+    } catch (err) {
+      console.warn(`[Sessions] Failed to read project dir "${projectName}":`, err.message);
+      return;
+    }
+
+    const { projectName: displayName, fullPath } = parseRealProjectPath(projectName);
+    const sessionFiles = entries.filter(entry => entry.isFile() && entry.name.endsWith('.jsonl') && !entry.name.startsWith('agent-'));
+
+    await Promise.all(sessionFiles.map(async (entry) => {
+      const sessionId = entry.name.replace(/\.jsonl$/, '');
+      const filePath = path.join(projectDir, entry.name);
+      try {
+        const stats = await promisesFs.stat(filePath);
+        if (!stats.isFile()) {
+          return;
+        }
+
+        // 仅将包含真实消息的会话纳入 Top-K，避免最终结果条数不足
+        if (!hasActualMessages(filePath)) {
+          return;
+        }
+
+        const candidate = {
+          sessionId,
+          projectName,
+          projectDisplayName: displayName,
+          projectFullPath: fullPath,
+          filePath,
+          size: stats.size,
+          mtime: stats.mtime,
+          mtimeMs: stats.mtimeMs
+        };
+
+        if (minHeap.size() < safeLimit) {
+          minHeap.push(candidate);
+          return;
+        }
+
+        const oldest = minHeap.peek();
+        if (oldest && candidate.mtimeMs > oldest.mtimeMs) {
+          minHeap.replaceTop(candidate);
+        }
+      } catch (err) {
+        // 忽略单个文件 stat 异常，继续处理剩余会话
+      }
+    }));
+  }));
+
+  const aliases = loadAliases();
+  const forkRelations = getForkRelations();
+  const candidates = minHeap.toArray().sort((a, b) => b.mtimeMs - a.mtimeMs);
+  const sessions = [];
+
+  for (const candidate of candidates) {
+    const info = parseSessionInfoFast(candidate.filePath);
+    sessions.push({
+      sessionId: candidate.sessionId,
+      projectName: candidate.projectName,
+      projectDisplayName: candidate.projectDisplayName,
+      projectFullPath: candidate.projectFullPath,
+      mtime: candidate.mtime,
+      size: candidate.size,
+      filePath: candidate.filePath,
+      gitBranch: info.gitBranch || null,
+      firstMessage: info.firstMessage || null,
+      forkedFrom: forkRelations[candidate.sessionId] || null,
+      alias: aliases[candidate.sessionId] || null
+    });
+  }
+
+  return sessions.slice(0, safeLimit);
+}
+
 // Search sessions across all projects
 function searchSessionsAcrossProjects(config, keyword, contextLength = 35) {
   const projects = getProjects(config);
@@ -1038,6 +1303,10 @@ module.exports = {
   parseRealProjectPath,
   searchSessions,
   searchSessionsAcrossProjects,
+  SessionListCache,
+  getSessionListCache,
+  getSessionListCacheKey,
+  getRecentSessionsOptimized,
   cleanupSessionRelations,
   getForkRelations,
   saveForkRelations,

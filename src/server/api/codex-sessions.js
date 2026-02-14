@@ -8,15 +8,20 @@ const {
   searchSessions,
   forkSession,
   deleteSession,
-  getRecentSessions,
+  getRecentSessionsOptimized,
   saveSessionOrder,
   getProjects
 } = require('../services/codex-sessions');
+const { getSessionListCache, getSessionListCacheKey } = require('../services/sessions');
+const { startSessionCacheWatcher } = require('../services/cache-watcher');
 const { isCodexInstalled } = require('../services/codex-config');
 const { loadAliases } = require('../services/alias');
 const { buildMessageCounts } = require('../services/message-counts');
 
 module.exports = (config) => {
+  const sessionListCache = getSessionListCache();
+  startSessionCacheWatcher(config, sessionListCache);
+
   // ============================================
   // 静态路由必须放在参数路由之前
   // ============================================
@@ -78,15 +83,27 @@ module.exports = (config) => {
    * GET /api/codex/sessions/recent/list?limit=10
    * 获取最近会话
    */
-  router.get('/recent/list', (req, res) => {
+  router.get('/recent/list', async (req, res) => {
     try {
       if (!isCodexInstalled()) {
         return res.status(404).json({ error: 'Codex CLI not installed' });
       }
 
-      const limit = parseInt(req.query.limit) || 5;
-      const sessions = getRecentSessions(limit);
+      const limit = Math.max(1, parseInt(req.query.limit, 10) || 5);
+      const cacheKey = getSessionListCacheKey('codex', limit);
+      const cached = sessionListCache.get(cacheKey);
+      if (cached) {
+        res.set('X-Session-Cache', 'HIT');
+        return res.json({
+          sessions: cached,
+          source: 'codex'
+        });
+      }
 
+      const sessions = await getRecentSessionsOptimized(limit);
+      sessionListCache.set(cacheKey, sessions);
+
+      res.set('X-Session-Cache', 'MISS');
       res.json({
         sessions,
         source: 'codex'

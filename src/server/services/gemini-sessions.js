@@ -5,6 +5,73 @@ const os = require('os');
 const { getGeminiDir } = require('./gemini-config');
 const { getAllMetadata } = require('./session-metadata');
 
+class MinHeap {
+  constructor(compareFn) {
+    this.compareFn = compareFn;
+    this.items = [];
+  }
+
+  size() {
+    return this.items.length;
+  }
+
+  peek() {
+    return this.items[0] || null;
+  }
+
+  push(value) {
+    this.items.push(value);
+    this.bubbleUp(this.items.length - 1);
+  }
+
+  replaceTop(value) {
+    if (this.items.length === 0) {
+      this.items[0] = value;
+      return;
+    }
+    this.items[0] = value;
+    this.bubbleDown(0);
+  }
+
+  toArray() {
+    return [...this.items];
+  }
+
+  bubbleUp(index) {
+    let current = index;
+    while (current > 0) {
+      const parent = Math.floor((current - 1) / 2);
+      if (this.compareFn(this.items[current], this.items[parent]) >= 0) {
+        break;
+      }
+      [this.items[current], this.items[parent]] = [this.items[parent], this.items[current]];
+      current = parent;
+    }
+  }
+
+  bubbleDown(index) {
+    let current = index;
+    const length = this.items.length;
+    while (true) {
+      const left = current * 2 + 1;
+      const right = left + 1;
+      let next = current;
+
+      if (left < length && this.compareFn(this.items[left], this.items[next]) < 0) {
+        next = left;
+      }
+      if (right < length && this.compareFn(this.items[right], this.items[next]) < 0) {
+        next = right;
+      }
+      if (next === current) {
+        break;
+      }
+      [this.items[current], this.items[next]] = [this.items[next], this.items[current]];
+      current = next;
+    }
+  }
+}
+
 // 路径映射缓存
 let pathMappingCache = null;
 let pathMappingCacheTime = 0;
@@ -249,6 +316,48 @@ function readSessionMeta(filePath) {
     };
   } catch (err) {
     console.error(`[Gemini Sessions] Failed to read session meta: ${filePath}`, err);
+    return null;
+  }
+}
+
+async function readSessionMetaAsync(filePath) {
+  try {
+    const content = await fs.promises.readFile(filePath, 'utf8');
+    const session = JSON.parse(content);
+
+    const messages = session.messages || [];
+    const firstUserMessage = messages.find(msg => msg.type === 'user');
+
+    let totalTokens = 0;
+    let totalCost = 0;
+    let model = '';
+
+    messages.forEach(msg => {
+      if (msg.tokens) {
+        totalTokens += msg.tokens.total || 0;
+
+        if (msg.model) {
+          model = msg.model;
+          const inputTokens = msg.tokens.input || 0;
+          const outputTokens = msg.tokens.output || 0;
+          totalCost += (inputTokens * 1.25 / 1000000) + (outputTokens * 5 / 1000000);
+        }
+      }
+    });
+
+    return {
+      sessionId: session.sessionId,
+      projectHash: session.projectHash,
+      startTime: session.startTime,
+      lastUpdated: session.lastUpdated,
+      messageCount: messages.length,
+      firstMessage: firstUserMessage ? firstUserMessage.content : '',
+      tokens: totalTokens,
+      cost: totalCost,
+      model: model || 'gemini-2.5-pro',
+      forkedFrom: session.forkedFrom || null
+    };
+  } catch (err) {
     return null;
   }
 }
@@ -512,6 +621,91 @@ function getRecentSessions(limit = 5) {
     .map(normalizeSession);
 }
 
+async function getRecentSessionsOptimized(limit = 5) {
+  const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 5;
+  const tmpDir = getTmpDir();
+  let projectEntries = [];
+
+  try {
+    projectEntries = await fs.promises.readdir(tmpDir, { withFileTypes: true });
+  } catch (err) {
+    return [];
+  }
+
+  const projectHashes = projectEntries
+    .filter(entry => entry.isDirectory() && /^[a-f0-9]{64}$/.test(entry.name))
+    .map(entry => entry.name);
+
+  if (projectHashes.length === 0) {
+    return [];
+  }
+
+  const minHeap = new MinHeap((a, b) => a.mtimeMs - b.mtimeMs);
+
+  await Promise.all(projectHashes.map(async (projectHash) => {
+    const chatsDir = path.join(tmpDir, projectHash, 'chats');
+    let entries = [];
+
+    try {
+      entries = await fs.promises.readdir(chatsDir, { withFileTypes: true });
+    } catch (err) {
+      return;
+    }
+
+    const sessionFiles = entries.filter(entry => entry.isFile() && entry.name.match(/^session-.*\.json$/));
+    await Promise.all(sessionFiles.map(async (entry) => {
+      const filePath = path.join(chatsDir, entry.name);
+      try {
+        const stats = await fs.promises.stat(filePath);
+        if (!stats.isFile()) {
+          return;
+        }
+
+        const candidate = {
+          projectHash,
+          filePath,
+          size: stats.size,
+          mtimeMs: stats.mtimeMs,
+          mtime: stats.mtime.toISOString()
+        };
+
+        if (minHeap.size() < safeLimit) {
+          minHeap.push(candidate);
+          return;
+        }
+
+        const oldest = minHeap.peek();
+        if (oldest && candidate.mtimeMs > oldest.mtimeMs) {
+          minHeap.replaceTop(candidate);
+        }
+      } catch (err) {
+        // 忽略单个会话文件异常
+      }
+    }));
+  }));
+
+  const candidates = minHeap.toArray().sort((a, b) => b.mtimeMs - a.mtimeMs);
+  const sessions = [];
+
+  for (const candidate of candidates) {
+    const meta = await readSessionMetaAsync(candidate.filePath);
+    if (!meta) {
+      continue;
+    }
+
+    sessions.push(normalizeSession({
+      ...meta,
+      projectHash: candidate.projectHash,
+      filePath: candidate.filePath,
+      size: candidate.size,
+      mtime: candidate.mtime,
+      source: 'gemini'
+    }));
+  }
+
+  return sessions.slice(0, safeLimit);
+}
+
 /**
  * 按 sessionId 获取会话（返回完整数据用于消息显示）
  * @param {string} sessionId - 会话 ID
@@ -754,6 +948,7 @@ module.exports = {
   normalizeSession,
   saveProjectOrder,
   getRecentSessions,
+  getRecentSessionsOptimized,
   searchSessions,
   saveSessionOrder,
   forkSession,
