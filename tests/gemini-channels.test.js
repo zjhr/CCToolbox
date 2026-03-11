@@ -59,13 +59,14 @@ async function runGeminiChannelTests() {
     const geminiDir = path.join(tempRoot, '.gemini');
     const envPath = path.join(geminiDir, '.env');
     const settingsPath = path.join(geminiDir, 'settings.json');
+    const snapshotPath = path.join(
+      tempRoot,
+      '.claude',
+      'cctoolbox',
+      'gemini-selected-type-snapshot.json'
+    );
 
     ensureDir(geminiDir);
-    fs.writeFileSync(
-      envPath,
-      'GOOGLE_GEMINI_BASE_URL=https://example.com\nGEMINI_API_KEY=secret-key\nGEMINI_MODEL=gemini-2.5-pro\n',
-      'utf8'
-    );
     fs.writeFileSync(
       settingsPath,
       JSON.stringify(
@@ -73,7 +74,7 @@ async function runGeminiChannelTests() {
           ui: { theme: 'dark' },
           security: {
             auth: {
-              selectedType: 'gemini-api-key',
+              selectedType: 'oauth-personal',
               keep: 'custom-auth'
             }
           }
@@ -84,7 +85,21 @@ async function runGeminiChannelTests() {
       'utf8'
     );
 
-    const { clearGeminiConfig } = loadGeminiChannelsService();
+    const { createChannel, clearGeminiConfig } = loadGeminiChannelsService();
+    createChannel(
+      'Primary',
+      'https://example.com',
+      'secret-key',
+      'gemini-2.5-pro'
+    );
+
+    const snapshot = readJson(snapshotPath);
+    assert.strictEqual(snapshot.hasSelectedType, true);
+    assert.strictEqual(snapshot.value, 'oauth-personal');
+
+    let settings = readJson(settingsPath);
+    assert.strictEqual(settings.security.auth.selectedType, 'gemini-api-key');
+
     const result = clearGeminiConfig();
     assert.strictEqual(result.success, true);
     assert.strictEqual(result.cleared, true);
@@ -94,16 +109,30 @@ async function runGeminiChannelTests() {
     assert.ok(!cleanedEnv.includes('GEMINI_API_KEY='));
     assert.ok(!cleanedEnv.includes('GEMINI_MODEL='));
 
-    const settings = readJson(settingsPath);
+    settings = readJson(settingsPath);
     assert.strictEqual(settings.ui.theme, 'dark');
     assert.strictEqual(settings.security.auth.keep, 'custom-auth');
-    assert.ok(!Object.prototype.hasOwnProperty.call(settings.security.auth, 'selectedType'));
+    assert.strictEqual(settings.security.auth.selectedType, 'oauth-personal');
+    assert.ok(!fs.existsSync(snapshotPath));
   });
 
   await withTempHome(async (tempRoot) => {
     const geminiDir = path.join(tempRoot, '.gemini');
     const envPath = path.join(geminiDir, '.env');
     const settingsPath = path.join(geminiDir, 'settings.json');
+
+    ensureDir(geminiDir);
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify(
+        {
+          ui: { theme: 'dark' }
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
 
     const {
       createChannel,
@@ -120,11 +149,13 @@ async function runGeminiChannelTests() {
 
     clearGeminiConfig();
     let settings = readJson(settingsPath);
+    assert.strictEqual(settings.ui.theme, 'dark');
     assert.ok(!settings.security || !settings.security.auth);
 
     writeGeminiConfigForSingleChannel(channel.id);
 
     settings = readJson(settingsPath);
+    assert.strictEqual(settings.ui.theme, 'dark');
     assert.strictEqual(settings.security.auth.selectedType, 'gemini-api-key');
 
     const envContent = fs.readFileSync(envPath, 'utf8');
@@ -137,6 +168,29 @@ async function runGeminiChannelTests() {
     const geminiDir = path.join(tempRoot, '.gemini');
     const settingsPath = path.join(geminiDir, 'settings.json');
     const envPath = path.join(geminiDir, '.env');
+    const snapshotPath = path.join(
+      tempRoot,
+      '.claude',
+      'cctoolbox',
+      'gemini-selected-type-snapshot.json'
+    );
+
+    ensureDir(geminiDir);
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify(
+        {
+          security: {
+            auth: {
+              selectedType: 'oauth-personal'
+            }
+          }
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
 
     const { createChannel, deleteChannel } = loadGeminiChannelsService();
 
@@ -153,10 +207,11 @@ async function runGeminiChannelTests() {
     deleteChannel(channel.id);
 
     settings = readJson(settingsPath);
-    assert.ok(!settings.security);
+    assert.strictEqual(settings.security.auth.selectedType, 'oauth-personal');
 
     const envContent = fs.readFileSync(envPath, 'utf8');
     assert.ok(envContent.includes('All channels are currently disabled'));
+    assert.ok(!fs.existsSync(snapshotPath));
   });
 
   console.log('Gemini channel tests passed');

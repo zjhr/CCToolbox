@@ -27,6 +27,15 @@ function getGeminiSettingsPath() {
   return path.join(getGeminiDir(), 'settings.json');
 }
 
+// 获取 Gemini selectedType 原始状态快照路径
+function getGeminiSelectedTypeSnapshotPath() {
+  const appDir = getAppDir();
+  if (!fs.existsSync(appDir)) {
+    fs.mkdirSync(appDir, { recursive: true });
+  }
+  return path.join(appDir, 'gemini-selected-type-snapshot.json');
+}
+
 // 读取 Gemini settings.json
 function readGeminiSettings() {
   const settingsPath = getGeminiSettingsPath();
@@ -54,19 +63,54 @@ function writeGeminiSettings(settings) {
   fs.writeFileSync(getGeminiSettingsPath(), JSON.stringify(settings, null, 2), 'utf8');
 }
 
-// 同步 Gemini 认证模式；传 null 表示清理
-function syncGeminiAuthSelectedType(selectedType) {
-  const { exists, settings } = readGeminiSettings();
-
-  if (selectedType) {
-    settings.security = settings.security || {};
-    settings.security.auth = settings.security.auth || {};
-    settings.security.auth.selectedType = selectedType;
-    writeGeminiSettings(settings);
-    return true;
+// 读取 selectedType 原始状态快照
+function readGeminiSelectedTypeSnapshot() {
+  const snapshotPath = getGeminiSelectedTypeSnapshotPath();
+  if (!fs.existsSync(snapshotPath)) {
+    return null;
   }
 
-  if (!exists || !settings.security?.auth) {
+  try {
+    return JSON.parse(fs.readFileSync(snapshotPath, 'utf8'));
+  } catch (err) {
+    console.warn('[Gemini Channels] Failed to read selectedType snapshot, ignoring');
+    return null;
+  }
+}
+
+// 写入 selectedType 原始状态快照
+function writeGeminiSelectedTypeSnapshot(snapshot) {
+  fs.writeFileSync(
+    getGeminiSelectedTypeSnapshotPath(),
+    JSON.stringify(snapshot, null, 2),
+    'utf8'
+  );
+}
+
+// 删除 selectedType 原始状态快照
+function removeGeminiSelectedTypeSnapshot() {
+  const snapshotPath = getGeminiSelectedTypeSnapshotPath();
+  if (fs.existsSync(snapshotPath)) {
+    fs.unlinkSync(snapshotPath);
+  }
+}
+
+// 提取当前 selectedType 状态，用于后续恢复
+function getGeminiSelectedTypeState(settings) {
+  const hasSelectedType = Boolean(
+    settings.security?.auth &&
+    Object.prototype.hasOwnProperty.call(settings.security.auth, 'selectedType')
+  );
+
+  return {
+    hasSelectedType,
+    value: hasSelectedType ? settings.security.auth.selectedType : null
+  };
+}
+
+// 清理 settings 中的 Gemini selectedType，并顺带移除空对象
+function clearGeminiAuthSelectedTypeInSettings(settings) {
+  if (!settings.security?.auth) {
     return false;
   }
 
@@ -74,7 +118,6 @@ function syncGeminiAuthSelectedType(selectedType) {
     settings.security.auth,
     'selectedType'
   );
-
   if (!hadSelectedType) {
     return false;
   }
@@ -87,8 +130,56 @@ function syncGeminiAuthSelectedType(selectedType) {
     delete settings.security;
   }
 
+  return true;
+}
+
+// 写入 Gemini 认证模式，并记住原始 selectedType 状态
+function applyGeminiAuthSelectedType(selectedType) {
+  const { settings } = readGeminiSettings();
+
+  if (!readGeminiSelectedTypeSnapshot()) {
+    writeGeminiSelectedTypeSnapshot(getGeminiSelectedTypeState(settings));
+  }
+
+  settings.security = settings.security || {};
+  settings.security.auth = settings.security.auth || {};
+  settings.security.auth.selectedType = selectedType;
   writeGeminiSettings(settings);
   return true;
+}
+
+// 恢复 Gemini selectedType 到写入前的状态；无快照时回退为直接清理
+function restoreGeminiAuthSelectedType() {
+  const snapshot = readGeminiSelectedTypeSnapshot();
+  const { exists, settings } = readGeminiSettings();
+
+  if (!snapshot) {
+    if (!exists) {
+      return false;
+    }
+    const cleared = clearGeminiAuthSelectedTypeInSettings(settings);
+    if (cleared) {
+      writeGeminiSettings(settings);
+    }
+    return cleared;
+  }
+
+  let changed = false;
+  if (snapshot.hasSelectedType) {
+    settings.security = settings.security || {};
+    settings.security.auth = settings.security.auth || {};
+    settings.security.auth.selectedType = snapshot.value;
+    writeGeminiSettings(settings);
+    changed = true;
+  } else if (exists) {
+    changed = clearGeminiAuthSelectedTypeInSettings(settings);
+    if (changed) {
+      writeGeminiSettings(settings);
+    }
+  }
+
+  removeGeminiSelectedTypeSnapshot();
+  return changed;
 }
 
 // 获取渠道存储文件路径
@@ -331,7 +422,7 @@ function writeGeminiConfigForMultiChannel(allChannels) {
     if (process.platform !== 'win32') {
       fs.chmodSync(envPath, 0o600);
     }
-    syncGeminiAuthSelectedType(null);
+    restoreGeminiAuthSelectedType();
     return;
   }
 
@@ -351,17 +442,17 @@ GEMINI_MODEL=${defaultChannel.model}
   }
 
   // 同步认证模式为 gemini-api-key（第三方 API）
-  syncGeminiAuthSelectedType('gemini-api-key');
+  applyGeminiAuthSelectedType('gemini-api-key');
 }
 
 // 清空 Gemini .env 配置
 function clearGeminiConfig() {
   const geminiDir = getGeminiDir();
   const envPath = path.join(geminiDir, '.env');
-  const settingsCleared = syncGeminiAuthSelectedType(null);
+  const settingsRestored = restoreGeminiAuthSelectedType();
 
   if (!fs.existsSync(envPath)) {
-    return { success: true, cleared: settingsCleared };
+    return { success: true, cleared: settingsRestored };
   }
 
   const envContent = fs.readFileSync(envPath, 'utf8');
@@ -412,7 +503,7 @@ function writeGeminiConfigForSingleChannel(channelId) {
     fs.chmodSync(envPath, 0o600);
   }
 
-  syncGeminiAuthSelectedType('gemini-api-key');
+  applyGeminiAuthSelectedType('gemini-api-key');
 
   return channel;
 }
