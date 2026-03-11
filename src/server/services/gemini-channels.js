@@ -22,6 +22,75 @@ function getGeminiDir() {
   return path.join(os.homedir(), '.gemini');
 }
 
+// 获取 Gemini settings.json 路径
+function getGeminiSettingsPath() {
+  return path.join(getGeminiDir(), 'settings.json');
+}
+
+// 读取 Gemini settings.json
+function readGeminiSettings() {
+  const settingsPath = getGeminiSettingsPath();
+  if (!fs.existsSync(settingsPath)) {
+    return { exists: false, settings: {} };
+  }
+
+  try {
+    return {
+      exists: true,
+      settings: JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
+    };
+  } catch (err) {
+    console.warn('[Gemini Channels] Failed to read settings.json, using empty settings');
+    return { exists: true, settings: {} };
+  }
+}
+
+// 写入 Gemini settings.json
+function writeGeminiSettings(settings) {
+  const geminiDir = getGeminiDir();
+  if (!fs.existsSync(geminiDir)) {
+    fs.mkdirSync(geminiDir, { recursive: true });
+  }
+  fs.writeFileSync(getGeminiSettingsPath(), JSON.stringify(settings, null, 2), 'utf8');
+}
+
+// 同步 Gemini 认证模式；传 null 表示清理
+function syncGeminiAuthSelectedType(selectedType) {
+  const { exists, settings } = readGeminiSettings();
+
+  if (selectedType) {
+    settings.security = settings.security || {};
+    settings.security.auth = settings.security.auth || {};
+    settings.security.auth.selectedType = selectedType;
+    writeGeminiSettings(settings);
+    return true;
+  }
+
+  if (!exists || !settings.security?.auth) {
+    return false;
+  }
+
+  const hadSelectedType = Object.prototype.hasOwnProperty.call(
+    settings.security.auth,
+    'selectedType'
+  );
+
+  if (!hadSelectedType) {
+    return false;
+  }
+
+  delete settings.security.auth.selectedType;
+  if (Object.keys(settings.security.auth).length === 0) {
+    delete settings.security.auth;
+  }
+  if (Object.keys(settings.security).length === 0) {
+    delete settings.security;
+  }
+
+  writeGeminiSettings(settings);
+  return true;
+}
+
 // 获取渠道存储文件路径
 function getChannelsFilePath() {
   const appDir = getAppDir();
@@ -262,6 +331,7 @@ function writeGeminiConfigForMultiChannel(allChannels) {
     if (process.platform !== 'win32') {
       fs.chmodSync(envPath, 0o600);
     }
+    syncGeminiAuthSelectedType(null);
     return;
   }
 
@@ -280,33 +350,18 @@ GEMINI_MODEL=${defaultChannel.model}
     fs.chmodSync(envPath, 0o600);
   }
 
-  // 确保 settings.json 存在并配置正确的认证模式
-  const settingsPath = path.join(geminiDir, 'settings.json');
-  let settings = {};
-
-  if (fs.existsSync(settingsPath)) {
-    try {
-      settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-    } catch (err) {
-      console.warn('[Gemini Channels] Failed to read settings.json, creating new');
-    }
-  }
-
-  // 设置认证模式为 gemini-api-key（第三方 API）
-  settings.security = settings.security || {};
-  settings.security.auth = settings.security.auth || {};
-  settings.security.auth.selectedType = 'gemini-api-key';
-
-  fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf8');
+  // 同步认证模式为 gemini-api-key（第三方 API）
+  syncGeminiAuthSelectedType('gemini-api-key');
 }
 
 // 清空 Gemini .env 配置
 function clearGeminiConfig() {
   const geminiDir = getGeminiDir();
   const envPath = path.join(geminiDir, '.env');
+  const settingsCleared = syncGeminiAuthSelectedType(null);
 
   if (!fs.existsSync(envPath)) {
-    return { success: true, cleared: false };
+    return { success: true, cleared: settingsCleared };
   }
 
   const envContent = fs.readFileSync(envPath, 'utf8');
@@ -357,22 +412,7 @@ function writeGeminiConfigForSingleChannel(channelId) {
     fs.chmodSync(envPath, 0o600);
   }
 
-  const settingsPath = path.join(geminiDir, 'settings.json');
-  let settings = {};
-
-  if (fs.existsSync(settingsPath)) {
-    try {
-      settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-    } catch (err) {
-      console.warn('[Gemini Channels] Failed to read settings.json, creating new');
-    }
-  }
-
-  settings.security = settings.security || {};
-  settings.security.auth = settings.security.auth || {};
-  settings.security.auth.selectedType = 'gemini-api-key';
-
-  fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf8');
+  syncGeminiAuthSelectedType('gemini-api-key');
 
   return channel;
 }
