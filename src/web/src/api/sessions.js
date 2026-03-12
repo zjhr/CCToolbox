@@ -1,8 +1,9 @@
-import { client, getChannelPrefix } from './client'
+import { client, encodePathSegment, getChannelPrefix } from './client'
 
 export async function getSessions(projectName, channel = 'claude') {
   const prefix = getChannelPrefix(channel)
-  const response = await client.get(`${prefix}/sessions/${projectName}`)
+  const encodedProjectName = encodePathSegment(projectName)
+  const response = await client.get(`${prefix}/sessions/${encodedProjectName}`)
   return response.data
 }
 
@@ -18,31 +19,36 @@ export async function deleteAlias(sessionId) {
 
 export async function deleteSession(projectName, sessionId, channel = 'claude') {
   const prefix = getChannelPrefix(channel)
-  const response = await client.delete(`${prefix}/sessions/${projectName}/${sessionId}`)
+  const encodedProjectName = encodePathSegment(projectName)
+  const response = await client.delete(`${prefix}/sessions/${encodedProjectName}/${sessionId}`)
   return response.data
 }
 
 export async function forkSession(projectName, sessionId, channel = 'claude') {
   const prefix = getChannelPrefix(channel)
-  const response = await client.post(`${prefix}/sessions/${projectName}/${sessionId}/fork`)
+  const encodedProjectName = encodePathSegment(projectName)
+  const response = await client.post(`${prefix}/sessions/${encodedProjectName}/${sessionId}/fork`)
   return response.data
 }
 
 export async function launchSession(projectName, sessionId, fork = false, channel = 'claude') {
   const prefix = getChannelPrefix(channel)
-  const response = await client.post(`${prefix}/sessions/${projectName}/${sessionId}/launch`, { fork })
+  const encodedProjectName = encodePathSegment(projectName)
+  const response = await client.post(`${prefix}/sessions/${encodedProjectName}/${sessionId}/launch`, { fork })
   return response.data
 }
 
 export async function saveSessionOrder(projectName, order, channel = 'claude') {
   const prefix = getChannelPrefix(channel)
-  const response = await client.post(`${prefix}/sessions/${projectName}/order`, { order })
+  const encodedProjectName = encodePathSegment(projectName)
+  const response = await client.post(`${prefix}/sessions/${encodedProjectName}/order`, { order })
   return response.data
 }
 
 export async function searchSessions(projectName, keyword, contextLength = 15, channel = 'claude') {
   const prefix = getChannelPrefix(channel)
-  const response = await client.get(`${prefix}/sessions/${projectName}/search`, {
+  const encodedProjectName = encodePathSegment(projectName)
+  const response = await client.get(`${prefix}/sessions/${encodedProjectName}/search`, {
     params: { keyword, context: contextLength }
   })
   return response.data
@@ -58,7 +64,8 @@ export async function searchSessionsGlobally(keyword, contextLength = 35, channe
 
 export async function launchTerminal(projectName, sessionId, channel = 'claude', options = {}) {
   const prefix = getChannelPrefix(channel)
-  const response = await client.post(`${prefix}/sessions/${projectName}/${sessionId}/launch`, {
+  const encodedProjectName = encodePathSegment(projectName)
+  const response = await client.post(`${prefix}/sessions/${encodedProjectName}/${sessionId}/launch`, {
     terminalId: options.terminalId || null,
     clipboardOnly: options.clipboardOnly || false
   })
@@ -71,14 +78,16 @@ export async function getTerminalClipboardCommand(projectName, sessionId, channe
 
 export async function getSessionMessages(projectName, sessionId, page = 1, limit = 20, order = 'desc', channel = 'claude') {
   const prefix = getChannelPrefix(channel)
-  const response = await client.get(`${prefix}/sessions/${projectName}/${sessionId}/messages`, {
+  const encodedProjectName = encodePathSegment(projectName)
+  const response = await client.get(`${prefix}/sessions/${encodedProjectName}/${sessionId}/messages`, {
     params: { page, limit, order }
   })
   return response.data
 }
 
 export async function getSubagentMessages(projectName, sessionId, agentId, page = 1, pageSize = 20, order = 'desc', channel = 'claude') {
-  const response = await client.get(`/sessions/${projectName}/${sessionId}/subagent/${agentId}`, {
+  const encodedProjectName = encodePathSegment(projectName)
+  const response = await client.get(`/sessions/${encodedProjectName}/${sessionId}/subagent/${agentId}`, {
     params: { page, pageSize, order, channel }
   })
   return response.data

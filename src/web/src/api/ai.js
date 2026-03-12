@@ -1,4 +1,4 @@
-import { client } from './client'
+import { client, encodePathSegment } from './client'
 
 export async function getAIConfig() {
   const response = await client.get('/ai-config')
@@ -51,7 +51,8 @@ export async function deleteSessionMetadata(sessionId) {
 }
 
 export async function getSessionSummary(projectName, sessionId) {
-  const response = await client.get(`/ai-assistant/summary/${projectName}/${sessionId}`)
+  const encodedProjectName = encodePathSegment(projectName)
+  const response = await client.get(`/ai-assistant/summary/${encodedProjectName}/${sessionId}`)
   return response.data
 }
 

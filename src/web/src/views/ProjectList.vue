@@ -40,6 +40,7 @@
       v-model="orderedProjects"
       item-key="name"
       class="projects-grid"
+      handle=".drag-handle"
       ghost-class="ghost"
       chosen-class="chosen"
       drag-class="drag"
@@ -49,6 +50,7 @@
       <template #item="{ element }">
         <ProjectCard
           :project="element"
+          sortable
           @click="handleProjectClick(element.name)"
           @delete="handleDeleteProject"
         />

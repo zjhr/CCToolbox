@@ -8,7 +8,10 @@ const { loadAIConfig } = require("../services/ai-config");
 const { getAIServiceManager } = require("../services/ai-service");
 const { normalizeAIError } = require("../services/ai-errors");
 const { parseRealProjectPath } = require("../services/sessions");
-const { getAllSessions: getAllCodexSessions } = require("../services/codex-sessions");
+const {
+  getAllSessions: getAllCodexSessions,
+  resolveProjectMeta: resolveCodexProjectMeta
+} = require("../services/codex-sessions");
 const { getAllSessions: getAllGeminiSessions } = require("../services/gemini-sessions");
 const { readJSONL, extractMessages } = require("../services/codex-parser");
 const { getMetadata, setMetadata } = require("../services/session-metadata");
@@ -54,13 +57,7 @@ function resolveSessionContext(projectName, sessionId) {
 }
 
 function resolveCodexProjectName(meta) {
-  if (!meta) return "";
-  if (meta.git?.repositoryUrl) {
-    const repoName = meta.git.repositoryUrl.split("/").pop() || "";
-    return repoName.replace(/\.git$/, "");
-  }
-  if (meta.cwd) return path.basename(meta.cwd);
-  return "";
+  return resolveCodexProjectMeta(meta).projectName || "";
 }
 
 function resolveCodexSessionFile(projectName, sessionId) {

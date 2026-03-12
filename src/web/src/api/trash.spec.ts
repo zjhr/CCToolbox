@@ -2,16 +2,21 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { batchDeleteSessions, getDeleteProgressUrl } from './trash'
 import { client } from './client'
 
-vi.mock('./client', () => ({
-  client: {
-    post: vi.fn(),
-    get: vi.fn(),
-    delete: vi.fn(),
-    defaults: {
-      baseURL: '/api'
+vi.mock('./client', async () => {
+  const actual = await vi.importActual('./client')
+
+  return {
+    ...actual,
+    client: {
+      post: vi.fn(),
+      get: vi.fn(),
+      delete: vi.fn(),
+      defaults: {
+        baseURL: '/api'
+      }
     }
   }
-}))
+})
 
 describe('trash api', () => {
   beforeEach(() => {

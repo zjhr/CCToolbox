@@ -8,6 +8,16 @@
     <div class="card-content">
       <!-- Header row: Icon + Title + Delete -->
       <div class="header-row">
+        <div
+          v-if="sortable"
+          class="drag-handle"
+          title="拖拽排序"
+          @click.stop
+        >
+          <n-icon size="16" color="#999">
+            <ReorderThreeOutline />
+          </n-icon>
+        </div>
         <n-icon size="18" :color="projectColor">
           <FolderOpenOutline />
         </n-icon>
@@ -47,12 +57,16 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { NIcon, NText, NTag, NButton } from 'naive-ui'
-import { FolderOpenOutline, TrashOutline } from '@vicons/ionicons5'
+import { FolderOpenOutline, ReorderThreeOutline, TrashOutline } from '@vicons/ionicons5'
 
 const props = defineProps({
   project: {
     type: Object,
     required: true
+  },
+  sortable: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -148,6 +162,24 @@ function formatTime(timestamp) {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.drag-handle {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 4px;
+  cursor: move;
+  opacity: 0.45;
+  transition: all 0.2s ease;
+}
+
+.project-card:hover .drag-handle {
+  opacity: 1;
+  background: rgba(24, 160, 88, 0.08);
 }
 
 .project-name {

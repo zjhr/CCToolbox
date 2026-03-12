@@ -180,7 +180,10 @@ async function scanSessionFilesAsync() {
 
 function resolveProjectMeta(meta = {}) {
   const cwd = meta.cwd || '';
-  let projectName = path.basename(cwd || '') || 'unknown';
+  const normalizedCwd = cwd ? path.normalize(cwd) : '';
+  const cwdBaseName = normalizedCwd ? path.basename(normalizedCwd) : '';
+  const cwdRoot = normalizedCwd ? path.parse(normalizedCwd).root : '';
+  let projectName = cwdBaseName || cwdRoot || 'unknown';
 
   if (meta.git?.repositoryUrl) {
     const repoName = meta.git.repositoryUrl.split('/').pop().replace('.git', '');
@@ -262,26 +265,15 @@ function getProjects() {
 
   sessions.forEach(session => {
     const meta = session.meta;
-
-    // 优先使用 Git 仓库名，否则使用 cwd 的最后一级目录
-    let projectName;
-    let projectPath = meta.cwd;
-
-    if (meta.git?.repositoryUrl) {
-      // 从 Git URL 提取项目名
-      const repoUrl = meta.git.repositoryUrl;
-      projectName = repoUrl.split('/').pop().replace('.git', '');
-    } else {
-      // 使用目录名
-      projectName = path.basename(meta.cwd);
-    }
+    const projectMeta = resolveProjectMeta(meta);
+    const projectName = projectMeta.projectName;
 
     if (!projectMap.has(projectName)) {
       projectMap.set(projectName, {
         name: projectName,
-        displayName: projectName,
-        fullPath: projectPath,
-        path: projectPath,
+        displayName: projectMeta.projectDisplayName,
+        fullPath: projectMeta.projectFullPath,
+        path: projectMeta.projectFullPath,
         gitRepo: meta.git?.repositoryUrl,
         branch: meta.git?.branch,
         sessions: [],
@@ -346,14 +338,7 @@ function getSessionsByProject(projectName) {
   // 过滤并归一化会话
   const filteredSessions = sessions
     .filter(session => {
-      // 根据 Git 仓库名或目录名匹配
-      let sessionProjectName;
-      if (session.meta.git?.repositoryUrl) {
-        sessionProjectName = session.meta.git.repositoryUrl.split('/').pop().replace('.git', '');
-      } else {
-        sessionProjectName = path.basename(session.meta.cwd);
-      }
-      return sessionProjectName === projectName;
+      return resolveProjectMeta(session.meta).projectName === projectName;
     })
     .map(session => {
       const normalized = normalizeSession(session);
@@ -464,18 +449,11 @@ function searchSessions(keyword) {
         const context = content.substring(startIndex, endIndex);
 
         // 确定项目名
-        let projectName;
-        if (session.meta?.git?.repositoryUrl) {
-          projectName = session.meta.git.repositoryUrl.split('/').pop().replace('.git', '');
-        } else if (session.meta?.cwd) {
-          projectName = path.basename(session.meta.cwd);
-        } else {
-          projectName = 'Unknown';
-        }
+        const projectMeta = resolveProjectMeta(session.meta);
 
         results.push({
           sessionId: file.sessionId,
-          projectName,
+          projectName: projectMeta.projectName,
           messageIndex: index,
           role: message.role,
           context: (startIndex > 0 ? '...' : '') + context + (endIndex < content.length ? '...' : ''),
@@ -518,19 +496,12 @@ function searchSessionsByTag(tagKeyword) {
       return;
     }
 
-    let projectName;
-    if (session.meta?.git?.repositoryUrl) {
-      projectName = session.meta.git.repositoryUrl.split('/').pop().replace('.git', '');
-    } else if (session.meta?.cwd) {
-      projectName = path.basename(session.meta.cwd);
-    } else {
-      projectName = 'Unknown';
-    }
+    const projectMeta = resolveProjectMeta(session.meta);
 
     matchedTags.slice(0, 5).forEach(tag => {
       results.push({
         sessionId: file.sessionId,
-        projectName,
+        projectName: projectMeta.projectName,
         messageIndex: null,
         role: 'tag',
         context: `tag:${tag}`,
@@ -553,13 +524,7 @@ function deleteProject(projectName) {
 
   // 找到该项目下的所有会话
   const projectSessions = sessions.filter(session => {
-    let sessionProjectName;
-    if (session.meta.git?.repositoryUrl) {
-      sessionProjectName = session.meta.git.repositoryUrl.split('/').pop().replace('.git', '');
-    } else {
-      sessionProjectName = path.basename(session.meta.cwd);
-    }
-    return sessionProjectName === projectName;
+    return resolveProjectMeta(session.meta).projectName === projectName;
   });
 
   if (projectSessions.length === 0) {
@@ -649,24 +614,15 @@ function getRecentSessions(limit = 5) {
   // 归一化所有会话
   const allNormalizedSessions = sessions.map(session => {
     const normalized = normalizeSession(session);
-
-    // 添加项目信息
-    let projectName;
-    let projectPath = session.meta.cwd;
-
-    if (session.meta.git?.repositoryUrl) {
-      projectName = session.meta.git.repositoryUrl.split('/').pop().replace('.git', '');
-    } else {
-      projectName = path.basename(session.meta.cwd);
-    }
+    const projectMeta = resolveProjectMeta(session.meta);
 
     return {
       ...normalized,
       forkedFrom: forkRelations[normalized.sessionId] || null,
       alias: aliases[normalized.sessionId] || null,
-      projectName: projectName,
-      projectDisplayName: projectName,
-      projectFullPath: projectPath
+      projectName: projectMeta.projectName,
+      projectDisplayName: projectMeta.projectDisplayName,
+      projectFullPath: projectMeta.projectFullPath
     };
   });
 
@@ -902,5 +858,6 @@ module.exports = {
   saveSessionOrder,
   getProjectOrder,
   saveProjectOrder,
-  getProjectAndSessionCounts
+  getProjectAndSessionCounts,
+  resolveProjectMeta
 };

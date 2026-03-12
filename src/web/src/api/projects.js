@@ -1,4 +1,4 @@
-import { client, getChannelPrefix } from './client'
+import { client, encodePathSegment, getChannelPrefix } from './client'
 
 export async function getProjects(channel = 'claude') {
   const prefix = getChannelPrefix(channel)
@@ -14,6 +14,7 @@ export async function saveProjectOrder(order, channel = 'claude') {
 
 export async function deleteProject(projectName, channel = 'claude') {
   const prefix = getChannelPrefix(channel)
-  const response = await client.delete(`${prefix}/projects/${projectName}`)
+  const encodedProjectName = encodePathSegment(projectName)
+  const response = await client.delete(`${prefix}/projects/${encodedProjectName}`)
   return response.data
 }
