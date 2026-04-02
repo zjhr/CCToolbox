@@ -6,6 +6,24 @@
 
 ## [Unreleased]
 
+## [3.3.3] - 2026-04-02
+
+### Added
+
+- 🔄 **Codex 渠道切换同步 auth.json** - 切换渠道时自动同步 OPENAI_API_KEY 到 auth.json，确保环境变量一致性
+- 📋 **项目列表排序筛选** - 支持按名称、路径、会话数、创建时间等多维度排序，移除拖拽排序改为下拉菜单
+- ✅ **Codex 渠道切换确认弹窗** - 切换前提示将写入 config.toml 与 auth.json，用户确认后执行
+
+### Changed
+
+- 🤖 **Codex 默认模型升级** - 默认模型从 gpt-5.3-codex 升级为 gpt-5.4
+- 🆔 **Claude 渠道切换使用 ID 标识** - 使用渠道 ID 作为唯一标识而非 baseURL，支持同地址不同渠道切换
+
+### Fixed
+
+- 🐛 **Claude 国产模型配置回填** - 修复编辑 DeepSeek/Qwen 等国产模型渠道时配置字段回填失败的问题
+- 🐛 **Claude 同地址渠道切换** - 修复 baseURL 相同的渠道无法正确切换的问题
+
 ## [3.3.2] - 2026-02-14
 
 ### Added

@@ -523,12 +523,22 @@ function buildProjectsWithStats(config) {
         // Ignore errors
       }
 
+      // Get project directory creation time
+      let createdAt = null;
+      try {
+        const stats = fs.statSync(projectPath);
+        createdAt = stats.birthtime.getTime();
+      } catch (err) {
+        // Ignore errors
+      }
+
       return {
         name: projectName, // Keep encoded name for API operations
         displayName, // Project name for display
         fullPath, // Real full path for display
         sessionCount,
-        lastUsed
+        lastUsed,
+        createdAt
       };
     })
     .sort((a, b) => (b.lastUsed || 0) - (a.lastUsed || 0)); // Sort by last used

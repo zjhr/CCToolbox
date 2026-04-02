@@ -62,7 +62,7 @@ function normalizeNumber(value, defaultValue, max = null) {
 }
 
 function applyChannelDefaults(channel) {
-  const normalized = { ...channel };
+  const normalized = normalizeLegacyChannel(channel);
   if (normalized.enabled === undefined) {
     normalized.enabled = true;
   } else {
@@ -77,6 +77,32 @@ function applyChannelDefaults(channel) {
     normalized.maxConcurrency = null;
   } else {
     normalized.maxConcurrency = normalizeNumber(normalized.maxConcurrency, 1, 100);
+  }
+
+  return normalized;
+}
+
+function normalizeLegacyChannel(channel) {
+  const normalized = { ...channel };
+
+  if (!normalized.baseUrl && normalized.baseURL) {
+    normalized.baseUrl = normalized.baseURL;
+  }
+
+  if (!normalized.apiKey && normalized.api_key) {
+    normalized.apiKey = normalized.api_key;
+  }
+
+  const legacyModel = normalized.model || normalized.modelName || '';
+  if (normalized.modelConfig && typeof normalized.modelConfig === 'object') {
+    normalized.modelConfig = { ...normalized.modelConfig };
+    if (!normalized.modelConfig.model && legacyModel) {
+      normalized.modelConfig.model = legacyModel;
+    }
+  } else if (legacyModel) {
+    normalized.modelConfig = {
+      model: legacyModel
+    };
   }
 
   return normalized;
@@ -245,9 +271,34 @@ function applyChannelToSettings(id) {
 
   channel.enabled = true;
   saveChannels(data);
+  saveActiveChannelId(channel.id);
   updateClaudeSettingsWithModelConfig(channel);
 
   return channel;
+}
+
+function getCurrentChannel() {
+  const channels = getAllChannels();
+  if (channels.length === 0) {
+    return null;
+  }
+
+  const activeChannelId = loadActiveChannelId();
+  if (activeChannelId) {
+    const activeChannel = channels.find(ch => ch.id === activeChannelId);
+    if (activeChannel) {
+      return activeChannel;
+    }
+  }
+
+  const settings = getCurrentSettings();
+  if (!settings) {
+    return null;
+  }
+
+  return channels.find(ch =>
+    ch.baseUrl === settings.baseUrl && ch.apiKey === settings.apiKey
+  ) || null;
 }
 
 function updateClaudeSettingsWithModelConfig(channel) {
@@ -347,5 +398,6 @@ module.exports = {
   deleteChannel,
   applyChannelToSettings,
   getBestChannelForRestore,
+  getCurrentChannel,
   updateClaudeSettings
 };

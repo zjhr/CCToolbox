@@ -7,7 +7,8 @@ const {
   updateChannel,
   deleteChannel,
   getCurrentSettings,
-  getBestChannelForRestore
+  getBestChannelForRestore,
+  getCurrentChannel
 } = require('../services/channels');
 const { getSchedulerState } = require('../services/channel-scheduler');
 const { getChannelHealthStatus, getAllChannelHealthStatus, resetChannelHealth } = require('../services/channel-health');
@@ -44,14 +45,7 @@ router.get('/pool/status', (req, res) => {
 router.get('/current', (req, res) => {
   try {
     const settings = getCurrentSettings();
-    const channels = getAllChannels();
-    let currentChannel = null;
-
-    if (settings) {
-      currentChannel = channels.find(ch =>
-        ch.baseUrl === settings.baseUrl && ch.apiKey === settings.apiKey
-      );
-    }
+    const currentChannel = getCurrentChannel();
 
     res.json({ channel: currentChannel, settings });
   } catch (error) {
@@ -63,7 +57,18 @@ router.get('/current', (req, res) => {
 // POST /api/channels - Create new channel
 router.post('/', (req, res) => {
   try {
-    const { name, baseUrl, apiKey, websiteUrl, enabled, weight, maxConcurrency } = req.body;
+    const {
+      name,
+      baseUrl,
+      apiKey,
+      websiteUrl,
+      enabled,
+      weight,
+      maxConcurrency,
+      presetId,
+      modelConfig,
+      proxyUrl
+    } = req.body;
 
     if (!name || !baseUrl || !apiKey) {
       return res.status(400).json({ error: 'Missing required fields' });
@@ -72,7 +77,10 @@ router.post('/', (req, res) => {
     const channel = createChannel(name, baseUrl, apiKey, websiteUrl, {
       enabled,
       weight,
-      maxConcurrency
+      maxConcurrency,
+      presetId,
+      modelConfig,
+      proxyUrl
     });
     res.json({ channel });
     broadcastSchedulerState('claude', getSchedulerState('claude'));

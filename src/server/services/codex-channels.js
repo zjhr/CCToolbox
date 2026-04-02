@@ -58,7 +58,7 @@ function loadChannels() {
         enabled: ch.enabled !== false, // 默认启用
         weight: ch.weight || 1,
         maxConcurrency: ch.maxConcurrency || null,
-        modelName: ch.modelName || "gpt-5.3-codex",
+        modelName: ch.modelName || "gpt-5.4",
       }));
     }
     return data;
@@ -125,7 +125,7 @@ function initializeFromConfig() {
           requiresOpenaiAuth: providerConfig.requires_openai_auth !== false,
           queryParams: providerConfig.query_params || null,
           enabled: config.model_provider === providerKey, // 当前激活的渠道启用
-          modelName: config.model || "gpt-5.3-codex",
+          modelName: config.model || "gpt-5.4",
           weight: 1,
           maxConcurrency: null,
           createdAt: Date.now(),
@@ -213,7 +213,7 @@ function createChannel(
     enabled: extraConfig.enabled !== false, // 默认启用
     weight: extraConfig.weight || 1,
     maxConcurrency: extraConfig.maxConcurrency || null,
-    modelName: extraConfig.modelName || "gpt-5.3-codex",
+    modelName: extraConfig.modelName || "gpt-5.4",
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
@@ -718,7 +718,7 @@ function applyChannelToSettings(channelId) {
 
   // 设置当前渠道为 model_provider
   config.model_provider = channel.providerKey;
-  config.model = channel.modelName || config.model || "gpt-5.3-codex";
+  config.model = channel.modelName || config.model || "gpt-5.4";
 
   // 确保 model_providers 对象存在
   if (!config.model_providers) {
@@ -781,6 +781,9 @@ ${tomlContent}`;
   // 添加当前渠道的 API Key
   if (channel.apiKey && envKey) {
     auth[envKey] = channel.apiKey;
+  }
+  if (channel.apiKey) {
+    auth.OPENAI_API_KEY = channel.apiKey;
   }
 
   fs.writeFileSync(authPath, JSON.stringify(auth, null, 2), "utf8");

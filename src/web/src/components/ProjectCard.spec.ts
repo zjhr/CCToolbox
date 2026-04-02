@@ -4,7 +4,6 @@ import ProjectCard from './ProjectCard.vue'
 
 vi.mock('@vicons/ionicons5', () => ({
   FolderOpenOutline: { template: '<span />' },
-  ReorderThreeOutline: { template: '<span />' },
   TrashOutline: { template: '<span />' }
 }))
 
@@ -25,7 +24,7 @@ const project = {
 describe('ProjectCard', () => {
   it('点击卡片主体会触发 click 事件', async () => {
     const wrapper = mount(ProjectCard, {
-      props: { project, sortable: true },
+      props: { project },
       global: { stubs }
     })
 
@@ -34,14 +33,13 @@ describe('ProjectCard', () => {
     expect(wrapper.emitted('click')).toHaveLength(1)
   })
 
-  it('点击拖拽手柄不会触发 click 事件', async () => {
+  it('渲染项目名称和会话数', async () => {
     const wrapper = mount(ProjectCard, {
-      props: { project, sortable: true },
+      props: { project },
       global: { stubs }
     })
 
-    await wrapper.find('.drag-handle').trigger('click')
-
-    expect(wrapper.emitted('click')).toBeUndefined()
+    expect(wrapper.text()).toContain('/')
+    expect(wrapper.text()).toContain('1')
   })
 })

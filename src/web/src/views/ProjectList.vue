@@ -6,16 +6,24 @@
           <n-h2 style="margin: 0;">我的项目</n-h2>
           <n-text depth="3">选择一个项目查看会话</n-text>
         </div>
-        <n-input
-          v-model:value="searchQuery"
-          placeholder="搜索项目..."
-          clearable
-          class="search-input"
-        >
-          <template #prefix>
-            <n-icon><SearchOutline /></n-icon>
-          </template>
-        </n-input>
+        <div class="header-actions">
+          <n-select
+            v-model:value="sortBy"
+            :options="sortOptions"
+            size="small"
+            class="sort-select"
+          />
+          <n-input
+            v-model:value="searchQuery"
+            placeholder="搜索项目..."
+            clearable
+            class="search-input"
+          >
+            <template #prefix>
+              <n-icon><SearchOutline /></n-icon>
+            </template>
+          </n-input>
+        </div>
       </div>
 
       <!-- Scrollable Content -->
@@ -34,33 +42,10 @@
         {{ store.error }}
       </n-alert>
 
-      <!-- Projects Grid with Draggable (only when not searching) -->
-      <draggable
-      v-else-if="!searchQuery"
-      v-model="orderedProjects"
-      item-key="name"
-      class="projects-grid"
-      handle=".drag-handle"
-      ghost-class="ghost"
-      chosen-class="chosen"
-      drag-class="drag"
-      animation="200"
-      @end="handleDragEnd"
-    >
-      <template #item="{ element }">
-        <ProjectCard
-          :project="element"
-          sortable
-          @click="handleProjectClick(element.name)"
-          @delete="handleDeleteProject"
-        />
-      </template>
-    </draggable>
-
-      <!-- Projects Grid (static when searching) -->
+      <!-- Projects Grid (Sorted & Filtered) -->
       <div v-else class="projects-grid">
         <ProjectCard
-          v-for="project in filteredProjects"
+          v-for="project in sortedAndFilteredProjects"
           :key="project.name"
           :project="project"
           @click="handleProjectClick(project.name)"
@@ -95,9 +80,8 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { NH2, NText, NSpin, NAlert, NEmpty, NIcon, NInput } from 'naive-ui'
+import { NH2, NText, NSpin, NAlert, NEmpty, NIcon, NInput, NSelect } from 'naive-ui'
 import { FolderOpenOutline, SearchOutline } from '@vicons/ionicons5'
-import draggable from 'vuedraggable'
 import { useSessionsStore } from '../stores/sessions'
 import ProjectCard from '../components/ProjectCard.vue'
 import SearchModal from '../components/SearchModal.vue'
@@ -113,8 +97,16 @@ const currentChannel = computed(() => route.meta.channel || 'claude')
 // Search query
 const searchQuery = ref('')
 
-// Local ordered projects for draggable
-const orderedProjects = ref([])
+// Sort options
+const sortBy = ref('lastUsedDesc')
+const sortOptions = [
+  { label: '更新时间 ↓', value: 'lastUsedDesc' },
+  { label: '更新时间 ↑', value: 'lastUsedAsc' },
+  { label: '创建时间 ↓', value: 'createdAtDesc' },
+  { label: '创建时间 ↑', value: 'createdAtAsc' },
+  { label: '名称 A-Z', value: 'nameAsc' },
+  { label: '名称 Z-A', value: 'nameDesc' }
+]
 
 // Content element ref for scroll preservation
 const contentEl = ref(null)
@@ -122,31 +114,44 @@ const contentEl = ref(null)
 // Global search
 const showGlobalSearch = ref(false)
 
-// Filtered projects based on search (only used when searching)
-const filteredProjects = computed(() => {
+// Sorted and filtered projects
+const sortedAndFilteredProjects = computed(() => {
+  let list = [...store.projects]
+
+  // Filter based on search
   const query = searchQuery.value.toLowerCase()
-  return orderedProjects.value.filter(project => {
-    // 搜索显示名称和完整路径
-    const displayName = (project.displayName || '').toLowerCase()
-    const fullPath = (project.fullPath || '').toLowerCase()
-    return displayName.includes(query) || fullPath.includes(query)
+  if (query) {
+    list = list.filter(project => {
+      const displayName = (project.displayName || '').toLowerCase()
+      const fullPath = (project.fullPath || '').toLowerCase()
+      return displayName.includes(query) || fullPath.includes(query)
+    })
+  }
+
+  // Sort
+  return list.sort((a, b) => {
+    switch (sortBy.value) {
+      case 'lastUsedDesc':
+        return (b.lastUsed || 0) - (a.lastUsed || 0)
+      case 'lastUsedAsc':
+        return (a.lastUsed || 0) - (b.lastUsed || 0)
+      case 'createdAtDesc':
+        return (b.createdAt || 0) - (a.createdAt || 0)
+      case 'createdAtAsc':
+        return (a.createdAt || 0) - (b.createdAt || 0)
+      case 'nameAsc':
+        return (a.displayName || a.name || '').localeCompare(b.displayName || b.name || '')
+      case 'nameDesc':
+        return (b.displayName || b.name || '').localeCompare(a.displayName || a.name || '')
+      default:
+        return 0
+    }
   })
 })
-
-// Sync with store
-watch(() => store.projects, (newProjects) => {
-  orderedProjects.value = [...newProjects]
-}, { immediate: true })
 
 function handleProjectClick(projectName) {
   const channel = route.meta.channel || 'claude'
   router.push({ name: `${channel}-sessions`, params: { projectName } })
-}
-
-async function handleDragEnd() {
-  // Save the new order
-  const order = orderedProjects.value.map(p => p.name)
-  await store.saveProjectOrder(order)
 }
 
 function handleDeleteProject(project) {
@@ -185,20 +190,6 @@ async function refreshDataWithScrollPreservation() {
   }
 }
 
-// 【暂时移除】页面可见性变化时刷新数据
-// 原因：每次切换回来就刷新，体验不好
-// function handleVisibilityChange() {
-//   if (document.visibilityState === 'visible') {
-//     refreshDataWithScrollPreservation()
-//   }
-// }
-
-// 【暂时移除】窗口获得焦点时刷新数据
-// 原因：每次切换回来就刷新，体验不好
-// function handleWindowFocus() {
-//   refreshDataWithScrollPreservation()
-// }
-
 // 快捷键监听
 function handleKeyDown(e) {
   // Command/Ctrl + K
@@ -215,16 +206,10 @@ watch(currentChannel, (newChannel) => {
 }, { immediate: true })
 
 onMounted(() => {
-  // 【暂时移除】添加事件监听 - 每次切换回来就刷新，体验不好
-  // document.addEventListener('visibilitychange', handleVisibilityChange)
-  // window.addEventListener('focus', handleWindowFocus)
   document.addEventListener('keydown', handleKeyDown)
 })
 
 onUnmounted(() => {
-  // 【暂时移除】清理事件监听
-  // document.removeEventListener('visibilitychange', handleVisibilityChange)
-  // window.removeEventListener('focus', handleWindowFocus)
   document.removeEventListener('keydown', handleKeyDown)
 })
 </script>
@@ -245,7 +230,7 @@ onUnmounted(() => {
   border-bottom: 1px solid var(--border-primary);
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   gap: 24px;
   position: relative;
 }
@@ -262,6 +247,16 @@ onUnmounted(() => {
 
 .header-text {
   flex: 1;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sort-select {
+  width: 130px;
 }
 
 .header-text :deep(.n-h2) {
@@ -282,7 +277,7 @@ onUnmounted(() => {
 }
 
 .search-input {
-  width: 320px;
+  width: 240px;
   flex-shrink: 0;
 }
 
@@ -321,25 +316,6 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 12px;
-}
-
-/* 拖动时的半透明虚影 */
-.ghost {
-  opacity: 0.4;
-}
-
-/* 被选中开始拖动的元素 */
-.chosen {
-  transform: scale(1.05);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2) !important;
-  cursor: move !important;
-}
-
-/* 正在拖动中的元素 */
-.drag {
-  opacity: 0.8;
-  transform: rotate(2deg);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25) !important;
 }
 
 /* 全局搜索快捷键提示 */
@@ -393,42 +369,5 @@ onUnmounted(() => {
   border: 1px solid rgba(71, 85, 105, 0.8);
   box-shadow: 0 2px 0 rgba(30, 41, 59, 0.8), 0 1px 4px rgba(0, 0, 0, 0.4);
   color: #e2e8f0;
-}
-
-/* 搜索结果样式 */
-.search-result-item {
-  margin-bottom: 16px;
-  padding: 12px;
-  border: 1px solid var(--border-primary);
-  border-radius: 6px;
-  background: var(--bg-elevated);
-}
-
-.search-result-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-
-.search-result-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.search-match {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin-top: 6px;
-  padding: 6px;
-  background: var(--bg-secondary);
-  border-radius: 4px;
-}
-
-.search-match-text {
-  flex: 1;
-  line-height: 1.6;
 }
 </style>

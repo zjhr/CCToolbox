@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const childProcess = require('child_process');
 const { getBackupPath: getAppBackupPath } = require('../../utils/app-path-manager');
 const toml = require('toml');
 
@@ -182,8 +183,29 @@ function restoreSettings() {
 }
 
 // 获取用户的 shell 配置文件路径
+function getPreferredShell() {
+  if (process.platform === 'darwin') {
+    try {
+      const username = os.userInfo().username;
+      const output = childProcess.execFileSync(
+        '/usr/bin/dscl',
+        ['.', '-read', `/Users/${username}`, 'UserShell'],
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }
+      );
+      const match = output.match(/UserShell:\s*(\S+)/);
+      if (match && match[1]) {
+        return match[1];
+      }
+    } catch (err) {
+      console.warn(`[Codex] Failed to detect login shell via dscl: ${err.message}`);
+    }
+  }
+
+  return process.env.SHELL || '';
+}
+
 function getShellConfigPath() {
-  const shell = process.env.SHELL || '';
+  const shell = getPreferredShell();
   if (shell.includes('zsh')) {
     return path.join(os.homedir(), '.zshrc');
   } else if (shell.includes('bash')) {
@@ -199,10 +221,55 @@ function getShellConfigPath() {
   return path.join(os.homedir(), '.zshrc');
 }
 
+function escapeShellEnvValue(envValue) {
+  return String(envValue)
+    .replace(/\\/g, '\\\\')
+    .replace(/\$/g, '\\$')
+    .replace(/`/g, '\\`')
+    .replace(/"/g, '\\"');
+}
+
+function syncEnvToLaunchd(envName, envValue) {
+  if (process.platform !== 'darwin') {
+    return { success: true, skipped: true };
+  }
+
+  try {
+    childProcess.execFileSync(
+      '/bin/launchctl',
+      ['setenv', envName, String(envValue)],
+      { stdio: 'ignore' }
+    );
+    return { success: true };
+  } catch (err) {
+    console.warn(`[Codex] Failed to sync ${envName} to launchd: ${err.message}`);
+    return { success: false, error: err.message };
+  }
+}
+
+function removeEnvFromLaunchd(envName) {
+  if (process.platform !== 'darwin') {
+    return { success: true, skipped: true };
+  }
+
+  try {
+    childProcess.execFileSync(
+      '/bin/launchctl',
+      ['unsetenv', envName],
+      { stdio: 'ignore' }
+    );
+    return { success: true };
+  } catch (err) {
+    console.warn(`[Codex] Failed to remove ${envName} from launchd: ${err.message}`);
+    return { success: false, error: err.message };
+  }
+}
+
 // 注入环境变量到 shell 配置文件
 function injectEnvToShell(envName, envValue) {
   const configPath = getShellConfigPath();
-  const exportLine = `export ${envName}="${envValue}"`;
+  const normalizedValue = String(envValue);
+  const exportLine = `export ${envName}="${escapeShellEnvValue(normalizedValue)}"`;
   // 使用更具体的标记，包含环境变量名，方便后续精确移除
   const marker = `# Added by CCToolbox for Codex [${envName}]`;
 
@@ -228,11 +295,27 @@ function injectEnvToShell(envName, envValue) {
     }
 
     fs.writeFileSync(configPath, content, 'utf8');
-    return { success: true, path: configPath, isFirstTime: !alreadyExists };
+    // 立即更新当前进程，保证当前服务启动的子进程能继承最新变量
+    process.env[envName] = normalizedValue;
+    const launchdResult = syncEnvToLaunchd(envName, normalizedValue);
+    return {
+      success: true,
+      path: configPath,
+      isFirstTime: !alreadyExists,
+      launchd: launchdResult
+    };
   } catch (err) {
+    // 即使 shell 写入失败，也尽量让当前进程拿到最新变量，减少当前会话受影响范围
+    process.env[envName] = normalizedValue;
+    const launchdResult = syncEnvToLaunchd(envName, normalizedValue);
     // 不抛出错误，只是警告，因为这不是致命问题
     console.warn(`[Codex] Failed to inject env to shell config: ${err.message}`);
-    return { success: false, error: err.message, isFirstTime: false };
+    return {
+      success: false,
+      error: err.message,
+      isFirstTime: false,
+      launchd: launchdResult
+    };
   }
 }
 
@@ -242,7 +325,9 @@ function removeEnvFromShell(envName) {
 
   try {
     if (!fs.existsSync(configPath)) {
-      return { success: true };
+      delete process.env[envName];
+      const launchdResult = removeEnvFromLaunchd(envName);
+      return { success: true, launchd: launchdResult };
     }
 
     let content = fs.readFileSync(configPath, 'utf8');
@@ -263,10 +348,14 @@ function removeEnvFromShell(envName) {
     content = content.replace(/\n\n\n+/g, '\n\n');
 
     fs.writeFileSync(configPath, content, 'utf8');
-    return { success: true };
+    delete process.env[envName];
+    const launchdResult = removeEnvFromLaunchd(envName);
+    return { success: true, launchd: launchdResult };
   } catch (err) {
+    delete process.env[envName];
+    const launchdResult = removeEnvFromLaunchd(envName);
     console.warn(`[Codex] Failed to remove env from shell config: ${err.message}`);
-    return { success: false, error: err.message };
+    return { success: false, error: err.message, launchd: launchdResult };
   }
 }
 

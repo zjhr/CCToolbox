@@ -208,7 +208,17 @@ const channelPanelFactories = {
         title: "模型配置",
         description: "非官方供应商需要配置模型映射",
         collapsible: true,
-        showWhen: (form) => form.presetId && form.presetId !== "official",
+        showWhen: (form) => {
+          const hasModelConfig = Boolean(
+            form.modelConfig?.model ||
+              form.modelConfig?.haikuModel ||
+              form.modelConfig?.sonnetModel ||
+              form.modelConfig?.opusModel
+          );
+          return (
+            (form.presetId && form.presetId !== "official") || hasModelConfig
+          );
+        },
         fields: [
           {
             key: "modelConfig.model",
@@ -271,23 +281,40 @@ const channelPanelFactories = {
       weight: 1,
       enabled: true,
     }),
-    mapChannelToForm: (channel) => ({
-      presetId: channel.presetId || "official",
-      name: channel.name || "",
-      baseUrl: channel.baseUrl || "",
-      apiKey: channel.apiKey || "",
-      websiteUrl: channel.websiteUrl || "",
-      modelConfig: {
-        model: channel.modelConfig?.model || "",
-        haikuModel: channel.modelConfig?.haikuModel || "",
-        sonnetModel: channel.modelConfig?.sonnetModel || "",
-        opusModel: channel.modelConfig?.opusModel || "",
-      },
-      proxyUrl: channel.proxyUrl || "",
-      maxConcurrency: channel.maxConcurrency ?? null,
-      weight: channel.weight || 1,
-      enabled: channel.enabled !== false,
-    }),
+    mapChannelToForm: (channel) => {
+      const normalizedModelConfig =
+        channel.modelConfig && typeof channel.modelConfig === "object"
+          ? channel.modelConfig
+          : {};
+      const hasLegacyModel = Boolean(channel.model);
+      const hasModelConfig = Boolean(
+        normalizedModelConfig.model ||
+          normalizedModelConfig.haikuModel ||
+          normalizedModelConfig.sonnetModel ||
+          normalizedModelConfig.opusModel
+      );
+      const presetId = (channel.presetId || hasLegacyModel || hasModelConfig)
+        ? channel.presetId || "custom"
+        : "official";
+
+      return {
+        presetId,
+        name: channel.name || "",
+        baseUrl: channel.baseUrl || channel.baseURL || "",
+        apiKey: channel.apiKey || channel.api_key || "",
+        websiteUrl: channel.websiteUrl || "",
+        modelConfig: {
+          model: normalizedModelConfig.model || channel.model || "",
+          haikuModel: normalizedModelConfig.haikuModel || "",
+          sonnetModel: normalizedModelConfig.sonnetModel || "",
+          opusModel: normalizedModelConfig.opusModel || "",
+        },
+        proxyUrl: channel.proxyUrl || "",
+        maxConcurrency: channel.maxConcurrency ?? null,
+        weight: channel.weight || 1,
+        enabled: channel.enabled !== false,
+      };
+    },
     onPresetChange: (presetId, form) => {
       const preset = getPresetById(presetId);
       if (!preset) return form;
@@ -474,14 +501,15 @@ const channelPanelFactories = {
         fields: baseSections.schedule,
       },
     ],
-    applyConfirmContent: "写入配置会同步当前渠道配置到 config.toml，是否继续？",
+    applyConfirmTitle: "确认切换渠道",
+    applyConfirmContent: "将写入 config.toml 与 auth.json，并同步环境变量，确定继续吗？",
     getInitialForm: () => ({
       name: "",
       providerKey: "",
       baseUrl: "",
       apiKey: "",
       websiteUrl: "",
-      modelName: "gpt-5.3-codex",
+      modelName: "gpt-5.4",
       maxConcurrency: null,
       weight: 1,
       enabled: true,
@@ -492,7 +520,7 @@ const channelPanelFactories = {
       baseUrl: channel.baseUrl || "",
       apiKey: channel.apiKey || "",
       websiteUrl: channel.websiteUrl || "",
-      modelName: channel.modelName || "gpt-5.3-codex",
+      modelName: channel.modelName || "gpt-5.4",
       maxConcurrency: channel.maxConcurrency ?? null,
       weight: channel.weight || 1,
       enabled: channel.enabled !== false,
