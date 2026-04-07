@@ -50,16 +50,47 @@
         >
           写入配置
         </n-button>
-        <n-button
-          size="tiny"
-          :loading="testing"
-          @click="runTest"
+        <n-popover
+          trigger="manual"
+          placement="bottom-end"
+          :show="showTestPanel"
+          @update:show="val => showTestPanel = val"
         >
-          <template #icon>
-            <n-icon><SpeedometerOutline /></n-icon>
+          <template #trigger>
+            <n-button
+              size="tiny"
+              :loading="testing || modelsLoading"
+              @click="handleTestClick"
+            >
+              <template #icon>
+                <n-icon><SpeedometerOutline /></n-icon>
+              </template>
+              测速
+            </n-button>
           </template>
-          测速
-        </n-button>
+          <div class="speed-test-panel">
+            <div class="speed-test-label">测速模型</div>
+            <n-select
+              v-model:value="selectedModel"
+              :options="modelOptions"
+              size="small"
+              filterable
+              tag
+              placeholder="选择或输入模型名"
+            />
+            <n-button
+              size="small"
+              type="primary"
+              block
+              :loading="testing"
+              :disabled="testing"
+              class="speed-test-action"
+              @click="runTest"
+            >
+              开始测速
+            </n-button>
+          </div>
+        </n-popover>
         <n-button size="tiny" @click="$emit('edit')">
           编辑
         </n-button>
@@ -84,6 +115,7 @@
         </span>
         <div class="test-result-info">
           <span v-if="testResult.latency" class="latency">{{ testResult.latency }}ms</span>
+          <span v-if="testResult.testedModel" class="tested-model">{{ testResult.testedModel }}</span>
           <span v-if="testResult.statusCode" class="status-code">HTTP {{ testResult.statusCode }}</span>
         </div>
         <n-button text size="tiny" @click="testResult = null">
@@ -147,8 +179,9 @@
 
 <script setup>
 import { ref, computed } from 'vue'
-import { NButton, NIcon, NTag, NText, NSwitch } from 'naive-ui'
+import { NButton, NIcon, NTag, NText, NSwitch, NPopover, NSelect } from 'naive-ui'
 import { ChevronDownOutline, OpenOutline, SpeedometerOutline, CheckmarkCircleOutline, CloseCircleOutline, CloseOutline } from '@vicons/ionicons5'
+import { fetchChannelModels } from '../../api/channels'
 
 const props = defineProps({
   channel: {
@@ -194,6 +227,58 @@ defineEmits(['toggle-collapse', 'apply', 'edit', 'delete', 'toggle-enabled', 'op
 const testing = ref(false)
 const testResult = ref(null)
 
+// 模型选择相关状态
+const showTestPanel = ref(false)
+const modelsLoading = ref(false)
+const availableModels = ref([])
+const selectedModel = ref('__auto__') // 默认使用自动模式
+
+const showModelSelector = computed(() => {
+  // 只在有多于1个模型时显示选择器
+  return availableModels.value.length > 1
+})
+
+const modelOptions = computed(() => {
+  const defaultModel = props.channel.modelConfig?.model
+  const options = []
+
+  // 自动选项（使用渠道配置的默认模型）
+  options.push({
+    label: defaultModel ? `自动 (${defaultModel})` : '自动',
+    value: '__auto__'
+  })
+
+  // API 获取的模型列表
+  for (const model of availableModels.value) {
+    if (model !== defaultModel) {
+      options.push({ label: model, value: model })
+    }
+  }
+  return options
+})
+
+// 点击测速按钮：先加载模型列表，再决定行为
+async function handleTestClick() {
+  if (showTestPanel.value) {
+    // 面板已打开，点击关闭
+    showTestPanel.value = false
+    return
+  }
+
+  // 加载模型列表
+  if (availableModels.value.length === 0) {
+    await loadModels()
+  }
+
+  // 多模型时弹出选择面板
+  if (showModelSelector.value) {
+    showTestPanel.value = true
+  } else {
+    // 单模型/无模型时直接测速
+    await runTest()
+  }
+}
+
 const normalizedHighlight = computed(() => props.highlightText.trim())
 const nameSegments = computed(() => highlightMatch(props.channel.name || '', normalizedHighlight.value))
 
@@ -235,12 +320,29 @@ function getValueSegments(value) {
   return highlightMatch(normalizeValue(value), normalizedHighlight.value)
 }
 
+async function loadModels() {
+  if (availableModels.value.length > 0) return
+  modelsLoading.value = true
+  try {
+    const data = await fetchChannelModels(props.channel.id)
+    availableModels.value = data.models || []
+  } catch {
+    availableModels.value = []
+  } finally {
+    modelsLoading.value = false
+  }
+}
+
 async function runTest() {
   if (!props.testFn) return
   testing.value = true
   testResult.value = null
+  showTestPanel.value = false
   try {
-    const result = await props.testFn(props.channel.id, 20000)
+    const model = selectedModel.value && selectedModel.value !== '__auto__'
+      ? selectedModel.value
+      : null
+    const result = await props.testFn(props.channel.id, 20000, model)
     testResult.value = result
   } catch (err) {
     testResult.value = {
@@ -260,7 +362,7 @@ async function runTest() {
   border: 1px solid var(--border-primary);
   border-radius: 8px;
   background: var(--bg-primary);
-  transition: all 0.2s;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .channel-card:hover {
@@ -379,6 +481,15 @@ async function runTest() {
   color: var(--text-tertiary);
 }
 
+.test-result-info .tested-model {
+  font-size: 11px;
+  font-family: 'SF Mono', Monaco, monospace;
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
 .test-result-error {
   margin-top: 8px;
   padding: 8px 10px;
@@ -453,6 +564,22 @@ async function runTest() {
 }
 
 /* ========== 响应式样式 ========== */
+
+/* 测速面板样式 */
+.speed-test-panel {
+  min-width: 220px;
+  padding: 4px 0;
+}
+
+.speed-test-label {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin-bottom: 8px;
+}
+
+.speed-test-action {
+  margin-top: 10px;
+}
 
 /* 平板端 (768px - 1024px) */
 @media (max-width: 1024px) {

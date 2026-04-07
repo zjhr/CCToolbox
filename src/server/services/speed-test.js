@@ -36,7 +36,7 @@ function sanitizeTimeout(timeout) {
  * @param {string} channelType - 渠道类型：'claude' | 'codex' | 'gemini'
  * @returns {Promise<Object>} 测试结果
  */
-async function testChannelSpeed(channel, timeout = DEFAULT_TIMEOUT, channelType = 'claude') {
+async function testChannelSpeed(channel, timeout = DEFAULT_TIMEOUT, channelType = 'claude', model = null) {
   const sanitizedTimeout = sanitizeTimeout(timeout);
 
   try {
@@ -75,7 +75,7 @@ async function testChannelSpeed(channel, timeout = DEFAULT_TIMEOUT, channelType 
 
     // 直接测试 API 功能（发送测试消息）
     // 不再单独测试网络连通性，因为直接 GET base_url 可能返回 404
-    const apiResult = await testAPIFunctionality(testUrl, channel.apiKey, sanitizedTimeout, channelType, channel.model);
+    const apiResult = await testAPIFunctionality(testUrl, channel.apiKey, sanitizedTimeout, channelType, model || channel.model);
 
     const success = apiResult.success;
     const networkOk = apiResult.latency !== null; // 如果有延迟数据，说明网络是通的
@@ -214,10 +214,11 @@ function testAPIFunctionality(baseUrl, apiKey, timeout, channelType = 'claude', 
 
       // 使用 Claude Code 的请求格式
       // user_id 必须符合特定格式: user_xxx_account__session_xxx
-      // 使用 claude-sonnet-4 模型测试，因为 haiku 可能没有配额
+      // 优先使用传入的 model 参数，其次使用渠道配置，最后回退到默认值
+      const claudeModel = model || 'claude-sonnet-4-20250514';
       const sessionId = Math.random().toString(36).substring(2, 15);
       requestBody = JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: claudeModel,
         max_tokens: 10,
         stream: true,
         messages: [{ role: 'user', content: [{ type: 'text', text: 'Hi' }] }],

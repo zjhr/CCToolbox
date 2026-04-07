@@ -51,9 +51,35 @@
   gap: 10px;
 }
 
+.channels-list .ghost {
+  opacity: 0.3;
+  border-style: dashed;
+}
+
+.channels-list .chosen {
+  cursor: grabbing;
+}
+
+/* 拖拽期间禁止文字选中 */
+.channels-list.sortable-dragging,
+.channels-list.sortable-dragging * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
 .channels-list.static .channel-header,
 .channels-list.static .channel-header:active {
   cursor: default;
+}
+
+.channels-list:not(.static) .channel-header {
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.channels-list:not(.static) .channel-header:active {
+  cursor: grabbing;
 }
 
 .channel-card {
@@ -61,7 +87,7 @@
   border-radius: 6px;
   padding: 10px 12px;
   background: var(--bg-secondary);
-  transition: all 0.2s ease;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease, opacity 0.2s ease;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
   border-left: 3px solid #18a058;
 }
@@ -302,20 +328,31 @@
   padding-bottom: 0;
 }
 
+/* 占位元素（原位置的幽灵） */
 :global(.ghost) {
-  opacity: 0.4;
+  opacity: 0.3;
+  border-style: dashed;
 }
 
+/* 被选中的元素（拖拽开始瞬间） */
 :global(.chosen) {
-  transform: scale(1.02);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
   cursor: grabbing !important;
 }
 
+/* 原生拖拽时的原始元素（force-fallback 模式下隐藏） */
 :global(.drag) {
-  opacity: 0.8;
-  transform: rotate(1deg);
+  opacity: 0 !important;
+}
+
+/* SortableJS fallback 克隆（跟随鼠标的元素） */
+:global(.drag-fallback) {
+  cursor: grabbing !important;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2) !important;
+  opacity: 0.92;
+  z-index: 9999 !important;
+  transition: none !important;
+  pointer-events: none !important;
 }
 
 @media (max-width: 1024px) {

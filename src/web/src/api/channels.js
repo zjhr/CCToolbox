@@ -192,10 +192,23 @@ export async function getCurrentGeminiChannel() {
 // ========== 速度测试 API ==========
 
 /**
- * 测试单个 Claude 渠道速度
+ * 获取渠道可用模型列表
  */
-export async function testClaudeChannelSpeed(channelId, timeout = 20000) {
-  const response = await client.post(`/channels/${channelId}/speed-test`, { timeout })
+export async function fetchChannelModels(channelId) {
+  const response = await client.get(`/channels/${channelId}/models`)
+  return response.data
+}
+
+/**
+ * 测试单个 Claude 渠道速度
+ * @param {string} channelId - 渠道 ID
+ * @param {number} timeout - 超时时间
+ * @param {string} model - 可选的模型名称
+ */
+export async function testClaudeChannelSpeed(channelId, timeout = 20000, model = null) {
+  const payload = { timeout }
+  if (model) payload.model = model
+  const response = await client.post(`/channels/${channelId}/speed-test`, payload)
   return response.data
 }
 

@@ -13,6 +13,7 @@ const {
 const { getSchedulerState } = require('../services/channel-scheduler');
 const { getChannelHealthStatus, getAllChannelHealthStatus, resetChannelHealth } = require('../services/channel-health');
 const { testChannelSpeed, testMultipleChannels, getLatencyLevel } = require('../services/speed-test');
+const { getModelsForChannel, clearModelCache } = require('../services/model-list');
 const { broadcastLog, broadcastProxyState, broadcastSchedulerState } = require('../websocket-server');
 
 // GET /api/channels - Get all channels with health status
@@ -97,6 +98,26 @@ router.get('/best-for-restore', (req, res) => {
     res.json({ channel });
   } catch (error) {
     console.error('Error getting best channel for restore:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/channels/:id/models - Get available models for a channel
+router.get('/:id/models', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const forceRefresh = req.query.refresh === 'true';
+    const channels = getAllChannels();
+    const channel = channels.find(ch => ch.id === id);
+
+    if (!channel) {
+      return res.status(404).json({ error: '渠道不存在' });
+    }
+
+    const result = await getModelsForChannel(channel, 'claude', forceRefresh);
+    res.json({ models: result.models, source: result.source });
+  } catch (error) {
+    console.error('Error fetching channel models:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -204,7 +225,7 @@ router.post('/:id/reset-health', (req, res) => {
 router.post('/:id/speed-test', async (req, res) => {
   try {
     const { id } = req.params;
-    const { timeout = 10000 } = req.body;
+    const { timeout = 10000, model } = req.body;
     const channels = getAllChannels();
     const channel = channels.find(ch => ch.id === id);
 
@@ -212,9 +233,17 @@ router.post('/:id/speed-test', async (req, res) => {
       return res.status(404).json({ error: '渠道不存在' });
     }
 
+    // 验证 model 参数格式（仅允许安全字符）
+    const safeModel = model && typeof model === 'string' && /^[a-zA-Z0-9\-._/:]+$/.test(model)
+      ? model.trim()
+      : undefined;
+
     // Claude 渠道使用 'claude' 类型
-    const result = await testChannelSpeed(channel, timeout, 'claude');
+    const result = await testChannelSpeed(channel, timeout, 'claude', safeModel);
     result.level = getLatencyLevel(result.latency);
+    if (safeModel) {
+      result.testedModel = safeModel;
+    }
 
     res.json(result);
   } catch (error) {

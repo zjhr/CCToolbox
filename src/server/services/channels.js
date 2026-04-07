@@ -330,15 +330,23 @@ function updateClaudeSettingsWithModelConfig(channel) {
   if (presetId && presetId !== 'official' && modelConfig) {
     if (modelConfig.model) {
       settings.env.ANTHROPIC_MODEL = modelConfig.model;
+    } else {
+      delete settings.env.ANTHROPIC_MODEL;
     }
     if (modelConfig.haikuModel) {
       settings.env.ANTHROPIC_DEFAULT_HAIKU_MODEL = modelConfig.haikuModel;
+    } else {
+      delete settings.env.ANTHROPIC_DEFAULT_HAIKU_MODEL;
     }
     if (modelConfig.sonnetModel) {
       settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL = modelConfig.sonnetModel;
+    } else {
+      delete settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL;
     }
     if (modelConfig.opusModel) {
       settings.env.ANTHROPIC_DEFAULT_OPUS_MODEL = modelConfig.opusModel;
+    } else {
+      delete settings.env.ANTHROPIC_DEFAULT_OPUS_MODEL;
     }
   } else {
     delete settings.env.ANTHROPIC_MODEL;

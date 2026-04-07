@@ -64,8 +64,17 @@
           ghost-class="ghost"
           chosen-class="chosen"
           drag-class="drag"
-          animation="200"
-          @end="actions.handleDragEnd"
+          fallback-class="drag-fallback"
+          :animation="200"
+          :force-fallback="true"
+          :fallback-on-body="true"
+          :fallback-tolerance="3"
+          :scroll="true"
+          :scroll-sensitivity="80"
+          :scroll-speed="10"
+          :bubble-scroll="true"
+          @start="onDragStart"
+          @end="onDragEnd"
         >
           <template #item="{ element }">
             <ChannelCard
@@ -252,6 +261,61 @@ async function loadReasoningEffort() {
 // 跨渠道面板保留搜索词
 const searchInput = useStorage('cctoolbox-channel-search-input', '')
 const searchQuery = useStorage('cctoolbox-channel-search-query', '')
+
+// ===== 拖拽自动滚动 =====
+let scrollRAF = null
+let dragActive = false
+
+function onDragStart() {
+  dragActive = true
+  document.addEventListener('dragover', onDragOver)
+  startAutoScroll()
+}
+
+function onDragEnd() {
+  dragActive = false
+  actions.handleDragEnd()
+  document.removeEventListener('dragover', onDragOver)
+  if (scrollRAF) {
+    cancelAnimationFrame(scrollRAF)
+    scrollRAF = null
+  }
+}
+
+function onDragOver(e) {
+  // 更新鼠标位置给 autoScroll 使用
+  autoScroll._lastY = e.clientY
+}
+
+function startAutoScroll() {
+  const scrollEl = document.querySelector('.channels-scroll-area')
+  if (!scrollEl) return
+
+  autoScroll._lastY = 0
+
+  function autoScroll() {
+    if (!dragActive) return
+    const y = autoScroll._lastY
+    if (y === 0) {
+      scrollRAF = requestAnimationFrame(autoScroll)
+      return
+    }
+
+    const rect = scrollEl.getBoundingClientRect()
+    const sensitivity = 80
+    const speed = 12
+
+    if (y < rect.top + sensitivity && y >= rect.top) {
+      scrollEl.scrollTop -= speed
+    } else if (y > rect.bottom - sensitivity && y <= rect.bottom) {
+      scrollEl.scrollTop += speed
+    }
+
+    scrollRAF = requestAnimationFrame(autoScroll)
+  }
+
+  scrollRAF = requestAnimationFrame(autoScroll)
+}
 
 const applySearch = useDebounceFn((value) => {
   const normalizedValue = typeof value === 'string' ? value : ''

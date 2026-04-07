@@ -36,3 +36,4 @@ temp/
 *.tmp
 .ace-tool/
 CLAUDE.md
+.omc
