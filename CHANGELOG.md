@@ -6,6 +6,17 @@
 
 ## [Unreleased]
 
+## [3.4.1] - 2026-04-08
+
+### Added
+
+- 🎨 **项目列表刷新按钮** - 三渠道（Claude / Codex / Gemini）项目列表统一添加刷新按钮，支持 force 参数绕过缓存，含 loading 状态和防重复点击保护
+
+### Fixed
+
+- 🐛 **ct ui 启动不再自动恢复代理** - 移除 `autoRestoreProxies()` 调用，防止启动时篡改 `settings.json` 中的代理配置
+- 🐛 **Claude 项目列表排序修复** - 移除 `projectOrder` 排序覆盖逻辑，项目列表始终按 `lastUsed` 降序返回
+
 ## [3.4.0] - 2026-04-07
 
 ### Added

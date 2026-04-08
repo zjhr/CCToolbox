@@ -130,7 +130,7 @@ export const useSessionsStore = defineStore('sessions', () => {
         }
       }
 
-      const data = await getProjects(currentChannel.value)
+      const data = await getProjects(currentChannel.value, { force })
       projects.value = data.projects
       currentProject.value = data.currentProject
       setCachedProjects(currentChannel.value, {

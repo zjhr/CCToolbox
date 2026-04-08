@@ -162,8 +162,8 @@ async function startServer(port) {
     console.log(chalk.gray('✅ 更新检查服务已启动'));
     startSkillUpdateCheck();
 
-    // 自动恢复代理状态
-    autoRestoreProxies();
+    // 自动恢复代理状态（已禁用：ct ui 启动不再自动恢复代理，避免篡改 settings.json）
+    // autoRestoreProxies();
   });
 
   // 监听端口占用错误

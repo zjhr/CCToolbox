@@ -7,6 +7,19 @@
           <n-text depth="3">选择一个项目查看会话</n-text>
         </div>
         <div class="header-actions">
+          <n-button
+            size="small"
+            :loading="refreshing"
+            :disabled="refreshing"
+            @click="handleRefresh"
+            tertiary
+            class="refresh-btn"
+          >
+            <template #icon>
+              <n-icon><RefreshOutline /></n-icon>
+            </template>
+            刷新
+          </n-button>
           <n-select
             v-model:value="sortBy"
             :options="sortOptions"
@@ -80,8 +93,8 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { NH2, NText, NSpin, NAlert, NEmpty, NIcon, NInput, NSelect } from 'naive-ui'
-import { FolderOpenOutline, SearchOutline } from '@vicons/ionicons5'
+import { NH2, NText, NSpin, NAlert, NEmpty, NIcon, NInput, NSelect, NButton } from 'naive-ui'
+import { FolderOpenOutline, SearchOutline, RefreshOutline } from '@vicons/ionicons5'
 import { useSessionsStore } from '../stores/sessions'
 import ProjectCard from '../components/ProjectCard.vue'
 import SearchModal from '../components/SearchModal.vue'
@@ -113,6 +126,24 @@ const contentEl = ref(null)
 
 // Global search
 const showGlobalSearch = ref(false)
+
+// Refresh state
+const refreshing = ref(false)
+
+async function handleRefresh() {
+  if (refreshing.value) return
+  refreshing.value = true
+  try {
+    await store.fetchProjects({ force: true })
+    // 刷新失败时保留旧数据，仅显示非阻断提示
+    if (store.error) {
+      message.error('刷新失败: ' + store.error)
+      store.error = null
+    }
+  } finally {
+    refreshing.value = false
+  }
+}
 
 // Sorted and filtered projects
 const sortedAndFilteredProjects = computed(() => {
@@ -257,6 +288,14 @@ onUnmounted(() => {
 
 .sort-select {
   width: 130px;
+}
+
+.refresh-btn {
+  flex-shrink: 0;
+}
+
+.refresh-btn :deep(.n-button__icon) {
+  margin-right: 2px;
 }
 
 .header-text :deep(.n-h2) {

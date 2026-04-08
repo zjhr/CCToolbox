@@ -1,8 +1,9 @@
 import { client, encodePathSegment, getChannelPrefix } from './client'
 
-export async function getProjects(channel = 'claude') {
+export async function getProjects(channel = 'claude', { force = false } = {}) {
   const prefix = getChannelPrefix(channel)
-  const response = await client.get(`${prefix}/projects`)
+  const params = force ? { force: 'true' } : {}
+  const response = await client.get(`${prefix}/projects`, { params })
   return response.data
 }
 
