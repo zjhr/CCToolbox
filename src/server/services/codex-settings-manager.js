@@ -221,6 +221,37 @@ function getShellConfigPath() {
   return path.join(os.homedir(), '.zshrc');
 }
 
+function escapeRegexLiteral(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function getShellConfigCandidates() {
+  const preferred = getShellConfigPath();
+  const zshrc = path.join(os.homedir(), '.zshrc');
+  const bashProfile = path.join(os.homedir(), '.bash_profile');
+  const bashrc = path.join(os.homedir(), '.bashrc');
+  return Array.from(new Set([preferred, zshrc, bashProfile, bashrc]));
+}
+
+function hasEnvExport(content, envName) {
+  const envNamePattern = escapeRegexLiteral(envName);
+  return new RegExp(`^\\s*export\\s+${envNamePattern}\\s*=`, 'm').test(content);
+}
+
+function resolveShellConfigPathForEnv(envName) {
+  const candidates = getShellConfigCandidates();
+  for (const candidate of candidates) {
+    if (!fs.existsSync(candidate)) {
+      continue;
+    }
+    const content = fs.readFileSync(candidate, 'utf8');
+    if (hasEnvExport(content, envName)) {
+      return candidate;
+    }
+  }
+  return getShellConfigPath();
+}
+
 function escapeShellEnvValue(envValue) {
   return String(envValue)
     .replace(/\\/g, '\\\\')
@@ -267,11 +298,20 @@ function removeEnvFromLaunchd(envName) {
 
 // 注入环境变量到 shell 配置文件
 function injectEnvToShell(envName, envValue) {
-  const configPath = getShellConfigPath();
+  const configPath = resolveShellConfigPathForEnv(envName);
   const normalizedValue = String(envValue);
   const exportLine = `export ${envName}="${escapeShellEnvValue(normalizedValue)}"`;
   // 使用更具体的标记，包含环境变量名，方便后续精确移除
   const marker = `# Added by CCToolbox for Codex [${envName}]`;
+  const envNamePattern = escapeRegexLiteral(envName);
+  const managedBlockRegex = new RegExp(
+    `\\n?# Added by (CCToolbox|Coding-Tool) for Codex \\[${envNamePattern}\\]\\r?\\n\\s*export\\s+${envNamePattern}\\s*=.*(?:\\r?\\n)?`,
+    'g'
+  );
+  const plainExportRegex = new RegExp(
+    `^\\s*export\\s+${envNamePattern}\\s*=.*\\r?$`,
+    'gm'
+  );
 
   try {
     let content = '';
@@ -279,19 +319,16 @@ function injectEnvToShell(envName, envValue) {
       content = fs.readFileSync(configPath, 'utf8');
     }
 
-    // 检查是否已经存在这个环境变量配置
-    const regex = new RegExp(`^export ${envName}=`, 'm');
-    const alreadyExists = regex.test(content);
+    // 清理同名历史记录，避免重复 export 导致旧值覆盖新值
+    const alreadyExists = hasEnvExport(content, envName);
+    content = content.replace(managedBlockRegex, '\n');
+    content = content.replace(plainExportRegex, '');
+    content = content.replace(/\n\n\n+/g, '\n\n').trimEnd();
 
-    if (alreadyExists) {
-      // 已存在，替换它（保留原有的标记注释）
-      content = content.replace(
-        new RegExp(`^(# Added by (CCToolbox|Coding-Tool) for Codex \\[${envName}\\]\n)?export ${envName}=.*$`, 'm'),
-        `${marker}\n${exportLine}`
-      );
+    if (content) {
+      content += `\n\n${marker}\n${exportLine}\n`;
     } else {
-      // 不存在，追加到文件末尾
-      content = content.trimEnd() + `\n\n${marker}\n${exportLine}\n`;
+      content = `${marker}\n${exportLine}\n`;
     }
 
     fs.writeFileSync(configPath, content, 'utf8');

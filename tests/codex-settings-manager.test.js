@@ -62,11 +62,12 @@ async function runCodexSettingsManagerTests() {
     const originalExecFileSync = childProcess.execFileSync;
     const envName = 'CODEXMANAGER_API_KEY';
     const envValue = 'secret-"key"$dollar`tick`\\value';
+    let mockedUserShell = '/bin/zsh';
 
     childProcess.execFileSync = (file, args, options) => {
       if (file === '/usr/bin/dscl') {
         dsclCalls.push({ file, args, options });
-        return 'UserShell: /bin/zsh\n';
+        return `UserShell: ${mockedUserShell}\n`;
       }
       launchctlCalls.push({ file, args, options });
       return Buffer.from('');
@@ -121,6 +122,45 @@ async function runCodexSettingsManagerTests() {
         args: ['unsetenv', envName],
         options: { stdio: 'ignore' }
       });
+
+      // 场景1：同一文件中有重复 export 时，应只保留一条最新值
+      fs.writeFileSync(
+        shellConfigPath,
+        [
+          '# Added by CCToolbox for Codex [CODEXMANAGER_API_KEY]',
+          'export CODEXMANAGER_API_KEY="legacy-1"',
+          '',
+          'export CODEXMANAGER_API_KEY="legacy-2"',
+          ''
+        ].join('\n'),
+        'utf8'
+      );
+
+      const dedupeResult = injectEnvToShell(envName, 'latest-key');
+      assert.strictEqual(dedupeResult.success, true);
+      const dedupedContent = fs.readFileSync(shellConfigPath, 'utf8');
+      const exportLines =
+        dedupedContent.match(/^\s*export\s+CODEXMANAGER_API_KEY\s*=.*$/gm) || [];
+      assert.strictEqual(exportLines.length, 1);
+      assert.ok(exportLines[0].includes('"latest-key"'));
+
+      // 场景2：登录 shell 变更后，若旧变量在 .zshrc，仍应更新旧文件
+      mockedUserShell = '/bin/bash';
+      const bashProfilePath = path.join(tempRoot, '.bash_profile');
+      fs.writeFileSync(bashProfilePath, '# bash profile\n', 'utf8');
+      fs.writeFileSync(
+        shellConfigPath,
+        '# Added by CCToolbox for Codex [CODEXMANAGER_API_KEY]\nexport CODEXMANAGER_API_KEY="from-zshrc-old"\n',
+        'utf8'
+      );
+
+      const legacyPathResult = injectEnvToShell(envName, 'from-zshrc-new');
+      assert.strictEqual(legacyPathResult.success, true);
+      assert.strictEqual(legacyPathResult.path, shellConfigPath);
+      const zshrcContent = fs.readFileSync(shellConfigPath, 'utf8');
+      const bashProfileContent = fs.readFileSync(bashProfilePath, 'utf8');
+      assert.ok(zshrcContent.includes('from-zshrc-new'));
+      assert.ok(!bashProfileContent.includes(envName));
     } finally {
       childProcess.execFileSync = originalExecFileSync;
       delete process.env[envName];

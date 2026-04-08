@@ -595,8 +595,30 @@ ${tomlContent}`;
 
   fs.writeFileSync(authPath, JSON.stringify(auth, null, 2), "utf8");
 
-  // 注意：环境变量注入在 createChannel 和 updateChannel 时已经处理
-  // 这里不再重复注入，避免多次写入 shell 配置文件
+  // 同步环境变量到 shell/launchd：
+  // - shell rc: 兼容终端会话 source 后可用
+  // - launchd: 兼容 daemon / GUI 进程继承环境变量
+  // 即使 create/update 已做过注入，这里仍执行一次，确保“写入配置”路径与
+  // “代理启动时重写配置”路径都能收敛到同一环境变量真相。
+  for (const channel of allChannels) {
+    const envKey =
+      buildEnvKeyFromProvider(channel.providerKey) ||
+      normalizeEnvKey(channel.envKey);
+    if (!channel.apiKey || !envKey) {
+      continue;
+    }
+
+    const injectResult = injectEnvToShell(envKey, channel.apiKey);
+    if (injectResult.success) {
+      console.log(
+        `[Codex Channels] Environment variable ${envKey} synced during config write`,
+      );
+    } else {
+      console.warn(
+        `[Codex Channels] Failed to sync ${envKey} during config write: ${injectResult.error}`,
+      );
+    }
+  }
 }
 
 // 获取所有启用的渠道（供调度器使用）

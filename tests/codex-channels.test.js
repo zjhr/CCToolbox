@@ -141,6 +141,69 @@ async function runCodexChannelTests() {
     failures
   );
 
+  await runTestCase(
+    'writeCodexConfigForMultiChannel should sync env to shell and launchd for daemon inheritance',
+    async () => {
+      await withTempHome(async (tempRoot) => {
+        const originalExecFileSync = childProcess.execFileSync;
+        const originalPlatform = process.platform;
+        const launchctlCalls = [];
+
+        Object.defineProperty(process, 'platform', {
+          configurable: true,
+          value: 'darwin'
+        });
+
+        childProcess.execFileSync = (file, args) => {
+          if (file === '/usr/bin/dscl') {
+            return 'UserShell: /bin/zsh\n';
+          }
+          if (file === '/bin/launchctl') {
+            launchctlCalls.push(args);
+            return Buffer.from('');
+          }
+          return Buffer.from('');
+        };
+
+        try {
+          const { writeCodexConfigForMultiChannel } = loadCodexChannelsService();
+
+          writeCodexConfigForMultiChannel([
+            {
+              providerKey: 'daemon',
+              name: 'Daemon Channel',
+              baseUrl: 'https://example.com/v1',
+              wireApi: 'responses',
+              requiresOpenaiAuth: true,
+              queryParams: null,
+              apiKey: 'sk-daemon-test',
+              enabled: true
+            }
+          ]);
+
+          const shellPath = path.join(tempRoot, '.zshrc');
+          const shellContent = fs.readFileSync(shellPath, 'utf8');
+
+          assert.ok(shellContent.includes('export DAEMON_API_KEY="sk-daemon-test"'));
+          assert.ok(
+            launchctlCalls.some((args) =>
+              args[0] === 'setenv' &&
+              args[1] === 'DAEMON_API_KEY' &&
+              args[2] === 'sk-daemon-test'
+            )
+          );
+        } finally {
+          childProcess.execFileSync = originalExecFileSync;
+          Object.defineProperty(process, 'platform', {
+            configurable: true,
+            value: originalPlatform
+          });
+        }
+      });
+    },
+    failures
+  );
+
   if (failures.length > 0) {
     const summary = failures
       .map((item, index) => `${index + 1}. ${item.name}: ${item.error.message}`)
