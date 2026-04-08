@@ -16,6 +16,7 @@ const { getChannelHealthStatus, resetChannelHealth } = require('../services/chan
 const { broadcastSchedulerState } = require('../websocket-server');
 const { isGeminiInstalled } = require('../services/gemini-config');
 const { testChannelSpeed, testMultipleChannels, getLatencyLevel } = require('../services/speed-test');
+const { getModelsForChannel } = require('../services/model-list');
 
 module.exports = (config) => {
   /**
@@ -72,6 +73,33 @@ module.exports = (config) => {
     } catch (err) {
       console.error('[Gemini Channels API] Failed to create channel:', err);
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  /**
+   * GET /api/gemini/channels/:channelId/models
+   * 获取渠道可用模型列表
+   */
+  router.get('/:channelId/models', async (req, res) => {
+    try {
+      if (!isGeminiInstalled()) {
+        return res.status(404).json({ error: 'Gemini CLI not installed' });
+      }
+
+      const { channelId } = req.params;
+      const forceRefresh = req.query.refresh === 'true';
+      const data = getChannels();
+      const channel = data.channels.find(ch => ch.id === channelId);
+
+      if (!channel) {
+        return res.status(404).json({ error: '渠道不存在' });
+      }
+
+      const result = await getModelsForChannel(channel, 'gemini', forceRefresh);
+      res.json({ models: result.models, source: result.source });
+    } catch (error) {
+      console.error('[Gemini Channels API] Error fetching channel models:', error);
+      res.status(500).json({ error: error.message });
     }
   });
 
@@ -228,7 +256,7 @@ module.exports = (config) => {
       }
 
       const { channelId } = req.params;
-      const { timeout = 10000 } = req.body;
+      const { timeout = 10000, model } = req.body;
       const data = getChannels();
       const channel = data.channels.find(ch => ch.id === channelId);
 
@@ -236,8 +264,15 @@ module.exports = (config) => {
         return res.status(404).json({ error: '渠道不存在' });
       }
 
-      const result = await testChannelSpeed(channel, timeout, 'gemini');
+      const safeModel = model && typeof model === 'string' && /^[a-zA-Z0-9\-._/:]+$/.test(model)
+        ? model.trim()
+        : undefined;
+
+      const result = await testChannelSpeed(channel, timeout, 'gemini', safeModel);
       result.level = getLatencyLevel(result.latency);
+      if (safeModel) {
+        result.testedModel = safeModel;
+      }
 
       res.json(result);
     } catch (error) {

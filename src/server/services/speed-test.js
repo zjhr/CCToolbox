@@ -75,7 +75,19 @@ async function testChannelSpeed(channel, timeout = DEFAULT_TIMEOUT, channelType 
 
     // 直接测试 API 功能（发送测试消息）
     // 不再单独测试网络连通性，因为直接 GET base_url 可能返回 404
-    const apiResult = await testAPIFunctionality(testUrl, channel.apiKey, sanitizedTimeout, channelType, model || channel.model);
+    const resolvedModel =
+      model ||
+      channel.modelName ||
+      channel.model ||
+      channel.modelConfig?.model ||
+      null;
+    const apiResult = await testAPIFunctionality(
+      testUrl,
+      channel.apiKey,
+      sanitizedTimeout,
+      channelType,
+      resolvedModel
+    );
 
     const success = apiResult.success;
     const networkOk = apiResult.latency !== null; // 如果有延迟数据，说明网络是通的

@@ -32,6 +32,7 @@ export default function useChannelManager(config) {
     loading: false,
     currentChannel: null,
     currentChannelId: null,
+    configWarning: null,
     collapsed: getLocalCollapse(config.storageKeys.localCollapse),
     showDialog: false,
     editingChannel: null,
@@ -80,6 +81,7 @@ export default function useChannelManager(config) {
     if (typeof config.api.getCurrentChannel !== 'function') {
       state.currentChannel = null
       state.currentChannelId = null
+      state.configWarning = null
       return
     }
     try {
@@ -87,9 +89,17 @@ export default function useChannelManager(config) {
       const channel = data?.channel || null
       state.currentChannel = channel
       state.currentChannelId = channel?.id || null
+      // Handle warning state - show notification but don't change selection
+      if (data?.warning) {
+        state.configWarning = data.warning
+        message.warning(data.warning.reason, { duration: 8000 })
+      } else {
+        state.configWarning = null
+      }
     } catch (error) {
       state.currentChannel = null
       state.currentChannelId = null
+      state.configWarning = null
     }
   }
 
@@ -248,6 +258,18 @@ export default function useChannelManager(config) {
     return valid
   }
 
+  /**
+   * 检测 apiKey 是否为掩码值
+   * 掩码格式：前4位字符 + 连续星号填充
+   * @param {string} apiKey - API 密钥
+   * @returns {boolean} - 是否为掩码值
+   */
+  function isMaskedApiKey(apiKey) {
+    if (!apiKey || typeof apiKey !== 'string') return false
+    // 掩码特征：包含4个以上连续星号
+    return /\*{4,}/.test(apiKey)
+  }
+
   async function handleSave() {
     if (!runValidation()) {
       message.error('请检查表单填写是否完整')
@@ -256,7 +278,12 @@ export default function useChannelManager(config) {
 
     try {
       if (state.editingChannel) {
-        await config.api.update(state.editingChannel, state.formData)
+        // 过滤掩码的 apiKey，防止覆盖真实凭据
+        const payload = { ...state.formData }
+        if (isMaskedApiKey(payload.apiKey)) {
+          delete payload.apiKey // 跳过掩码值，保留后端原值
+        }
+        await config.api.update(state.editingChannel, payload)
         let applied = false
         let applyFailed = false
         const shouldApply =
@@ -339,10 +366,12 @@ export default function useChannelManager(config) {
       onPositiveClick: async () => {
         try {
           await config.api.applyToSettings(channel)
+          state.configWarning = null
           message.success('已将渠道写入配置文件')
           await loadChannels()
         } catch (error) {
-          message.error(resolveError(error))
+          const errorMsg = resolveError(error)
+          message.error(errorMsg, { duration: 6000 })
         }
       }
     })

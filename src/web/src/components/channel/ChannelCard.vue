@@ -233,13 +233,8 @@ const modelsLoading = ref(false)
 const availableModels = ref([])
 const selectedModel = ref('__auto__') // 默认使用自动模式
 
-const showModelSelector = computed(() => {
-  // 只在有多于1个模型时显示选择器
-  return availableModels.value.length > 1
-})
-
 const modelOptions = computed(() => {
-  const defaultModel = props.channel.modelConfig?.model
+  const defaultModel = props.channel.modelConfig?.model || props.channel.modelName || props.channel.model
   const options = []
 
   // 自动选项（使用渠道配置的默认模型）
@@ -270,13 +265,8 @@ async function handleTestClick() {
     await loadModels()
   }
 
-  // 多模型时弹出选择面板
-  if (showModelSelector.value) {
-    showTestPanel.value = true
-  } else {
-    // 单模型/无模型时直接测速
-    await runTest()
-  }
+  // 始终弹出模型面板，支持手动输入模型
+  showTestPanel.value = true
 }
 
 const normalizedHighlight = computed(() => props.highlightText.trim())
@@ -324,7 +314,7 @@ async function loadModels() {
   if (availableModels.value.length > 0) return
   modelsLoading.value = true
   try {
-    const data = await fetchChannelModels(props.channel.id)
+    const data = await fetchChannelModels(props.channel.id, props.channelType)
     availableModels.value = data.models || []
   } catch {
     availableModels.value = []

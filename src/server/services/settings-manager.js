@@ -33,13 +33,39 @@ function readSettings() {
   }
 }
 
-// 写入配置文件
+// 写入配置文件（原子写入）
 function writeSettings(settings) {
+  const settingsPath = getSettingsPath();
+  const content = JSON.stringify(settings, null, 2);
+
+  // Validate JSON roundtrip integrity
   try {
-    const content = JSON.stringify(settings, null, 2);
-    fs.writeFileSync(getSettingsPath(), content, 'utf8');
+    JSON.parse(content);
   } catch (err) {
-    throw new Error('Failed to write settings.json: ' + err.message);
+    throw new Error('Settings data failed JSON roundtrip validation: ' + err.message);
+  }
+
+  // Ensure directory exists
+  const settingsDir = path.dirname(settingsPath);
+  if (!fs.existsSync(settingsDir)) {
+    fs.mkdirSync(settingsDir, { recursive: true });
+  }
+
+  // Atomic write: temp file + rename
+  const tmpPath = settingsPath + '.tmp';
+  try {
+    fs.writeFileSync(tmpPath, content, 'utf8');
+
+    // Read back and verify written content
+    const written = fs.readFileSync(tmpPath, 'utf8');
+    JSON.parse(written);
+
+    // Atomic rename (original file preserved until rename succeeds)
+    fs.renameSync(tmpPath, settingsPath);
+  } catch (err) {
+    // Clean up temp file on failure
+    try { fs.unlinkSync(tmpPath); } catch (e) { /* ignore cleanup error */ }
+    throw new Error('Failed to write settings.json atomically: ' + err.message);
   }
 }
 

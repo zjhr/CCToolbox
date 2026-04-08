@@ -194,8 +194,14 @@ export async function getCurrentGeminiChannel() {
 /**
  * 获取渠道可用模型列表
  */
-export async function fetchChannelModels(channelId) {
-  const response = await client.get(`/channels/${channelId}/models`)
+export async function fetchChannelModels(channelId, channelType = 'claude') {
+  let endpoint = `/channels/${channelId}/models`
+  if (channelType === 'codex') {
+    endpoint = `/codex/channels/${channelId}/models`
+  } else if (channelType === 'gemini') {
+    endpoint = `/gemini/channels/${channelId}/models`
+  }
+  const response = await client.get(endpoint)
   return response.data
 }
 
@@ -224,8 +230,10 @@ export async function testAllClaudeChannelsSpeed(timeout = 20000) {
 /**
  * 测试单个 Codex 渠道速度
  */
-export async function testCodexChannelSpeed(channelId, timeout = 20000) {
-  const response = await client.post(`/codex/channels/${channelId}/speed-test`, { timeout })
+export async function testCodexChannelSpeed(channelId, timeout = 20000, model = null) {
+  const payload = { timeout }
+  if (model) payload.model = model
+  const response = await client.post(`/codex/channels/${channelId}/speed-test`, payload)
   return response.data
 }
 
@@ -241,8 +249,10 @@ export async function testAllCodexChannelsSpeed(timeout = 20000) {
 /**
  * 测试单个 Gemini 渠道速度
  */
-export async function testGeminiChannelSpeed(channelId, timeout = 20000) {
-  const response = await client.post(`/gemini/channels/${channelId}/speed-test`, { timeout })
+export async function testGeminiChannelSpeed(channelId, timeout = 20000, model = null) {
+  const payload = { timeout }
+  if (model) payload.model = model
+  const response = await client.post(`/gemini/channels/${channelId}/speed-test`, payload)
   return response.data
 }
 

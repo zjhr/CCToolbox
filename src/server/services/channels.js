@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { isProxyConfig } = require('./settings-manager');
+const { isProxyConfig, writeSettings: atomicWriteSettings, backupSettings, settingsExists: claudeSettingsExists } = require('./settings-manager');
 const { getAppDir, getChannelsPath } = require('../../utils/app-path-manager');
 
 function ensureAppDir() {
@@ -261,6 +261,36 @@ function deleteChannel(id) {
   return { success: true };
 }
 
+// Shell 转义单引号（防止命令注入）
+function escapeSingleQuote(str) {
+  return str.replace(/'/g, "'\\''");
+}
+
+// 校验渠道数据格式
+function validateChannelData(channel) {
+  if (!channel.name || typeof channel.name !== 'string' || channel.name.trim() === '') {
+    throw new Error('Channel name is required and must not be empty');
+  }
+  if (!channel.baseUrl || typeof channel.baseUrl !== 'string') {
+    throw new Error('Channel baseUrl is required');
+  }
+  if (!/^https?:\/\/[^\s]+$/.test(channel.baseUrl)) {
+    throw new Error('Channel baseUrl must be a valid http/https URL');
+  }
+  if (channel.baseUrl.includes('\0')) {
+    throw new Error('Channel baseUrl contains invalid characters');
+  }
+  if (!channel.apiKey || typeof channel.apiKey !== 'string') {
+    throw new Error('Channel apiKey is required');
+  }
+  if (channel.apiKey.includes('\n') || channel.apiKey.includes('\r')) {
+    throw new Error('Channel apiKey must not contain newline characters');
+  }
+  if (channel.apiKey.includes('\0')) {
+    throw new Error('Channel apiKey contains invalid characters');
+  }
+}
+
 function applyChannelToSettings(id) {
   const data = loadChannels();
   const channel = data.channels.find(ch => ch.id === id);
@@ -269,10 +299,24 @@ function applyChannelToSettings(id) {
     throw new Error('Channel not found');
   }
 
+  // Validate channel data before writing
+  validateChannelData(channel);
+
+  // Backup current settings before writing
+  if (claudeSettingsExists()) {
+    try {
+      backupSettings();
+    } catch (err) {
+      throw new Error('Failed to backup settings before applying: ' + err.message);
+    }
+  }
+
+  // Write settings FIRST, then update business state (avoid state drift on failure)
+  updateClaudeSettingsWithModelConfig(channel);
+
   channel.enabled = true;
   saveChannels(data);
   saveActiveChannelId(channel.id);
-  updateClaudeSettingsWithModelConfig(channel);
 
   return channel;
 }
@@ -280,25 +324,59 @@ function applyChannelToSettings(id) {
 function getCurrentChannel() {
   const channels = getAllChannels();
   if (channels.length === 0) {
-    return null;
+    return { channel: null, warning: null };
   }
 
   const activeChannelId = loadActiveChannelId();
   if (activeChannelId) {
     const activeChannel = channels.find(ch => ch.id === activeChannelId);
     if (activeChannel) {
-      return activeChannel;
+      return { channel: activeChannel, warning: null };
     }
   }
 
   const settings = getCurrentSettings();
   if (!settings) {
-    return null;
+    // Check for config file anomalies
+    const settingsPath = getClaudeSettingsPath();
+    if (fs.existsSync(settingsPath)) {
+      try {
+        JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+        return {
+          channel: null,
+          warning: {
+            reason: '当前配置中没有匹配的渠道信息',
+            suggestion: '请手动选择一个渠道并写入配置'
+          }
+        };
+      } catch (err) {
+        return {
+          channel: null,
+          warning: {
+            reason: 'settings.json 配置文件格式异常，无法解析',
+            suggestion: '请检查配置文件格式或使用备份恢复'
+          }
+        };
+      }
+    }
+    return { channel: null, warning: null };
   }
 
-  return channels.find(ch =>
+  const matched = channels.find(ch =>
     ch.baseUrl === settings.baseUrl && ch.apiKey === settings.apiKey
-  ) || null;
+  );
+
+  if (matched) {
+    return { channel: matched, warning: null };
+  }
+
+  return {
+    channel: null,
+    warning: {
+      reason: '当前配置的渠道不在列表中，可能是外部修改了配置',
+      suggestion: '请手动选择一个渠道并写入配置'
+    }
+  };
 }
 
 function updateClaudeSettingsWithModelConfig(channel) {
@@ -364,9 +442,9 @@ function updateClaudeSettingsWithModelConfig(channel) {
     delete settings.env.NO_PROXY;
   }
 
-  settings.apiKeyHelper = `echo '${apiKey}'`;
+  settings.apiKeyHelper = `echo '${escapeSingleQuote(apiKey)}'`;
 
-  fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf8');
+  atomicWriteSettings(settings);
 }
 
 function updateClaudeSettings(baseUrl, apiKey) {
@@ -393,9 +471,9 @@ function updateClaudeSettings(baseUrl, apiKey) {
     settings.env.ANTHROPIC_API_KEY = apiKey;
   }
 
-  settings.apiKeyHelper = `echo '${apiKey}'`;
+  settings.apiKeyHelper = `echo '${escapeSingleQuote(apiKey)}'`;
 
-  fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf8');
+  atomicWriteSettings(settings);
 }
 
 module.exports = {
@@ -407,5 +485,6 @@ module.exports = {
   applyChannelToSettings,
   getBestChannelForRestore,
   getCurrentChannel,
-  updateClaudeSettings
+  updateClaudeSettings,
+  validateChannelData
 };

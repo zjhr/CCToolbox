@@ -8,7 +8,8 @@ const {
   deleteChannel,
   getCurrentSettings,
   getBestChannelForRestore,
-  getCurrentChannel
+  getCurrentChannel,
+  validateChannelData
 } = require('../services/channels');
 const { getSchedulerState } = require('../services/channel-scheduler');
 const { getChannelHealthStatus, getAllChannelHealthStatus, resetChannelHealth } = require('../services/channel-health');
@@ -16,13 +17,22 @@ const { testChannelSpeed, testMultipleChannels, getLatencyLevel } = require('../
 const { getModelsForChannel, clearModelCache } = require('../services/model-list');
 const { broadcastLog, broadcastProxyState, broadcastSchedulerState } = require('../websocket-server');
 
+// Mask apiKey for API responses to prevent credential exposure
+function maskApiKey(channel) {
+  if (!channel) return null;
+  return {
+    ...channel,
+    apiKey: channel.apiKey ? `${channel.apiKey.slice(0, 4)}${'*'.repeat(Math.max(0, channel.apiKey.length - 4))}` : ''
+  };
+}
+
 // GET /api/channels - Get all channels with health status
 router.get('/', (req, res) => {
   try {
     const channels = getAllChannels();
-    // 为每个渠道附加健康状态
+    // 为每个渠道附加健康状态，并掩码 apiKey
     const channelsWithHealth = channels.map(ch => ({
-      ...ch,
+      ...maskApiKey(ch),
       health: getChannelHealthStatus(ch.id)
     }));
     res.json({ channels: channelsWithHealth });
@@ -46,9 +56,17 @@ router.get('/pool/status', (req, res) => {
 router.get('/current', (req, res) => {
   try {
     const settings = getCurrentSettings();
-    const currentChannel = getCurrentChannel();
+    const result = getCurrentChannel();
 
-    res.json({ channel: currentChannel, settings });
+    // Mask apiKey to prevent credential exposure
+    const safeChannel = result.channel
+      ? { ...result.channel, apiKey: result.channel.apiKey ? `${result.channel.apiKey.slice(0, 4)}${'*'.repeat(Math.max(0, result.channel.apiKey.length - 4))}` : '' }
+      : null;
+    const safeSettings = settings
+      ? { ...settings, apiKey: settings.apiKey ? `${settings.apiKey.slice(0, 4)}${'*'.repeat(Math.max(0, settings.apiKey.length - 4))}` : '' }
+      : null;
+
+    res.json({ channel: safeChannel, settings: safeSettings, warning: result.warning });
   } catch (error) {
     console.error('Error fetching current settings:', error);
     res.status(500).json({ error: error.message });
@@ -75,6 +93,9 @@ router.post('/', (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
+    // Validate channel data before creating
+    validateChannelData({ name, baseUrl, apiKey });
+
     const channel = createChannel(name, baseUrl, apiKey, websiteUrl, {
       enabled,
       weight,
@@ -83,11 +104,12 @@ router.post('/', (req, res) => {
       modelConfig,
       proxyUrl
     });
-    res.json({ channel });
+    res.json({ channel: maskApiKey(channel) });
     broadcastSchedulerState('claude', getSchedulerState('claude'));
   } catch (error) {
     console.error('Error creating channel:', error);
-    res.status(500).json({ error: error.message });
+    const statusCode = error.message.includes('required') || error.message.includes('must') || error.message.includes('invalid') || error.message.includes('contains invalid characters') ? 400 : 500;
+    res.status(statusCode).json({ error: error.message });
   }
 });
 
@@ -95,7 +117,7 @@ router.post('/', (req, res) => {
 router.get('/best-for-restore', (req, res) => {
   try {
     const channel = getBestChannelForRestore();
-    res.json({ channel });
+    res.json({ channel: maskApiKey(channel) });
   } catch (error) {
     console.error('Error getting best channel for restore:', error);
     res.status(500).json({ error: error.message });
@@ -128,12 +150,32 @@ router.put('/:id', (req, res) => {
     const { id } = req.params;
     const updates = req.body;
 
+    // Validate channel data if name, baseUrl or apiKey are being updated
+    // Use 'in' operator to detect explicit updates (including empty strings)
+    if ('name' in updates || 'baseUrl' in updates || 'apiKey' in updates) {
+      const channels = getAllChannels();
+      const existing = channels.find(ch => ch.id === id);
+      if (existing) {
+        validateChannelData({
+          name: 'name' in updates ? updates.name : existing.name,
+          baseUrl: 'baseUrl' in updates ? updates.baseUrl : existing.baseUrl,
+          apiKey: 'apiKey' in updates ? updates.apiKey : existing.apiKey
+        });
+      }
+    }
+
     const channel = updateChannel(id, updates);
-    res.json({ channel });
+    res.json({ channel: maskApiKey(channel) });
     broadcastSchedulerState('claude', getSchedulerState('claude'));
   } catch (error) {
     console.error('Error updating channel:', error);
-    res.status(500).json({ error: error.message });
+    const statusCode = error.message.includes('required') ||
+                     error.message.includes('must') ||
+                     error.message.includes('invalid') ||
+                     error.message.includes('contains invalid characters')
+      ? 400
+      : 500;
+    res.status(statusCode).json({ error: error.message });
   }
 });
 
@@ -197,11 +239,16 @@ router.post('/:id/apply-to-settings', async (req, res) => {
 
     res.json({
       message: `已将 (${channel.name}) 渠道写入配置文件中`,
-      channel
+      channel: maskApiKey(channel)
     });
   } catch (error) {
     console.error('Error applying channel to settings:', error);
-    res.status(500).json({ error: error.message });
+    const msg = error.message || '';
+    const isValidation = msg.includes('required') || msg.includes('must') ||
+                         msg.includes('validation') || msg.includes('failed');
+    const isWrite = msg.includes('write') || msg.includes('backup');
+    const statusCode = isValidation ? 400 : (isWrite ? 503 : 500);
+    res.status(statusCode).json({ error: msg });
   }
 });
 

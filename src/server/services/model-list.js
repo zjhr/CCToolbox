@@ -103,25 +103,38 @@ function parseModelsResponse(json) {
   });
 }
 
+function pushModelIfValid(models, value) {
+  if (!value || typeof value !== 'string') return;
+  if (!MODEL_NAME_REGEX.test(value)) return;
+  if (!models.includes(value)) {
+    models.push(value);
+  }
+}
+
 /**
- * 从 modelConfig 提取模型列表作为回退
- * @param {Object} modelConfig - 渠道的模型配置
+ * 从渠道配置提取模型列表作为回退
+ * 兼容 Claude(modelConfig)、Codex(modelName)、Gemini(model)
+ * @param {Object} channel - 渠道对象
  * @returns {string[]} 模型名称列表
  */
-function extractModelsFromConfig(modelConfig) {
-  if (!modelConfig || typeof modelConfig !== 'object') return [];
+function extractModelsFromChannel(channel) {
+  if (!channel || typeof channel !== 'object') return [];
 
   const models = [];
-  // 主要模型字段
-  const fields = ['model', 'haikuModel', 'sonnetModel', 'opusModel'];
-  for (const field of fields) {
-    const value = modelConfig[field];
-    if (value && typeof value === 'string' && MODEL_NAME_REGEX.test(value)) {
-      if (!models.includes(value)) {
-        models.push(value);
-      }
+
+  // 通用字段
+  pushModelIfValid(models, channel.modelName);
+  pushModelIfValid(models, channel.model);
+
+  // Claude modelConfig 字段
+  const modelConfig = channel.modelConfig;
+  if (modelConfig && typeof modelConfig === 'object') {
+    const fields = ['model', 'haikuModel', 'sonnetModel', 'opusModel'];
+    for (const field of fields) {
+      pushModelIfValid(models, modelConfig[field]);
     }
   }
+
   return models;
 }
 
@@ -152,8 +165,8 @@ async function getModelsForChannel(channel, channelType = 'claude', forceRefresh
     }
   }
 
-  // 回退: 从 modelConfig 提取
-  const configModels = extractModelsFromConfig(channel.modelConfig);
+  // 回退: 从渠道配置提取
+  const configModels = extractModelsFromChannel(channel);
   if (configModels.length > 0) {
     // 不缓存配置回退结果（可能不完整），但仍然返回
     return { models: configModels, source: 'config' };

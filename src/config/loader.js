@@ -75,7 +75,7 @@ function loadConfig() {
 }
 
 /**
- * 保存配置
+ * 保存配置（原子写入 + 校验）
  */
 function saveConfig(config) {
   try {
@@ -84,8 +84,29 @@ function saveConfig(config) {
     if (!fs.existsSync(configDir)) {
       fs.mkdirSync(configDir, { recursive: true });
     }
-    fs.writeFileSync(configFile, JSON.stringify(config, null, 2));
+
+    const content = JSON.stringify(config, null, 2);
+
+    // Validate JSON roundtrip integrity
+    try {
+      JSON.parse(content);
+    } catch (err) {
+      throw new Error('Config data failed JSON roundtrip validation: ' + err.message);
+    }
+
+    // Atomic write: temp file + rename
+    const tmpPath = configFile + '.tmp';
+    fs.writeFileSync(tmpPath, content, 'utf8');
+
+    // Read back and verify written content
+    const written = fs.readFileSync(tmpPath, 'utf8');
+    JSON.parse(written);
+
+    // Atomic rename
+    fs.renameSync(tmpPath, configFile);
   } catch (error) {
+    // Clean up temp file on failure
+    try { fs.unlinkSync(resolveConfigFile() + '.tmp'); } catch (e) { /* ignore */ }
     console.error('保存配置失败:', error.message);
   }
 }

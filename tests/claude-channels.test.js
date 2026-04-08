@@ -151,7 +151,8 @@ async function runClaudeChannelTests() {
         const listRes = await invokeRoute(router, 'get', '/');
         const saved = listRes.body.channels[0];
         assert.strictEqual(saved.baseUrl, 'https://api.deepseek.com/anthropic');
-        assert.strictEqual(saved.apiKey, 'sk-deepseek');
+        // API 层返回掩码的 apiKey（安全设计）
+        assert.match(saved.apiKey, /^sk-d\*+$/); // 掩码格式：前4位 + 星号
         assert.strictEqual(saved.presetId, 'deepseek');
         assert.strictEqual(saved.modelConfig.model, 'deepseek-chat');
       });
