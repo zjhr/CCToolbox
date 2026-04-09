@@ -16,30 +16,29 @@ const FETCH_TIMEOUT = 10000; // 10 秒超时
 const MODEL_NAME_REGEX = /^[a-zA-Z0-9\-._/:]+$/;
 
 /**
- * 从外部 API 获取模型列表
- * @param {string} baseUrl - 渠道基础 URL
+ * 从指定 URL 获取模型列表
+ * @param {string} modelsUrl - 模型列表 URL
  * @param {string} apiKey - API Key
  * @param {number} timeout - 超时时间
  * @returns {Promise<string[]>} 模型名称列表
  */
-function fetchModelsFromAPI(baseUrl, apiKey, timeout = FETCH_TIMEOUT) {
+function fetchModelsFromAPI(modelsUrl, apiKey, timeout = FETCH_TIMEOUT) {
   return new Promise((resolve) => {
-    let modelsUrl;
+    let parsedUrl;
     try {
-      const url = new URL(baseUrl.trim().replace(/\/+$/, ''));
-      modelsUrl = new URL('/v1/models', url.toString());
+      parsedUrl = new URL(modelsUrl);
     } catch (e) {
       resolve([]);
       return;
     }
 
-    const isHttps = modelsUrl.protocol === 'https:';
+    const isHttps = parsedUrl.protocol === 'https:';
     const httpModule = isHttps ? https : http;
 
     const options = {
-      hostname: modelsUrl.hostname,
-      port: modelsUrl.port || (isHttps ? 443 : 80),
-      path: modelsUrl.pathname + modelsUrl.search,
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port || (isHttps ? 443 : 80),
+      path: parsedUrl.pathname + parsedUrl.search,
       method: 'GET',
       timeout,
       headers: {
@@ -71,6 +70,76 @@ function fetchModelsFromAPI(baseUrl, apiKey, timeout = FETCH_TIMEOUT) {
     req.on('timeout', () => { req.destroy(); resolve([]); });
     req.end();
   });
+}
+
+function buildModelUrls(baseUrl) {
+  try {
+    const normalized = baseUrl.trim().replace(/\/+$/, '');
+    const origin = new URL(normalized).origin;
+
+    const candidates = [
+      `${normalized}/models`,
+      `${origin}/v1/models`,
+      /\/v1$/i.test(normalized) ? null : `${normalized}/v1/models`,
+      `${origin}/models`
+    ];
+
+    const seen = new Set();
+    return candidates.filter((url) => {
+      if (!url) return false;
+      if (seen.has(url)) return false;
+      seen.add(url);
+      return true;
+    });
+  } catch (error) {
+    return [];
+  }
+}
+
+function fetchFirstSuccessful(urls, apiKey, timeout) {
+  return new Promise((resolve) => {
+    if (!Array.isArray(urls) || urls.length === 0) {
+      resolve([]);
+      return;
+    }
+
+    let pending = urls.length;
+    let resolved = false;
+
+    const settle = (models) => {
+      pending -= 1;
+      if (!resolved && models.length > 0) {
+        resolved = true;
+        resolve(models);
+        return;
+      }
+      if (pending === 0 && !resolved) {
+        resolve([]);
+      }
+    };
+
+    for (const url of urls) {
+      fetchModelsFromAPI(url, apiKey, timeout)
+        .then(settle)
+        .catch(() => settle([]));
+    }
+  });
+}
+
+async function fetchModelsWithFallback(baseUrl, apiKey, timeout = FETCH_TIMEOUT) {
+  const urls = buildModelUrls(baseUrl);
+  if (urls.length === 0) {
+    return [];
+  }
+
+  for (const url of urls) {
+    const models = await fetchModelsFromAPI(url, apiKey, timeout);
+    if (models.length > 0) {
+      return models;
+    }
+  }
+
+  return [];
 }
 
 /**
@@ -158,7 +227,7 @@ async function getModelsForChannel(channel, channelType = 'claude', forceRefresh
 
   // 从外部 API 获取
   if (channel.baseUrl && channel.apiKey) {
-    const apiModels = await fetchModelsFromAPI(channel.baseUrl, channel.apiKey);
+    const apiModels = await fetchModelsWithFallback(channel.baseUrl, channel.apiKey);
     if (apiModels.length > 0) {
       modelCache.set(cacheKey, { models: apiModels, fetchedAt: Date.now() });
       return { models: apiModels, source: 'api' };
@@ -189,5 +258,6 @@ function clearModelCache(channelId) {
 
 module.exports = {
   getModelsForChannel,
-  clearModelCache
+  clearModelCache,
+  fetchModelsWithFallback
 };

@@ -19,6 +19,7 @@ const { broadcastSchedulerState, broadcastLog } = require('../websocket-server')
 const { isCodexInstalled } = require('../services/codex-config');
 const { testChannelSpeed, testMultipleChannels, getLatencyLevel } = require('../services/speed-test');
 const { getModelsForChannel } = require('../services/model-list');
+const { updateCustomModels } = require('../services/channels');
 
 module.exports = (config) => {
   /**
@@ -58,7 +59,19 @@ module.exports = (config) => {
         return res.status(404).json({ error: 'Codex CLI not installed' });
       }
 
-      const { name, providerKey, baseUrl, apiKey, websiteUrl, enabled, weight, maxConcurrency, modelName } = req.body;
+      const {
+        name,
+        providerKey,
+        baseUrl,
+        apiKey,
+        websiteUrl,
+        enabled,
+        weight,
+        maxConcurrency,
+        modelName,
+        enable1M,
+        customModels
+      } = req.body;
 
       if (!name || !providerKey || !baseUrl || !apiKey) {
         return res.status(400).json({ error: 'Missing required fields' });
@@ -70,7 +83,9 @@ module.exports = (config) => {
         enabled,
         weight,
         maxConcurrency,
-        modelName
+        modelName,
+        enable1M,
+        customModels
       });
       res.json(channel);
       broadcastSchedulerState('codex', getSchedulerState('codex'));
@@ -126,6 +141,31 @@ module.exports = (config) => {
     } catch (err) {
       console.error('[Codex Channels API] Failed to update channel:', err);
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  /**
+   * PUT /api/codex/channels/:channelId/custom-models
+   * 更新自定义模型列表
+   */
+  router.put('/:channelId/custom-models', (req, res) => {
+    try {
+      if (!isCodexInstalled()) {
+        return res.status(404).json({ error: 'Codex CLI not installed' });
+      }
+
+      const { channelId } = req.params;
+      const { customModels } = req.body || {};
+      if (customModels !== undefined && !Array.isArray(customModels)) {
+        return res.status(400).json({ error: 'customModels must be an array' });
+      }
+      const channel = updateCustomModels(channelId, customModels, 'codex');
+      res.json(channel);
+      broadcastSchedulerState('codex', getSchedulerState('codex'));
+    } catch (err) {
+      console.error('[Codex Channels API] Failed to update custom models:', err);
+      const status = err.message.includes('not found') ? 404 : 400;
+      res.status(status).json({ error: err.message });
     }
   });
 

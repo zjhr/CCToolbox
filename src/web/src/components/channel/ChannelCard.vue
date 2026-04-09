@@ -40,7 +40,7 @@
           </template>
         </div>
       </div>
-      <div class="channel-actions">
+      <div class="channel-actions" ref="actionsRef">
         <n-button
           v-if="showApplyButton"
           size="tiny"
@@ -77,6 +77,8 @@
               filterable
               tag
               placeholder="选择或输入模型名"
+              :render-label="renderModelLabel"
+              @update:value="handleModelChange"
             />
             <n-button
               size="small"
@@ -178,10 +180,11 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, h, watch } from 'vue'
 import { NButton, NIcon, NTag, NText, NSwitch, NPopover, NSelect } from 'naive-ui'
-import { ChevronDownOutline, OpenOutline, SpeedometerOutline, CheckmarkCircleOutline, CloseCircleOutline, CloseOutline } from '@vicons/ionicons5'
-import { fetchChannelModels } from '../../api/channels'
+import { ChevronDownOutline, OpenOutline, SpeedometerOutline, CheckmarkCircleOutline, CloseCircleOutline, CloseOutline, TrashOutline } from '@vicons/ionicons5'
+import { fetchChannelModels, updateCustomModels } from '../../api/channels'
+import message from '../../utils/message'
 
 const props = defineProps({
   channel: {
@@ -228,10 +231,17 @@ const testing = ref(false)
 const testResult = ref(null)
 
 // 模型选择相关状态
+const actionsRef = ref(null)
 const showTestPanel = ref(false)
 const modelsLoading = ref(false)
 const availableModels = ref([])
 const selectedModel = ref('__auto__') // 默认使用自动模式
+const localCustomModels = ref([...(props.channel.customModels || [])])
+const customModelUpdating = ref(false) // 自定义模型更新锁，避免并发写回覆盖
+
+watch(() => props.channel.customModels, (newVal) => {
+  localCustomModels.value = [...(newVal || [])]
+})
 
 const modelOptions = computed(() => {
   const defaultModel = props.channel.modelConfig?.model || props.channel.modelName || props.channel.model
@@ -240,17 +250,55 @@ const modelOptions = computed(() => {
   // 自动选项（使用渠道配置的默认模型）
   options.push({
     label: defaultModel ? `自动 (${defaultModel})` : '自动',
-    value: '__auto__'
+    value: '__auto__',
+    type: 'system'
   })
 
-  // API 获取的模型列表
-  for (const model of availableModels.value) {
-    if (model !== defaultModel) {
-      options.push({ label: model, value: model })
+  // API 获取的模型列表 (API 模型)
+  if (availableModels.value.length > 0) {
+    const apiModels = availableModels.value.filter(m => m !== defaultModel)
+    if (apiModels.length > 0) {
+      options.push({
+        type: 'group',
+        label: 'API 模型',
+        key: 'api-models',
+        children: apiModels.map(m => ({ label: m, value: m, type: 'api' }))
+      })
     }
   }
+
+  // 自定义模型列表
+  if (localCustomModels.value.length > 0) {
+    options.push({
+      type: 'group',
+      label: '自定义模型',
+      key: 'custom-models',
+      children: localCustomModels.value.map(m => ({ label: m, value: m, type: 'custom' }))
+    })
+  }
+
   return options
 })
+
+// 渲染选项标签，显示删除按钮（仅限自定义模型）
+const renderModelLabel = (option) => {
+  if (option.type === 'custom') {
+    return h('div', { style: 'display: flex; justify-content: space-between; align-items: center; width: 100%' }, [
+      h('span', null, option.label),
+      h(NButton, {
+        size: 'tiny',
+        quaternary: true,
+        circle: true,
+        style: 'margin-left: 8px',
+        onClick: (e) => {
+          e.stopPropagation()
+          removeCustomModel(option.value)
+        }
+      }, { default: () => h(NIcon, null, { default: () => h(CloseOutline) }) })
+    ])
+  }
+  return option.label
+}
 
 // 点击测速按钮：先加载模型列表，再决定行为
 async function handleTestClick() {
@@ -267,6 +315,74 @@ async function handleTestClick() {
 
   // 始终弹出模型面板，支持手动输入模型
   showTestPanel.value = true
+}
+
+// 点击外部关闭弹窗
+const handleClickOutside = (e) => {
+  if (showTestPanel.value && actionsRef.value && !actionsRef.value.contains(e.target)) {
+    // 特殊处理：如果是点击 naive-ui 的弹出层内容（含 Teleport 的 n-popover），不关闭
+    if (typeof e.target.closest === 'function' && (
+      e.target.closest('.n-popover') || e.target.closest('.n-popover-content') || e.target.closest('.n-select-menu') || e.target.closest('.n-base-select-menu')
+    )) {
+      return
+    }
+    showTestPanel.value = false
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('pointerdown', handleClickOutside)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('pointerdown', handleClickOutside)
+})
+
+// 处理模型选择变化，如果输入的是新模型，自动保存
+async function handleModelChange(value) {
+  if (customModelUpdating.value) return
+  if (!value || value === '__auto__') return
+  
+  // 检查是否已存在
+  const isApi = availableModels.value.includes(value)
+  const isCustom = localCustomModels.value.includes(value)
+  const isDefault = value === (props.channel.modelConfig?.model || props.channel.modelName || props.channel.model)
+  
+  if (!isApi && !isCustom && !isDefault) {
+    // 自动保存为自定义模型
+    customModelUpdating.value = true
+    try {
+      const newList = [...localCustomModels.value, value]
+      await updateCustomModels(props.channel.id, newList, props.channelType)
+      localCustomModels.value = newList
+      message.success(`已添加自定义模型: ${value}`)
+    } catch (err) {
+      console.error('Failed to add custom model:', err)
+      message.error(`添加自定义模型失败: ${err.message}`)
+    } finally {
+      customModelUpdating.value = false
+    }
+  }
+}
+
+// 删除自定义模型
+async function removeCustomModel(model) {
+  if (customModelUpdating.value) return
+  customModelUpdating.value = true
+  try {
+    const newList = localCustomModels.value.filter(m => m !== model)
+    await updateCustomModels(props.channel.id, newList, props.channelType)
+    localCustomModels.value = newList
+    if (selectedModel.value === model) {
+      selectedModel.value = '__auto__'
+    }
+    message.success(`已删除自定义模型: ${model}`)
+  } catch (err) {
+    console.error('Failed to remove custom model:', err)
+    message.error(`删除自定义模型失败: ${err.message}`)
+  } finally {
+    customModelUpdating.value = false
+  }
 }
 
 const normalizedHighlight = computed(() => props.highlightText.trim())

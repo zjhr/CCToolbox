@@ -17,6 +17,7 @@ const { broadcastSchedulerState } = require('../websocket-server');
 const { isGeminiInstalled } = require('../services/gemini-config');
 const { testChannelSpeed, testMultipleChannels, getLatencyLevel } = require('../services/speed-test');
 const { getModelsForChannel } = require('../services/model-list');
+const { updateCustomModels } = require('../services/channels');
 
 module.exports = (config) => {
   /**
@@ -56,7 +57,18 @@ module.exports = (config) => {
         return res.status(404).json({ error: 'Gemini CLI not installed' });
       }
 
-      const { name, baseUrl, apiKey, model, websiteUrl, enabled, weight, maxConcurrency } = req.body;
+      const {
+        name,
+        baseUrl,
+        apiKey,
+        model,
+        websiteUrl,
+        enabled,
+        weight,
+        maxConcurrency,
+        enable1M,
+        customModels
+      } = req.body;
 
       if (!name || !baseUrl || !apiKey) {
         return res.status(400).json({ error: 'Missing required fields: name, baseUrl, apiKey' });
@@ -66,7 +78,9 @@ module.exports = (config) => {
         websiteUrl,
         enabled,
         weight,
-        maxConcurrency
+        maxConcurrency,
+        enable1M,
+        customModels
       });
       res.json(channel);
       broadcastSchedulerState('gemini', getSchedulerState('gemini'));
@@ -122,6 +136,31 @@ module.exports = (config) => {
     } catch (err) {
       console.error('[Gemini Channels API] Failed to update channel:', err);
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  /**
+   * PUT /api/gemini/channels/:channelId/custom-models
+   * 更新自定义模型列表
+   */
+  router.put('/:channelId/custom-models', (req, res) => {
+    try {
+      if (!isGeminiInstalled()) {
+        return res.status(404).json({ error: 'Gemini CLI not installed' });
+      }
+
+      const { channelId } = req.params;
+      const { customModels } = req.body || {};
+      if (customModels !== undefined && !Array.isArray(customModels)) {
+        return res.status(400).json({ error: 'customModels must be an array' });
+      }
+      const channel = updateCustomModels(channelId, customModels, 'gemini');
+      res.json(channel);
+      broadcastSchedulerState('gemini', getSchedulerState('gemini'));
+    } catch (err) {
+      console.error('[Gemini Channels API] Failed to update custom models:', err);
+      const status = err.message.includes('not found') ? 404 : 400;
+      res.status(status).json({ error: err.message });
     }
   });
 

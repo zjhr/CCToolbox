@@ -4,6 +4,23 @@ const os = require('os');
 const crypto = require('crypto');
 const { getAppDir } = require('../../utils/app-path-manager');
 
+function normalizeCustomModels(customModels) {
+  if (!Array.isArray(customModels)) {
+    return [];
+  }
+
+  const seen = new Set();
+  const normalized = [];
+  for (const model of customModels) {
+    if (typeof model !== 'string') continue;
+    const trimmed = model.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    normalized.push(trimmed);
+  }
+  return normalized;
+}
+
 /**
  * Gemini 渠道管理服务（多渠道架构）
  *
@@ -231,7 +248,8 @@ function loadChannels() {
         ...ch,
         enabled: ch.enabled !== false, // 默认启用
         weight: ch.weight || 1,
-        maxConcurrency: ch.maxConcurrency || null
+        maxConcurrency: ch.maxConcurrency || null,
+        customModels: normalizeCustomModels(ch.customModels)
       }));
     }
     return data;
@@ -277,6 +295,7 @@ function initializeFromEnv() {
         enabled: true,
         weight: 1,
         maxConcurrency: null,
+        customModels: [],
         createdAt: Date.now(),
         updatedAt: Date.now()
       };
@@ -332,6 +351,7 @@ function createChannel(name, baseUrl, apiKey, model = 'gemini-2.5-pro', extraCon
     enabled: extraConfig.enabled !== false, // 默认启用
     weight: extraConfig.weight || 1,
     maxConcurrency: extraConfig.maxConcurrency || null,
+    customModels: normalizeCustomModels(extraConfig.customModels),
     createdAt: Date.now(),
     updatedAt: Date.now()
   };
@@ -371,6 +391,7 @@ function updateChannel(channelId, updates) {
     createdAt: channel.createdAt, // 保持创建时间
     updatedAt: Date.now()
   };
+  data.channels[index].customModels = normalizeCustomModels(data.channels[index].customModels);
 
   saveChannels(data);
 

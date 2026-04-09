@@ -202,6 +202,13 @@ const channelPanelFactories = {
             validate: (value) =>
               validateHttpUrl("官网链接", value, { required: false }),
           },
+          {
+            key: "enable1M",
+            label: "1M 上下文",
+            type: "switch",
+            checkedText: "开启",
+            uncheckedText: "关闭",
+          },
         ],
       },
       {
@@ -280,6 +287,7 @@ const channelPanelFactories = {
       maxConcurrency: null,
       weight: 1,
       enabled: true,
+      enable1M: false,
     }),
     mapChannelToForm: (channel) => {
       const normalizedModelConfig =
@@ -313,6 +321,7 @@ const channelPanelFactories = {
         maxConcurrency: channel.maxConcurrency ?? null,
         weight: channel.weight || 1,
         enabled: channel.enabled !== false,
+        enable1M: channel.enable1M === true,
       };
     },
     onPresetChange: (presetId, form) => {
@@ -354,6 +363,7 @@ const channelPanelFactories = {
             maxConcurrency: normalizeConcurrency(form.maxConcurrency),
             weight: normalizeWeight(form.weight),
             enabled: form.enabled,
+            enable1M: form.enable1M,
             presetId: form.presetId,
             modelConfig: form.modelConfig,
             proxyUrl: form.proxyUrl || "",
@@ -369,6 +379,7 @@ const channelPanelFactories = {
           maxConcurrency: normalizeConcurrency(form.maxConcurrency),
           weight: normalizeWeight(form.weight),
           enabled: form.enabled,
+          enable1M: form.enable1M,
           presetId: form.presetId,
           modelConfig: form.modelConfig,
           proxyUrl: form.proxyUrl || "",

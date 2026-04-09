@@ -15,6 +15,23 @@ const {
   buildEnvKeyFromProvider,
 } = require("../../utils/env-key");
 
+function normalizeCustomModels(customModels) {
+  if (!Array.isArray(customModels)) {
+    return [];
+  }
+
+  const seen = new Set();
+  const normalized = [];
+  for (const model of customModels) {
+    if (typeof model !== "string") continue;
+    const trimmed = model.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    normalized.push(trimmed);
+  }
+  return normalized;
+}
+
 /**
  * Codex 渠道管理服务（多渠道架构）
  *
@@ -59,6 +76,7 @@ function loadChannels() {
         weight: ch.weight || 1,
         maxConcurrency: ch.maxConcurrency || null,
         modelName: ch.modelName || "gpt-5.4",
+        customModels: normalizeCustomModels(ch.customModels),
       }));
     }
     return data;
@@ -126,6 +144,7 @@ function initializeFromConfig() {
           queryParams: providerConfig.query_params || null,
           enabled: config.model_provider === providerKey, // 当前激活的渠道启用
           modelName: config.model || "gpt-5.4",
+          customModels: [],
           weight: 1,
           maxConcurrency: null,
           createdAt: Date.now(),
@@ -214,6 +233,7 @@ function createChannel(
     weight: extraConfig.weight || 1,
     maxConcurrency: extraConfig.maxConcurrency || null,
     modelName: extraConfig.modelName || "gpt-5.4",
+    customModels: normalizeCustomModels(extraConfig.customModels),
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
@@ -268,6 +288,7 @@ function updateChannel(channelId, updates) {
     createdAt: oldChannel.createdAt, // 保持创建时间
     updatedAt: Date.now(),
   };
+  newChannel.customModels = normalizeCustomModels(newChannel.customModels);
   newChannel.envKey =
     buildEnvKeyFromProvider(newChannel.providerKey) ||
     normalizeEnvKey(newChannel.envKey);

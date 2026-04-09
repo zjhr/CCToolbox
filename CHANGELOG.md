@@ -6,6 +6,23 @@
 
 ## [Unreleased]
 
+## [3.5.0] - 2026-04-09
+
+### Added
+
+- 🆕 **自定义模型管理** - 渠道数据结构新增 `customModels` 字段（读取时 `|| []` 兼容），支持用户为每个渠道配置专属模型列表
+- 🔧 **Custom Models API** - 三端渠道（Claude/Codex/Gemini）统一新增 `PUT /api/channels/:id/custom-models` 路由，支持增删自定义模型
+- 🏷️ **enable1M 开关** - 渠道高级设置中新增 `enable1M` 切换字段，控制 1M Context 功能开关
+- 🔍 **模型列表多级兜底** - 新增 `fetchModelsWithFallback` 函数，支持并行请求多个端点，失败时依次降级，带缓存机制
+- 🔄 **SessionList 刷新按钮** - 会话列表新增刷新按钮（RefreshOutline 图标），含 loading 状态和防重复点击保护
+- ✅ **测试覆盖完善** - 新增 `channels-model-config.test.js`、`model-list.test.js` 及三个前端组件测试文件
+
+### Fixed
+
+- 🐛 **modelConfig 无条件写入** - 修复 `updateClaudeSettingsWithModelConfig` 中 `presetId` 条件判断，确保 `modelConfig` 始终写入 `settings.json`，解决切换渠道后模型配置丢失问题
+- 🐛 **ChannelCard 竞态条件** - 新增 `customModelUpdating` mutex 互斥锁，防止 `handleModelChange` 与 `removeCustomModel` 并发执行导致数据不一致
+- 🐛 **事件监听器兼容性** - 将点击外部关闭弹窗的事件从 `mousedown` 改为 `pointerdown`，并添加 `e.target.closest` 类型守卫，修复移动端和触控设备上的兼容性问题
+
 ## [3.4.2] - 2026-04-08
 
 ### Changed

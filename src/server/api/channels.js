@@ -9,7 +9,8 @@ const {
   getCurrentSettings,
   getBestChannelForRestore,
   getCurrentChannel,
-  validateChannelData
+  validateChannelData,
+  updateCustomModels
 } = require('../services/channels');
 const { getSchedulerState } = require('../services/channel-scheduler');
 const { getChannelHealthStatus, getAllChannelHealthStatus, resetChannelHealth } = require('../services/channel-health');
@@ -86,7 +87,9 @@ router.post('/', (req, res) => {
       maxConcurrency,
       presetId,
       modelConfig,
-      proxyUrl
+      proxyUrl,
+      enable1M,
+      customModels
     } = req.body;
 
     if (!name || !baseUrl || !apiKey) {
@@ -102,7 +105,9 @@ router.post('/', (req, res) => {
       maxConcurrency,
       presetId,
       modelConfig,
-      proxyUrl
+      proxyUrl,
+      enable1M,
+      customModels
     });
     res.json({ channel: maskApiKey(channel) });
     broadcastSchedulerState('claude', getSchedulerState('claude'));
@@ -175,6 +180,24 @@ router.put('/:id', (req, res) => {
                      error.message.includes('contains invalid characters')
       ? 400
       : 500;
+    res.status(statusCode).json({ error: error.message });
+  }
+});
+
+// PUT /api/channels/:id/custom-models - Update custom models
+router.put('/:id/custom-models', (req, res) => {
+  try {
+    const { id } = req.params;
+    const { customModels } = req.body || {};
+    if (customModels !== undefined && !Array.isArray(customModels)) {
+      return res.status(400).json({ error: 'customModels must be an array' });
+    }
+    const channel = updateCustomModels(id, customModels, 'claude');
+    res.json({ channel: maskApiKey(channel) });
+    broadcastSchedulerState('claude', getSchedulerState('claude'));
+  } catch (error) {
+    console.error('Error updating custom models:', error);
+    const statusCode = error.message.includes('not found') ? 404 : 400;
     res.status(statusCode).json({ error: error.message });
   }
 });

@@ -52,6 +52,19 @@
               :max-tag-placeholder="formatSelectedTags"
               :disabled="tagFilterOptions.length === 0"
             />
+
+            <n-button
+              size="small"
+              secondary
+              @click="handleRefresh"
+              :loading="refreshLoading"
+              class="refresh-button"
+            >
+              <template #icon>
+                <n-icon><RefreshOutline /></n-icon>
+              </template>
+              刷新
+            </n-button>
           </div>
 
           <!-- Search Actions -->
@@ -440,7 +453,8 @@ import {
   ArrowBackOutline, SearchOutline, DocumentTextOutline,
   ChatbubbleEllipsesOutline, GitBranchOutline, CreateOutline, TrashOutline,
   ReorderThreeOutline, StarOutline, Star, TimeOutline,
-  CheckmarkCircleOutline, ArchiveOutline, SparklesOutline
+  CheckmarkCircleOutline, ArchiveOutline, SparklesOutline,
+  RefreshOutline
 } from '@vicons/ionicons5'
 import draggable from 'vuedraggable'
 import { useSessionsStore } from '../stores/sessions'
@@ -488,6 +502,7 @@ const searchResults = ref(null)
 const showSearchResults = ref(false)
 const contentEl = ref(null)
 const searching = ref(false)
+const refreshLoading = ref(false)
 const showOpenSpecDrawer = ref(false)
 const showSerenaDrawer = ref(false)
 const showTrashModal = ref(false)
@@ -702,6 +717,19 @@ async function handleSearch() {
     message.error('搜索失败: ' + err.message)
   } finally {
     searching.value = false
+  }
+}
+
+async function handleRefresh() {
+  if (refreshLoading.value) return
+  refreshLoading.value = true
+  try {
+    await store.fetchSessions(props.projectName, { force: true })
+    message.success('已刷新会话列表')
+  } catch (err) {
+    message.error('刷新失败: ' + err.message)
+  } finally {
+    refreshLoading.value = false
   }
 }
 

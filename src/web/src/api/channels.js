@@ -203,10 +203,25 @@ export async function fetchChannelModels(channelId, channelType = 'claude') {
   }
   const response = await client.get(endpoint)
   return response.data
-}
+  }
 
-/**
- * 测试单个 Claude 渠道速度
+  /**
+  * 更新渠道的自定义模型列表
+  */
+  export async function updateCustomModels(channelId, customModels, channelType = 'claude') {
+  let endpoint = `/channels/${channelId}/custom-models`
+  if (channelType === 'codex') {
+  endpoint = `/codex/channels/${channelId}/custom-models`
+  } else if (channelType === 'gemini') {
+  endpoint = `/gemini/channels/${channelId}/custom-models`
+  }
+  const response = await client.put(endpoint, { customModels })
+  return response.data
+  }
+
+  /**
+  * 测试单个 Claude 渠道速度
+
  * @param {string} channelId - 渠道 ID
  * @param {number} timeout - 超时时间
  * @param {string} model - 可选的模型名称

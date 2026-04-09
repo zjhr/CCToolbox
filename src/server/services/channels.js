@@ -61,6 +61,38 @@ function normalizeNumber(value, defaultValue, max = null) {
   return num;
 }
 
+function normalizeCustomModels(customModels) {
+  if (!Array.isArray(customModels)) {
+    return [];
+  }
+
+  const seen = new Set();
+  const normalized = [];
+
+  for (const model of customModels) {
+    if (typeof model !== 'string') continue;
+    const trimmed = model.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    normalized.push(trimmed);
+  }
+
+  return normalized;
+}
+
+function normalizeEnable1M(value) {
+  if (value === true || value === false) {
+    return value;
+  }
+  if (value === 'true' || value === '1' || value === 1) {
+    return true;
+  }
+  if (value === 'false' || value === '0' || value === 0) {
+    return false;
+  }
+  return undefined;
+}
+
 function applyChannelDefaults(channel) {
   const normalized = normalizeLegacyChannel(channel);
   if (normalized.enabled === undefined) {
@@ -77,6 +109,15 @@ function applyChannelDefaults(channel) {
     normalized.maxConcurrency = null;
   } else {
     normalized.maxConcurrency = normalizeNumber(normalized.maxConcurrency, 1, 100);
+  }
+
+  normalized.customModels = normalizeCustomModels(normalized.customModels);
+
+  const normalizedEnable1M = normalizeEnable1M(normalized.enable1M);
+  if (normalizedEnable1M === undefined) {
+    delete normalized.enable1M;
+  } else {
+    normalized.enable1M = normalizedEnable1M;
   }
 
   return normalized;
@@ -103,6 +144,10 @@ function normalizeLegacyChannel(channel) {
     normalized.modelConfig = {
       model: legacyModel
     };
+  }
+
+  if (!Array.isArray(normalized.customModels) && Array.isArray(normalized.custom_models)) {
+    normalized.customModels = normalized.custom_models;
   }
 
   return normalized;
@@ -217,7 +262,9 @@ function createChannel(name, baseUrl, apiKey, websiteUrl, extraConfig = {}) {
     maxConcurrency: extraConfig.maxConcurrency,
     presetId: extraConfig.presetId || 'official',
     modelConfig: extraConfig.modelConfig || null,
-    proxyUrl: extraConfig.proxyUrl || ''
+    proxyUrl: extraConfig.proxyUrl || '',
+    customModels: normalizeCustomModels(extraConfig.customModels),
+    enable1M: normalizeEnable1M(extraConfig.enable1M)
   });
 
   data.channels.push(newChannel);
@@ -241,7 +288,9 @@ function updateChannel(id, updates) {
     enabled: merged.enabled,
     presetId: merged.presetId,
     modelConfig: merged.modelConfig,
-    proxyUrl: merged.proxyUrl
+    proxyUrl: merged.proxyUrl,
+    customModels: merged.customModels,
+    enable1M: merged.enable1M
   });
 
   saveChannels(data);
@@ -391,7 +440,7 @@ function updateClaudeSettingsWithModelConfig(channel) {
     settings.env = {};
   }
 
-  const { baseUrl, apiKey, modelConfig, presetId, proxyUrl } = channel;
+  const { baseUrl, apiKey, modelConfig, proxyUrl, enable1M } = channel;
 
   const useAuthToken = settings.env.ANTHROPIC_AUTH_TOKEN !== undefined;
   const useApiKey = settings.env.ANTHROPIC_API_KEY !== undefined;
@@ -405,7 +454,7 @@ function updateClaudeSettingsWithModelConfig(channel) {
     settings.env.ANTHROPIC_API_KEY = apiKey;
   }
 
-  if (presetId && presetId !== 'official' && modelConfig) {
+  if (modelConfig && typeof modelConfig === 'object') {
     if (modelConfig.model) {
       settings.env.ANTHROPIC_MODEL = modelConfig.model;
     } else {
@@ -431,6 +480,14 @@ function updateClaudeSettingsWithModelConfig(channel) {
     delete settings.env.ANTHROPIC_DEFAULT_HAIKU_MODEL;
     delete settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL;
     delete settings.env.ANTHROPIC_DEFAULT_OPUS_MODEL;
+  }
+
+  if (enable1M === true) {
+    settings.env.CLAUDE_CODE_DISABLE_1M_CONTEXT = '0';
+  } else if (enable1M === false) {
+    settings.env.CLAUDE_CODE_DISABLE_1M_CONTEXT = '1';
+  } else {
+    delete settings.env.CLAUDE_CODE_DISABLE_1M_CONTEXT;
   }
 
   if (proxyUrl) {
@@ -476,6 +533,22 @@ function updateClaudeSettings(baseUrl, apiKey) {
   atomicWriteSettings(settings);
 }
 
+function updateCustomModels(id, customModels, channelType = 'claude') {
+  const normalizedCustomModels = normalizeCustomModels(customModels);
+
+  if (channelType === 'codex') {
+    const codexChannelsService = require('./codex-channels');
+    return codexChannelsService.updateChannel(id, { customModels: normalizedCustomModels });
+  } else if (channelType === 'gemini') {
+    const geminiChannelsService = require('./gemini-channels');
+    return geminiChannelsService.updateChannel(id, { customModels: normalizedCustomModels });
+  } else if (channelType === 'claude') {
+    return updateChannel(id, { customModels: normalizedCustomModels });
+  } else {
+    throw new Error(`Unsupported channel type: ${channelType}`);
+  }
+}
+
 module.exports = {
   getAllChannels,
   getCurrentSettings,
@@ -486,5 +559,6 @@ module.exports = {
   getBestChannelForRestore,
   getCurrentChannel,
   updateClaudeSettings,
-  validateChannelData
+  validateChannelData,
+  updateCustomModels
 };
