@@ -38,6 +38,59 @@ import {
 const URL_REQUIRE_HTTP = /^https?:\/\//i;
 const PROVIDER_KEY_PATTERN = /^[a-z0-9-]+$/i;
 
+/**
+ * 预设切换字段覆盖规则（集中化配置）
+ *
+ * 维护约定：
+ * 1. `alwaysPreserve`：始终保留用户编辑值（除非为空时才回退预设默认值）
+ * 2. `preserveWhenPresent`：已有值时保留，空值时允许预设回填
+ * 3. `presetValueResolvers`：统一定义“可被预设提供默认值”的字段来源
+ *
+ * 如未来要调整覆盖策略，只改此处配置与辅助函数，避免在 onPresetChange 分散硬编码。
+ */
+const PRESET_FIELD_OVERRIDE_RULES = {
+  alwaysPreserve: ["name"],
+  preserveWhenPresent: ["baseUrl", "websiteUrl"],
+  presetValueResolvers: {
+    name: (preset) => preset.name,
+    baseUrl: (preset) => preset.baseUrl,
+    websiteUrl: (preset) => preset.websiteUrl || "",
+  },
+};
+
+function hasFieldValue(value) {
+  return value !== null && value !== undefined && value !== "";
+}
+
+function applyPresetFieldOverrides(form, preset, presetId) {
+  const nextForm = { ...form, presetId };
+
+  Object.entries(PRESET_FIELD_OVERRIDE_RULES.presetValueResolvers).forEach(
+    ([field, resolvePresetValue]) => {
+      const presetValue = resolvePresetValue(preset);
+      const currentValue = nextForm[field];
+
+      if (PRESET_FIELD_OVERRIDE_RULES.alwaysPreserve.includes(field)) {
+        if (!hasFieldValue(currentValue)) {
+          nextForm[field] = presetValue;
+        }
+        return;
+      }
+
+      if (
+        PRESET_FIELD_OVERRIDE_RULES.preserveWhenPresent.includes(field) &&
+        hasFieldValue(currentValue)
+      ) {
+        return;
+      }
+
+      nextForm[field] = presetValue;
+    }
+  );
+
+  return nextForm;
+}
+
 function normalizeConcurrency(value) {
   const num = Number(value);
   if (!Number.isFinite(num) || num <= 0) return null;
@@ -328,10 +381,7 @@ const channelPanelFactories = {
       const preset = getPresetById(presetId);
       if (!preset) return form;
 
-      const newForm = { ...form, presetId };
-      newForm.name = preset.name;
-      newForm.baseUrl = preset.baseUrl;
-      newForm.websiteUrl = preset.websiteUrl || "";
+      const newForm = applyPresetFieldOverrides(form, preset, presetId);
 
       if (preset.env) {
         newForm.modelConfig = {

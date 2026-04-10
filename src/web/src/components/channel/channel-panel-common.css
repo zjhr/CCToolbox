@@ -328,6 +328,27 @@
   padding-bottom: 0;
 }
 
+.field-with-hint {
+  width: 100%;
+}
+
+.channel-form :deep(.n-form-item.form-item-switch .n-form-item-blank) {
+  justify-content: flex-start;
+  align-items: flex-start;
+}
+
+.channel-form :deep(.n-form-item.form-item-switch .field-with-hint) {
+  align-items: flex-start;
+}
+
+.original-value-hint {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
 /* 占位元素（原位置的幽灵） */
 :global(.ghost) {
   opacity: 0.3;

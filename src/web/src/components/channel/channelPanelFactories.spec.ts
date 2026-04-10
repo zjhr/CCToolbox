@@ -11,7 +11,7 @@ describe('channelPanelFactories', () => {
     const enable1MField = basicSection?.fields.find(f => f.key === 'enable1M')
     expect(enable1MField).toBeDefined()
     expect(enable1MField?.type).toBe('switch')
-    expect(enable1MField?.label).toBe('开启 1M 上下文')
+    expect(enable1MField?.label).toBe('1M 上下文')
 
     // 2. 验证初始值
     const initialForm = factory.getInitialForm()

@@ -6,6 +6,27 @@
 
 ## [Unreleased]
 
+## [3.5.1] - 2026-04-10
+
+### Added
+
+- 🆕 **API Key 显隐功能** - 渠道编辑对话框中新增"眼镜"图标，点击可显示/隐藏完整 API Key，支持编辑场景下的原始值显示
+- 🆕 **预设切换名称保留** - 切换渠道预设时保留已保存的渠道名称，不被预设默认名称覆盖
+- 🆕 **原值提示功能** - Base URL 和官网链接输入框下方显示"原已保存值"提示，只读展示不影响输入
+- 🧰 **预设默认值更新** - 更新智谱（glm-5/glm4.7）、MiniMax（M2.5）、Kimi（kimi-k2.5）、通义千问（qwen3.5-plus）的默认模型
+- 🧰 **可复用 Composables** - 新增 useSensitiveFieldVisibility、useFieldHint 等可复用组件逻辑
+- ✅ **测试覆盖完善** - 新增 BaseChannelPanel.spec.ts、channelPresetFieldHints.spec.ts、channelPresetNameRetention.spec.ts、useSensitiveFieldVisibility.spec.ts、claudePresets.spec.ts 等测试文件
+
+### Changed
+
+- 🔄 **渠道编辑表单重构** - 统一字段覆盖规则配置，新增 PRESET_FIELD_OVERRIDE_RULES 集中化管理
+- 🔄 **预设数据源重构** - 梳理预设命名与默认模型定义方式，统一 createAnthropicEnv 工厂函数
+
+### Fixed
+
+- 🐛 **API Key 显隐修复** - 编辑已保存渠道时点击眼镜正确显示原始 API Key 值
+- 🐛 **后端 rawApiKey 返回** - channels API 新增返回 rawApiKey 字段供前端显隐功能使用
+
 ## [3.5.0] - 2026-04-09
 
 ### Added

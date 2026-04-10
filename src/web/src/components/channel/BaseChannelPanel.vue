@@ -148,6 +148,7 @@
               :required="field.required"
               :validation-status="getValidationStatus(field.key)"
               :feedback="getValidationMessage(field.key)"
+              :class="{ 'form-item-switch': field.type === 'switch' }"
             >
               <!-- 预设选择器 -->
               <n-select
@@ -157,14 +158,19 @@
                 :placeholder="field.placeholder"
                 @update:value="handlePresetChange"
               />
-              <!-- 其他字段 -->
-              <component
-                v-else
-                :is="resolveFieldComponent(field)"
-                :value="getNestedValue(state.formData, field.key)"
-                v-bind="buildFieldProps(field)"
-                @update:value="(val) => setNestedValue(state.formData, field.key, val)"
-              />
+              <div v-else class="field-with-hint">
+                <component
+                  :is="resolveFieldComponent(field)"
+                  :value="getFieldValue(field)"
+                  v-bind="buildFieldProps(field)"
+                  @update:value="(val) => setNestedValue(state.formData, field.key, val)"
+                  @click="(event) => handlePasswordEyeToggle(field, event)"
+                />
+                <FieldHint
+                  :text="getOriginalFieldHint(field.key)"
+                  class="original-value-hint"
+                />
+              </div>
             </n-form-item>
           </div>
         </template>
@@ -201,10 +207,13 @@ import { useDebounceFn, useStorage } from '@vueuse/core'
 import { AddOutline, SearchOutline } from '@vicons/ionicons5'
 import draggable from 'vuedraggable'
 import ChannelCard from './ChannelCard.vue'
+import FieldHint from './FieldHint.vue'
 import channelPanelFactories from './channelPanelFactories'
 import { updateReasoningEffort, getReasoningEffort } from '../../api/channels'
 import useChannelManager from '../../composables/useChannelManager'
 import { useChannelScheduler } from '../../composables/useChannelScheduler'
+import useFieldHint from '../../composables/useFieldHint'
+import useSensitiveFieldVisibility from '../../composables/useSensitiveFieldVisibility'
 import message from '../../utils/message'
 
 const props = defineProps({
@@ -245,6 +254,12 @@ const reasoningEffortOptions = [
   { label: 'medium', value: 'medium' },
   { label: 'low', value: 'low' }
 ]
+const { getDisplayValue, toggleByEyeClick } = useSensitiveFieldVisibility({
+  resolveRawValue: (field) => {
+    if (field.key !== 'apiKey') return undefined
+    return state.editingChannel?.rawApiKey || state.editingChannel?.apiKey
+  }
+})
 
 async function loadReasoningEffort() {
   if (!showReasoningEffort.value) return
@@ -394,6 +409,26 @@ const clearButtonTooltip = computed(() => config.clearButtonTooltip || '')
 watch(canClearConfig, (value) => {
   emit('clear-config-state', value)
 }, { immediate: true })
+const initialPresetIdOnDialogOpen = ref('')
+watch(
+  () => [state.showDialog, state.editingChannel?.id],
+  ([showDialog]) => {
+    if (!showDialog) return
+    initialPresetIdOnDialogOpen.value = state.formData?.presetId || ''
+  },
+  { immediate: true }
+)
+const shouldShowOriginalValueHints = computed(() => {
+  if (!state.editingChannel) return false
+  if (!state.showDialog) return false
+  const currentPresetId = state.formData?.presetId || ''
+  const initialPresetId = initialPresetIdOnDialogOpen.value || ''
+  return Boolean(currentPresetId && currentPresetId !== initialPresetId)
+})
+const { getFieldHint: getOriginalFieldHint } = useFieldHint({
+  shouldShow: () => shouldShowOriginalValueHints.value,
+  getSource: () => state.editingChannel
+})
 
 const saveReasoningEffort = useDebounceFn(async (value) => {
   if (!showReasoningEffort.value) return
@@ -469,6 +504,15 @@ function getNestedValue(obj, path) {
     value = value?.[key]
   }
   return value
+}
+
+function getFieldValue(field) {
+  const value = getNestedValue(state.formData, field.key)
+  return getDisplayValue(field, value)
+}
+
+function handlePasswordEyeToggle(field, event) {
+  toggleByEyeClick(field, event)
 }
 
 // 设置嵌套值

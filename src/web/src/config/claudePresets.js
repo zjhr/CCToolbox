@@ -3,6 +3,24 @@
  * 参考 cc-switch 的 claudeProviderPresets.ts
  */
 
+/**
+ * 统一生成 Anthropic 相关模型环境变量，避免在每个预设中重复散落定义。
+ *
+ * 维护约定：
+ * 1. `defaultModel` 作为该 provider 的基准默认模型唯一入口。
+ * 2. 如某 provider 需要差异化模型（例如智谱），通过 `overrides` 覆盖具体字段。
+ * 3. 新增 provider 时优先复用此方法，减少回归风险。
+ */
+function createAnthropicEnv(defaultModel, overrides = {}) {
+  return {
+    ANTHROPIC_MODEL: defaultModel,
+    ANTHROPIC_DEFAULT_HAIKU_MODEL: defaultModel,
+    ANTHROPIC_DEFAULT_SONNET_MODEL: defaultModel,
+    ANTHROPIC_DEFAULT_OPUS_MODEL: defaultModel,
+    ...overrides,
+  };
+}
+
 export const claudePresets = [
   {
     id: "official",
@@ -18,12 +36,7 @@ export const claudePresets = [
     category: "cn_official",
     websiteUrl: "https://platform.deepseek.com",
     baseUrl: "https://api.deepseek.com/anthropic",
-    env: {
-      ANTHROPIC_MODEL: "DeepSeek-V3.2-Exp",
-      ANTHROPIC_DEFAULT_HAIKU_MODEL: "DeepSeek-V3.2-Exp",
-      ANTHROPIC_DEFAULT_SONNET_MODEL: "DeepSeek-V3.2-Exp",
-      ANTHROPIC_DEFAULT_OPUS_MODEL: "DeepSeek-V3.2-Exp",
-    },
+    env: createAnthropicEnv("DeepSeek-V3.2-Exp"),
   },
   {
     id: "zhipu",
@@ -31,25 +44,19 @@ export const claudePresets = [
     category: "cn_official",
     websiteUrl: "https://open.bigmodel.cn",
     baseUrl: "https://open.bigmodel.cn/api/anthropic",
-    env: {
-      ANTHROPIC_MODEL: "glm-4.7",
-      ANTHROPIC_DEFAULT_HAIKU_MODEL: "glm-4.5-air",
-      ANTHROPIC_DEFAULT_SONNET_MODEL: "glm-4.7",
-      ANTHROPIC_DEFAULT_OPUS_MODEL: "glm-4.7",
-    },
+    env: createAnthropicEnv("glm-4.7", {
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: "glm-5",
+      ANTHROPIC_DEFAULT_SONNET_MODEL: "glm4.7",
+      ANTHROPIC_DEFAULT_OPUS_MODEL: "glm-5",
+    }),
   },
   {
     id: "kimi",
-    name: "Kimi K2",
+    name: "Kimi",
     category: "cn_official",
     websiteUrl: "https://platform.moonshot.cn",
     baseUrl: "https://api.moonshot.cn/anthropic",
-    env: {
-      ANTHROPIC_MODEL: "kimi-k2-thinking",
-      ANTHROPIC_DEFAULT_HAIKU_MODEL: "kimi-k2-thinking",
-      ANTHROPIC_DEFAULT_SONNET_MODEL: "kimi-k2-thinking",
-      ANTHROPIC_DEFAULT_OPUS_MODEL: "kimi-k2-thinking",
-    },
+    env: createAnthropicEnv("kimi-k2.5"),
   },
   {
     id: "minimax",
@@ -57,12 +64,7 @@ export const claudePresets = [
     category: "cn_official",
     websiteUrl: "https://platform.minimaxi.com",
     baseUrl: "https://api.minimaxi.com/anthropic",
-    env: {
-      ANTHROPIC_MODEL: "MiniMax-M2.1",
-      ANTHROPIC_DEFAULT_HAIKU_MODEL: "MiniMax-M2.1",
-      ANTHROPIC_DEFAULT_SONNET_MODEL: "MiniMax-M2.1",
-      ANTHROPIC_DEFAULT_OPUS_MODEL: "MiniMax-M2.1",
-    },
+    env: createAnthropicEnv("MiniMax-M2.5"),
   },
   {
     id: "qwen",
@@ -70,12 +72,7 @@ export const claudePresets = [
     category: "cn_official",
     websiteUrl: "https://bailian.console.aliyun.com",
     baseUrl: "https://dashscope.aliyuncs.com/api/v2/apps/claude-code-proxy",
-    env: {
-      ANTHROPIC_MODEL: "qwen3-max",
-      ANTHROPIC_DEFAULT_HAIKU_MODEL: "qwen3-max",
-      ANTHROPIC_DEFAULT_SONNET_MODEL: "qwen3-max",
-      ANTHROPIC_DEFAULT_OPUS_MODEL: "qwen3-max",
-    },
+    env: createAnthropicEnv("qwen3.5-plus"),
   },
   {
     id: "doubao",
@@ -83,12 +80,7 @@ export const claudePresets = [
     category: "cn_official",
     websiteUrl: "https://www.volcengine.com/product/doubao",
     baseUrl: "https://ark.cn-beijing.volces.com/api/coding",
-    env: {
-      ANTHROPIC_MODEL: "doubao-seed-code-preview-latest",
-      ANTHROPIC_DEFAULT_HAIKU_MODEL: "doubao-seed-code-preview-latest",
-      ANTHROPIC_DEFAULT_SONNET_MODEL: "doubao-seed-code-preview-latest",
-      ANTHROPIC_DEFAULT_OPUS_MODEL: "doubao-seed-code-preview-latest",
-    },
+    env: createAnthropicEnv("doubao-seed-code-preview-latest"),
   },
 ];
 

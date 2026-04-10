@@ -23,6 +23,7 @@ function maskApiKey(channel) {
   if (!channel) return null;
   return {
     ...channel,
+    rawApiKey: channel.apiKey || '',
     apiKey: channel.apiKey ? `${channel.apiKey.slice(0, 4)}${'*'.repeat(Math.max(0, channel.apiKey.length - 4))}` : ''
   };
 }
@@ -61,7 +62,11 @@ router.get('/current', (req, res) => {
 
     // Mask apiKey to prevent credential exposure
     const safeChannel = result.channel
-      ? { ...result.channel, apiKey: result.channel.apiKey ? `${result.channel.apiKey.slice(0, 4)}${'*'.repeat(Math.max(0, result.channel.apiKey.length - 4))}` : '' }
+      ? {
+        ...result.channel,
+        rawApiKey: result.channel.apiKey || '',
+        apiKey: result.channel.apiKey ? `${result.channel.apiKey.slice(0, 4)}${'*'.repeat(Math.max(0, result.channel.apiKey.length - 4))}` : ''
+      }
       : null;
     const safeSettings = settings
       ? { ...settings, apiKey: settings.apiKey ? `${settings.apiKey.slice(0, 4)}${'*'.repeat(Math.max(0, settings.apiKey.length - 4))}` : '' }
