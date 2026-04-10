@@ -42,15 +42,15 @@ const PROVIDER_KEY_PATTERN = /^[a-z0-9-]+$/i;
  * 预设切换字段覆盖规则（集中化配置）
  *
  * 维护约定：
- * 1. `alwaysPreserve`：始终保留用户编辑值（除非为空时才回退预设默认值）
- * 2. `preserveWhenPresent`：已有值时保留，空值时允许预设回填
+ * 1. `retainForPersistedEdit`：编辑已保存渠道时，保留原字段值
+ * 2. `applyForCreate`：新建渠道切换预设时，直接应用预设值
  * 3. `presetValueResolvers`：统一定义“可被预设提供默认值”的字段来源
  *
  * 如未来要调整覆盖策略，只改此处配置与辅助函数，避免在 onPresetChange 分散硬编码。
  */
 const PRESET_FIELD_OVERRIDE_RULES = {
-  alwaysPreserve: ["name"],
-  preserveWhenPresent: ["baseUrl", "websiteUrl"],
+  retainForPersistedEdit: ["name"],
+  applyForCreate: ["name", "baseUrl", "websiteUrl"],
   presetValueResolvers: {
     name: (preset) => preset.name,
     baseUrl: (preset) => preset.baseUrl,
@@ -62,25 +62,29 @@ function hasFieldValue(value) {
   return value !== null && value !== undefined && value !== "";
 }
 
+function isPersistedChannelForm(form) {
+  return hasFieldValue(form?.channelId) || hasFieldValue(form?.id);
+}
+
 function applyPresetFieldOverrides(form, preset, presetId) {
   const nextForm = { ...form, presetId };
+  const persistedEdit = isPersistedChannelForm(form);
 
   Object.entries(PRESET_FIELD_OVERRIDE_RULES.presetValueResolvers).forEach(
     ([field, resolvePresetValue]) => {
       const presetValue = resolvePresetValue(preset);
-      const currentValue = nextForm[field];
-
-      if (PRESET_FIELD_OVERRIDE_RULES.alwaysPreserve.includes(field)) {
-        if (!hasFieldValue(currentValue)) {
-          nextForm[field] = presetValue;
-        }
+      if (
+        persistedEdit &&
+        PRESET_FIELD_OVERRIDE_RULES.retainForPersistedEdit.includes(field)
+      ) {
         return;
       }
 
       if (
-        PRESET_FIELD_OVERRIDE_RULES.preserveWhenPresent.includes(field) &&
-        hasFieldValue(currentValue)
+        !persistedEdit &&
+        PRESET_FIELD_OVERRIDE_RULES.applyForCreate.includes(field)
       ) {
+        nextForm[field] = presetValue;
         return;
       }
 
@@ -325,6 +329,7 @@ const channelPanelFactories = {
       },
     ],
     getInitialForm: () => ({
+      channelId: "",
       presetId: "official",
       name: "Claude 官方",
       baseUrl: "https://api.anthropic.com",
@@ -359,6 +364,7 @@ const channelPanelFactories = {
         : "official";
 
       return {
+        channelId: channel.id || "",
         presetId,
         name: channel.name || "",
         baseUrl: channel.baseUrl || channel.baseURL || "",

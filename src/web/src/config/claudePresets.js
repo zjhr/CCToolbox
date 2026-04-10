@@ -44,10 +44,8 @@ export const claudePresets = [
     category: "cn_official",
     websiteUrl: "https://open.bigmodel.cn",
     baseUrl: "https://open.bigmodel.cn/api/anthropic",
-    env: createAnthropicEnv("glm-4.7", {
-      ANTHROPIC_DEFAULT_HAIKU_MODEL: "glm-5",
-      ANTHROPIC_DEFAULT_SONNET_MODEL: "glm4.7",
-      ANTHROPIC_DEFAULT_OPUS_MODEL: "glm-5",
+    env: createAnthropicEnv("glm-5", {
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: "glm-4.7",
     }),
   },
   {

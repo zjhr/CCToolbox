@@ -11,12 +11,18 @@ function collectAnthropicModels(preset) {
 }
 
 describe('claudePresets - 默认值更新（Red）', () => {
-  it('智谱默认模型应包含 glm-5 与 glm4.7', () => {
+  it('智谱默认模型应为 glm-5，且仅 Haiku 为 glm-4.7', () => {
     const zhipuPreset = getPresetById('zhipu')
     const models = collectAnthropicModels(zhipuPreset)
 
     expect(zhipuPreset).toBeTruthy()
-    expect(models).toEqual(expect.arrayContaining(['glm-5', 'glm4.7']))
+    expect(zhipuPreset?.env?.ANTHROPIC_MODEL).toBe('glm-5')
+    expect(zhipuPreset?.env?.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe('glm-4.7')
+    expect(zhipuPreset?.env?.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe('glm-5')
+    expect(zhipuPreset?.env?.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('glm-5')
+    expect(models).toEqual(
+      expect.arrayContaining(['glm-5', 'glm-4.7'])
+    )
   })
 
   it('MiniMax 默认模型应为 MiniMax-M2.5', () => {

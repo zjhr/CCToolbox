@@ -5,6 +5,7 @@ import BaseChannelPanel from './BaseChannelPanel.vue'
 import channelPanelFactories from './channelPanelFactories'
 
 const createFormData = (overrides = {}) => ({
+  channelId: 'saved-claude-1',
   presetId: 'official',
   name: '自定义渠道',
   baseUrl: 'https://old-base.example.com',
@@ -177,7 +178,7 @@ describe('BaseChannelPanel - 预设切换原值提示（Red）', () => {
     expect(wrapper.text()).not.toContain('原已保存官网：')
   })
 
-  it('原值提示应为只读提示，不应覆盖输入框实际值', async () => {
+  it('原值提示应为只读提示，输入框实际值应切换到预设值', async () => {
     const wrapper = mountPanel()
     await nextTick()
 
@@ -189,7 +190,7 @@ describe('BaseChannelPanel - 预设切换原值提示（Red）', () => {
     const baseUrlInput = wrapper.get('input[placeholder="https://api.example.com"]')
     const websiteInput = wrapper.get('input[placeholder="https://（选填）"]')
 
-    expect(baseUrlInput.element.value).toBe('https://old-base.example.com')
-    expect(websiteInput.element.value).toBe('https://old-site.example.com')
+    expect(baseUrlInput.element.value).toBe('https://open.bigmodel.cn/api/anthropic')
+    expect(websiteInput.element.value).toBe('https://open.bigmodel.cn')
   })
 })
