@@ -20,6 +20,7 @@ async function runTests() {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cctoolbox-check-update-test-'));
   process.env.CCTOOLBOX_HOME = tempRoot;
   process.env.HOME = tempRoot;
+  process.env.USERPROFILE = tempRoot;
 
   const { SkillService } = require('../src/server/services/skill-service');
   const service = new SkillService();

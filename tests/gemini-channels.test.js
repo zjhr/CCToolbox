@@ -20,9 +20,11 @@ async function withTempHome(run) {
     path.join(os.tmpdir(), 'cctoolbox-gemini-channels-test-')
   );
   const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
   const originalCctoolboxHome = process.env.CCTOOLBOX_HOME;
 
   process.env.HOME = tempRoot;
+  process.env.USERPROFILE = tempRoot;
   process.env.CCTOOLBOX_HOME = tempRoot;
 
   try {
@@ -32,6 +34,12 @@ async function withTempHome(run) {
       delete process.env.HOME;
     } else {
       process.env.HOME = originalHome;
+    }
+
+    if (originalUserProfile === undefined) {
+      delete process.env.USERPROFILE;
+    } else {
+      process.env.USERPROFILE = originalUserProfile;
     }
 
     if (originalCctoolboxHome === undefined) {

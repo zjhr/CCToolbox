@@ -41,6 +41,14 @@ function escapeShellDoubleQuotes(value) {
   return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
+function escapeCmdDoubleQuotes(value) {
+  return String(value).replace(/"/g, '""');
+}
+
+function escapePowerShellSingleQuotes(value) {
+  return String(value).replace(/'/g, "''");
+}
+
 function buildClipboardCommand(cwd, cliCommand) {
   if (!cliCommand) {
     return null;
@@ -54,6 +62,39 @@ function buildClipboardCommand(cwd, cliCommand) {
   }
   const escapedCwd = escapeShellDoubleQuotes(cwd);
   return `cd "${escapedCwd}" && ${cliCommand}`;
+}
+
+function buildWindowsLaunchCommand(terminal, cwd, cliCommand, sessionId, customCliCommand) {
+  const effectiveCliCommand = customCliCommand || cliCommand || (sessionId ? `claude -r ${sessionId}` : null);
+  if (!effectiveCliCommand) {
+    throw new Error('无法生成 Windows 启动命令');
+  }
+
+  const escapedCwdForCmd = escapeCmdDoubleQuotes(cwd);
+
+  if (terminal.id === 'cmd') {
+    return `start "Claude Session" cmd /k "cd /d ""${escapedCwdForCmd}"" && ${effectiveCliCommand}"`;
+  }
+
+  if (terminal.id === 'powershell') {
+    const escapedCwdForPowerShell = escapePowerShellSingleQuotes(cwd);
+    return `start powershell -NoExit -Command "Set-Location -LiteralPath '${escapedCwdForPowerShell}'; ${effectiveCliCommand}"`;
+  }
+
+  if (terminal.id === 'windows-terminal') {
+    const escapedCliCommand = String(effectiveCliCommand).replace(/"/g, '\\"');
+    return `wt.exe -d "${escapedCwdForCmd}" cmd /k "${escapedCliCommand}"`;
+  }
+
+  if (terminal.id === 'git-bash') {
+    const executablePath = terminal.executablePath || 'bash';
+    const escapedBashPath = escapeShellDoubleQuotes(executablePath);
+    const escapedCwdForBash = escapeShellSingleQuotes(cwd);
+    const escapedCliCommand = escapeShellDoubleQuotes(effectiveCliCommand);
+    return `start "" "${escapedBashPath}" -c "cd '${escapedCwdForBash}' && ${escapedCliCommand}; exec bash"`;
+  }
+
+  return null;
 }
 
 function createWarpLaunchConfig(cwd, sessionId, customCliCommand) {
@@ -172,6 +213,18 @@ function getTerminalLaunchCommand(cwd, sessionId, customCliCommand, terminalId =
       terminalName: terminal.name,
       clipboardCommand
     };
+  }
+
+  if (process.platform === 'win32') {
+    const windowsLaunchCommand = buildWindowsLaunchCommand(terminal, cwd, cliCommand, sessionId, customCliCommand);
+    if (windowsLaunchCommand) {
+      return {
+        command: windowsLaunchCommand,
+        terminalId: terminal.id,
+        terminalName: terminal.name,
+        clipboardCommand
+      };
+    }
   }
 
   let command = terminal.command;

@@ -1,11 +1,13 @@
 const assert = require('assert');
+const path = require('path');
 
 const { resolveProjectMeta } = require('../src/server/services/codex-sessions');
 
 function runCodexProjectMetaTests() {
+  const expectedRoot = path.parse(path.normalize('/')).root;
   const rootProject = resolveProjectMeta({ cwd: '/' });
-  assert.strictEqual(rootProject.projectName, '/');
-  assert.strictEqual(rootProject.projectDisplayName, '/');
+  assert.strictEqual(rootProject.projectName, expectedRoot);
+  assert.strictEqual(rootProject.projectDisplayName, expectedRoot);
   assert.strictEqual(rootProject.projectFullPath, '/');
 
   const normalProject = resolveProjectMeta({ cwd: '/Users/mac/ai/cc-tool' });

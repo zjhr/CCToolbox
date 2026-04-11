@@ -3,7 +3,24 @@ const path = require('path');
 const os = require('os');
 const childProcess = require('child_process');
 const { getBackupPath: getAppBackupPath } = require('../../utils/app-path-manager');
-const toml = require('toml');
+
+function loadTomlParser() {
+  try {
+    return require('toml');
+  } catch (primaryErr) {
+    try {
+      return require('@iarna/toml');
+    } catch (fallbackErr) {
+      return {
+        parse() {
+          throw new Error('TOML parser is unavailable');
+        }
+      };
+    }
+  }
+}
+
+const toml = loadTomlParser();
 
 // Codex 配置文件路径
 function getConfigPath() {
@@ -204,7 +221,40 @@ function getPreferredShell() {
   return process.env.SHELL || '';
 }
 
+function getWindowsPowerShellProfileCandidates() {
+  const homeDir = os.homedir();
+  const override = process.env.CCTOOLBOX_POWERSHELL_PROFILE;
+  const modernProfile = path.join(
+    homeDir,
+    'Documents',
+    'PowerShell',
+    'Microsoft.PowerShell_profile.ps1'
+  );
+  const legacyProfile = path.join(
+    homeDir,
+    'Documents',
+    'WindowsPowerShell',
+    'Microsoft.PowerShell_profile.ps1'
+  );
+  const fallbackProfile = path.join(
+    homeDir,
+    'Documents',
+    'PowerShell',
+    'profile.ps1'
+  );
+
+  return Array.from(
+    new Set([override, modernProfile, legacyProfile, fallbackProfile].filter(Boolean))
+  );
+}
+
 function getShellConfigPath() {
+  if (process.platform === 'win32') {
+    const candidates = getWindowsPowerShellProfileCandidates();
+    const existing = candidates.find(candidate => fs.existsSync(candidate));
+    return existing || candidates[0];
+  }
+
   const shell = getPreferredShell();
   if (shell.includes('zsh')) {
     return path.join(os.homedir(), '.zshrc');
@@ -226,6 +276,10 @@ function escapeRegexLiteral(value) {
 }
 
 function getShellConfigCandidates() {
+  if (process.platform === 'win32') {
+    return getWindowsPowerShellProfileCandidates();
+  }
+
   const preferred = getShellConfigPath();
   const zshrc = path.join(os.homedir(), '.zshrc');
   const bashProfile = path.join(os.homedir(), '.bash_profile');
@@ -238,14 +292,20 @@ function hasEnvExport(content, envName) {
   return new RegExp(`^\\s*export\\s+${envNamePattern}\\s*=`, 'm').test(content);
 }
 
+function hasPowerShellEnvAssignment(content, envName) {
+  const envNamePattern = escapeRegexLiteral(envName);
+  return new RegExp(`^\\s*\\$env:${envNamePattern}\\s*=`, 'm').test(content);
+}
+
 function resolveShellConfigPathForEnv(envName) {
   const candidates = getShellConfigCandidates();
+  const matcher = process.platform === 'win32' ? hasPowerShellEnvAssignment : hasEnvExport;
   for (const candidate of candidates) {
     if (!fs.existsSync(candidate)) {
       continue;
     }
     const content = fs.readFileSync(candidate, 'utf8');
-    if (hasEnvExport(content, envName)) {
+    if (matcher(content, envName)) {
       return candidate;
     }
   }
@@ -258,6 +318,10 @@ function escapeShellEnvValue(envValue) {
     .replace(/\$/g, '\\$')
     .replace(/`/g, '\\`')
     .replace(/"/g, '\\"');
+}
+
+function escapePowerShellEnvValue(envValue) {
+  return String(envValue).replace(/'/g, "''");
 }
 
 function syncEnvToLaunchd(envName, envValue) {
@@ -274,6 +338,47 @@ function syncEnvToLaunchd(envName, envValue) {
     return { success: true };
   } catch (err) {
     console.warn(`[Codex] Failed to sync ${envName} to launchd: ${err.message}`);
+    return { success: false, error: err.message };
+  }
+}
+
+function syncEnvToWindowsUserEnv(envName, envValue) {
+  if (process.platform !== 'win32') {
+    return { success: true, skipped: true };
+  }
+
+  const normalizedValue = String(envValue);
+
+  try {
+    const queryOutput = childProcess.execFileSync(
+      'reg',
+      ['query', 'HKCU\\Environment', '/V', envName],
+      {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+        windowsHide: true
+      }
+    );
+    const match = queryOutput.match(new RegExp(`^\\s*${escapeRegexLiteral(envName)}\\s+REG_\\w+\\s+(.*)$`, 'mi'));
+    if (match && String(match[1]).trim() === normalizedValue) {
+      return { success: true, skipped: true, unchanged: true };
+    }
+  } catch (err) {
+    // reg query 在变量不存在时会失败，继续执行 setx 即可
+  }
+
+  try {
+    childProcess.execFileSync(
+      'setx',
+      [envName, normalizedValue],
+      {
+        stdio: 'ignore',
+        windowsHide: true
+      }
+    );
+    return { success: true };
+  } catch (err) {
+    console.warn(`[Codex] Failed to persist ${envName} with setx: ${err.message}`);
     return { success: false, error: err.message };
   }
 }
@@ -296,22 +401,39 @@ function removeEnvFromLaunchd(envName) {
   }
 }
 
+function removeEnvFromWindowsUserEnv(envName) {
+  if (process.platform !== 'win32') {
+    return { success: true, skipped: true };
+  }
+
+  try {
+    childProcess.execFileSync(
+      'reg',
+      ['delete', 'HKCU\\Environment', '/F', '/V', envName],
+      {
+        stdio: 'ignore',
+        windowsHide: true
+      }
+    );
+    return { success: true };
+  } catch (err) {
+    // 变量不存在时 reg delete 会返回错误，这不算失败
+    const message = String(err.message || '').toLowerCase();
+    if (message.includes('unable to find') || message.includes('找不到')) {
+      return { success: true, skipped: true };
+    }
+    console.warn(`[Codex] Failed to remove ${envName} from Windows user env: ${err.message}`);
+    return { success: false, error: err.message };
+  }
+}
+
 // 注入环境变量到 shell 配置文件
 function injectEnvToShell(envName, envValue) {
   const configPath = resolveShellConfigPathForEnv(envName);
   const normalizedValue = String(envValue);
-  const exportLine = `export ${envName}="${escapeShellEnvValue(normalizedValue)}"`;
   // 使用更具体的标记，包含环境变量名，方便后续精确移除
   const marker = `# Added by CCToolbox for Codex [${envName}]`;
   const envNamePattern = escapeRegexLiteral(envName);
-  const managedBlockRegex = new RegExp(
-    `\\n?# Added by (CCToolbox|Coding-Tool) for Codex \\[${envNamePattern}\\]\\r?\\n\\s*export\\s+${envNamePattern}\\s*=.*(?:\\r?\\n)?`,
-    'g'
-  );
-  const plainExportRegex = new RegExp(
-    `^\\s*export\\s+${envNamePattern}\\s*=.*\\r?$`,
-    'gm'
-  );
 
   try {
     let content = '';
@@ -319,31 +441,63 @@ function injectEnvToShell(envName, envValue) {
       content = fs.readFileSync(configPath, 'utf8');
     }
 
-    // 清理同名历史记录，避免重复 export 导致旧值覆盖新值
-    const alreadyExists = hasEnvExport(content, envName);
-    content = content.replace(managedBlockRegex, '\n');
-    content = content.replace(plainExportRegex, '');
+    let alreadyExists = false;
+    let lineToAppend = '';
+
+    if (process.platform === 'win32') {
+      const managedBlockRegex = new RegExp(
+        `\\n?# Added by (CCToolbox|Coding-Tool) for Codex \\[${envNamePattern}\\]\\r?\\n\\s*\\$env:${envNamePattern}\\s*=.*(?:\\r?\\n)?`,
+        'g'
+      );
+      const plainAssignRegex = new RegExp(
+        `^\\s*\\$env:${envNamePattern}\\s*=.*\\r?$`,
+        'gm'
+      );
+      alreadyExists = hasPowerShellEnvAssignment(content, envName);
+      lineToAppend = `$env:${envName} = '${escapePowerShellEnvValue(normalizedValue)}'`;
+      content = content.replace(managedBlockRegex, '\n');
+      content = content.replace(plainAssignRegex, '');
+    } else {
+      const managedBlockRegex = new RegExp(
+        `\\n?# Added by (CCToolbox|Coding-Tool) for Codex \\[${envNamePattern}\\]\\r?\\n\\s*export\\s+${envNamePattern}\\s*=.*(?:\\r?\\n)?`,
+        'g'
+      );
+      const plainExportRegex = new RegExp(
+        `^\\s*export\\s+${envNamePattern}\\s*=.*\\r?$`,
+        'gm'
+      );
+      alreadyExists = hasEnvExport(content, envName);
+      lineToAppend = `export ${envName}="${escapeShellEnvValue(normalizedValue)}"`;
+      content = content.replace(managedBlockRegex, '\n');
+      content = content.replace(plainExportRegex, '');
+    }
+
     content = content.replace(/\n\n\n+/g, '\n\n').trimEnd();
 
     if (content) {
-      content += `\n\n${marker}\n${exportLine}\n`;
+      content += `\n\n${marker}\n${lineToAppend}\n`;
     } else {
-      content = `${marker}\n${exportLine}\n`;
+      content = `${marker}\n${lineToAppend}\n`;
     }
 
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
     fs.writeFileSync(configPath, content, 'utf8');
     // 立即更新当前进程，保证当前服务启动的子进程能继承最新变量
     process.env[envName] = normalizedValue;
+
+    const windowsEnvResult = syncEnvToWindowsUserEnv(envName, normalizedValue);
     const launchdResult = syncEnvToLaunchd(envName, normalizedValue);
     return {
       success: true,
       path: configPath,
       isFirstTime: !alreadyExists,
+      windowsEnv: windowsEnvResult,
       launchd: launchdResult
     };
   } catch (err) {
     // 即使 shell 写入失败，也尽量让当前进程拿到最新变量，减少当前会话受影响范围
     process.env[envName] = normalizedValue;
+    const windowsEnvResult = syncEnvToWindowsUserEnv(envName, normalizedValue);
     const launchdResult = syncEnvToLaunchd(envName, normalizedValue);
     // 不抛出错误，只是警告，因为这不是致命问题
     console.warn(`[Codex] Failed to inject env to shell config: ${err.message}`);
@@ -351,6 +505,7 @@ function injectEnvToShell(envName, envValue) {
       success: false,
       error: err.message,
       isFirstTime: false,
+      windowsEnv: windowsEnvResult,
       launchd: launchdResult
     };
   }
@@ -358,41 +513,57 @@ function injectEnvToShell(envName, envValue) {
 
 // 从 shell 配置文件移除环境变量
 function removeEnvFromShell(envName) {
-  const configPath = getShellConfigPath();
+  const configPath = resolveShellConfigPathForEnv(envName);
+  const envNamePattern = escapeRegexLiteral(envName);
 
   try {
     if (!fs.existsSync(configPath)) {
       delete process.env[envName];
+      const windowsEnvResult = removeEnvFromWindowsUserEnv(envName);
       const launchdResult = removeEnvFromLaunchd(envName);
-      return { success: true, launchd: launchdResult };
+      return { success: true, windowsEnv: windowsEnvResult, launchd: launchdResult };
     }
 
     let content = fs.readFileSync(configPath, 'utf8');
 
-    // 移除具体标记的环境变量（推荐方式）
-    content = content.replace(
-      new RegExp(`\\n?# Added by (CCToolbox|Coding-Tool) for Codex \\[${envName}\\]\\nexport ${envName}=.*\\n?`, 'g'),
-      '\n'
-    );
+    if (process.platform === 'win32') {
+      content = content.replace(
+        new RegExp(`\\n?# Added by (CCToolbox|Coding-Tool) for Codex \\[${envNamePattern}\\]\\r?\\n\\s*\\$env:${envNamePattern}\\s*=.*(?:\\r?\\n)?`, 'g'),
+        '\n'
+      );
 
-    // 如果没有标记，也尝试移除（兼容旧数据）
-    content = content.replace(
-      new RegExp(`^export ${envName}=.*\\n?`, 'gm'),
-      ''
-    );
+      content = content.replace(
+        new RegExp(`^\\s*\\$env:${envNamePattern}\\s*=.*\\r?$`, 'gm'),
+        ''
+      );
+    } else {
+      // 移除具体标记的环境变量（推荐方式）
+      content = content.replace(
+        new RegExp(`\\n?# Added by (CCToolbox|Coding-Tool) for Codex \\[${envNamePattern}\\]\\r?\\n\\s*export\\s+${envNamePattern}\\s*=.*(?:\\r?\\n)?`, 'g'),
+        '\n'
+      );
+
+      // 如果没有标记，也尝试移除（兼容旧数据）
+      content = content.replace(
+        new RegExp(`^\\s*export\\s+${envNamePattern}\\s*=.*\\r?$`, 'gm'),
+        ''
+      );
+    }
 
     // 清理多余的空行
     content = content.replace(/\n\n\n+/g, '\n\n');
 
     fs.writeFileSync(configPath, content, 'utf8');
     delete process.env[envName];
+    const windowsEnvResult = removeEnvFromWindowsUserEnv(envName);
     const launchdResult = removeEnvFromLaunchd(envName);
-    return { success: true, launchd: launchdResult };
+    return { success: true, windowsEnv: windowsEnvResult, launchd: launchdResult };
   } catch (err) {
     delete process.env[envName];
+    const windowsEnvResult = removeEnvFromWindowsUserEnv(envName);
     const launchdResult = removeEnvFromLaunchd(envName);
     console.warn(`[Codex] Failed to remove env from shell config: ${err.message}`);
-    return { success: false, error: err.message, launchd: launchdResult };
+    return { success: false, error: err.message, windowsEnv: windowsEnvResult, launchd: launchdResult };
   }
 }
 
@@ -434,7 +605,9 @@ function setProxyConfig(proxyPort) {
 
     // 获取 shell 配置文件路径用于提示信息
     const shellConfigPath = getShellConfigPath();
-    const sourceCommand = process.env.SHELL?.includes('zsh') ? 'source ~/.zshrc' : 'source ~/.bashrc';
+    const sourceCommand = process.platform === 'win32'
+      ? '重新打开终端以加载环境变量'
+      : (process.env.SHELL?.includes('zsh') ? 'source ~/.zshrc' : 'source ~/.bashrc');
 
     console.log(`Codex settings updated to use proxy on port ${proxyPort}`);
     return {

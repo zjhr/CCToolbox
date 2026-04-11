@@ -36,8 +36,9 @@ async function runMetadataTests() {
 
     const sessionId = 'session-123';
     const saved = setMetadata(sessionId, { title: '测试标题', tags: ['feature', 'auth'] });
-    assert.strictEqual(saved.title, '测试标题');
-    assert.deepStrictEqual(saved.tags, ['feature', 'auth']);
+    assert.ok(saved && saved.metadata);
+    assert.strictEqual(saved.metadata.title, '测试标题');
+    assert.deepStrictEqual(saved.metadata.tags, ['feature', 'auth']);
 
     const loaded = getMetadata(sessionId);
     assert.strictEqual(loaded.title, '测试标题');
@@ -45,7 +46,8 @@ async function runMetadataTests() {
     assert.strictEqual(getAlias(sessionId), '测试标题');
 
     const cleared = setMetadata(sessionId, {});
-    assert.strictEqual(cleared, null);
+    assert.ok(cleared);
+    assert.strictEqual(cleared.metadata, null);
     assert.strictEqual(getMetadata(sessionId), null);
     assert.strictEqual(getAlias(sessionId), null);
   });

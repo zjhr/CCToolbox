@@ -15,10 +15,12 @@ async function withTempHome(run) {
     path.join(os.tmpdir(), 'cctoolbox-codex-settings-test-')
   );
   const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
   const originalShell = process.env.SHELL;
   const originalPlatform = process.platform;
 
   process.env.HOME = tempRoot;
+  process.env.USERPROFILE = tempRoot;
   process.env.SHELL = '/bin/bash';
 
   try {
@@ -32,6 +34,59 @@ async function withTempHome(run) {
       delete process.env.HOME;
     } else {
       process.env.HOME = originalHome;
+    }
+
+    if (originalUserProfile === undefined) {
+      delete process.env.USERPROFILE;
+    } else {
+      process.env.USERPROFILE = originalUserProfile;
+    }
+
+    if (originalShell === undefined) {
+      delete process.env.SHELL;
+    } else {
+      process.env.SHELL = originalShell;
+    }
+
+    Object.defineProperty(process, 'platform', {
+      configurable: true,
+      value: originalPlatform
+    });
+
+    removeDir(tempRoot);
+  }
+}
+
+async function withTempHomeWindows(run) {
+  const tempRoot = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'cctoolbox-codex-settings-win-test-')
+  );
+  const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
+  const originalShell = process.env.SHELL;
+  const originalPlatform = process.platform;
+
+  process.env.HOME = tempRoot;
+  process.env.USERPROFILE = tempRoot;
+  process.env.SHELL = 'powershell.exe';
+
+  try {
+    Object.defineProperty(process, 'platform', {
+      configurable: true,
+      value: 'win32'
+    });
+    return await run(tempRoot);
+  } finally {
+    if (originalHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = originalHome;
+    }
+
+    if (originalUserProfile === undefined) {
+      delete process.env.USERPROFILE;
+    } else {
+      process.env.USERPROFILE = originalUserProfile;
     }
 
     if (originalShell === undefined) {
@@ -161,6 +216,70 @@ async function runCodexSettingsManagerTests() {
       const bashProfileContent = fs.readFileSync(bashProfilePath, 'utf8');
       assert.ok(zshrcContent.includes('from-zshrc-new'));
       assert.ok(!bashProfileContent.includes(envName));
+    } finally {
+      childProcess.execFileSync = originalExecFileSync;
+      delete process.env[envName];
+    }
+  });
+
+  await withTempHomeWindows(async (tempRoot) => {
+    const execCalls = [];
+    const originalExecFileSync = childProcess.execFileSync;
+    const envName = 'CODEXMANAGER_WIN_API_KEY';
+    const envValue = `secret "double" and 'single'`;
+
+    childProcess.execFileSync = (file, args, options) => {
+      execCalls.push({ file, args, options });
+      return Buffer.from('');
+    };
+
+    try {
+      const {
+        getShellConfigPath,
+        injectEnvToShell,
+        removeEnvFromShell
+      } = loadCodexSettingsManager();
+
+      const profilePath = getShellConfigPath();
+      assert.strictEqual(
+        profilePath,
+        path.join(tempRoot, 'Documents', 'PowerShell', 'Microsoft.PowerShell_profile.ps1')
+      );
+
+      const injectResult = injectEnvToShell(envName, envValue);
+      assert.strictEqual(injectResult.success, true);
+      assert.strictEqual(process.env[envName], envValue);
+      assert.strictEqual(injectResult.path, profilePath);
+      assert.strictEqual(fs.existsSync(profilePath), true);
+
+      const profileContent = fs.readFileSync(profilePath, 'utf8');
+      assert.ok(profileContent.includes(`# Added by CCToolbox for Codex [${envName}]`));
+      assert.ok(
+        profileContent.includes(
+          `$env:${envName} = 'secret "double" and ''single'''`
+        )
+      );
+
+      assert.ok(execCalls.some(call =>
+        call.file === 'setx' &&
+        call.args[0] === envName &&
+        call.args[1] === envValue
+      ));
+
+      const removeResult = removeEnvFromShell(envName);
+      assert.strictEqual(removeResult.success, true);
+      assert.strictEqual(process.env[envName], undefined);
+
+      const cleanedProfileContent = fs.readFileSync(profilePath, 'utf8');
+      assert.ok(!cleanedProfileContent.includes(envName));
+      assert.ok(execCalls.some(call =>
+        call.file === 'reg' &&
+        call.args[0] === 'delete' &&
+        call.args[1] === 'HKCU\\Environment' &&
+        call.args[2] === '/F' &&
+        call.args[3] === '/V' &&
+        call.args[4] === envName
+      ));
     } finally {
       childProcess.execFileSync = originalExecFileSync;
       delete process.env[envName];

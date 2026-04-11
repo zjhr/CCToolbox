@@ -2,7 +2,7 @@
  * 环境变量检测服务
  *
  * 检测系统中可能导致 API 配置冲突的环境变量
- * 支持 macOS/Linux 的 shell 配置文件检测
+ * 支持 macOS/Linux shell 配置与 Windows PowerShell profile 检测
  */
 
 const fs = require('fs');
@@ -58,6 +58,13 @@ const SYSTEM_CONFIG_FILES = [
   '/etc/zshrc'
 ];
 
+// Windows PowerShell 配置文件（按常见优先级）
+const WINDOWS_PROFILE_FILES = [
+  ['Documents', 'PowerShell', 'Microsoft.PowerShell_profile.ps1'],
+  ['Documents', 'WindowsPowerShell', 'Microsoft.PowerShell_profile.ps1'],
+  ['Documents', 'PowerShell', 'profile.ps1']
+];
+
 /**
  * 检测环境变量冲突
  * @param {string} platform - 平台名称: claude/codex/gemini，不传则检测所有
@@ -72,6 +79,9 @@ function checkEnvConflicts(platform = null) {
 
   // 2. 检测用户 shell 配置文件
   conflicts.push(...checkShellConfigs(keywords));
+
+  // 2.1 Windows: 检测 PowerShell profile
+  conflicts.push(...checkWindowsProfiles(keywords));
 
   // 3. 检测系统配置文件
   conflicts.push(...checkSystemConfigs(keywords));
@@ -123,6 +133,25 @@ function checkShellConfigs(keywords) {
     const filePath = path.join(homeDir, fileName);
     const fileConflicts = parseConfigFile(filePath, keywords);
     conflicts.push(...fileConflicts);
+  }
+
+  return conflicts;
+}
+
+/**
+ * 检测 Windows PowerShell profile
+ */
+function checkWindowsProfiles(keywords) {
+  if (process.platform !== 'win32') {
+    return [];
+  }
+
+  const conflicts = [];
+  const homeDir = os.homedir();
+
+  for (const pathParts of WINDOWS_PROFILE_FILES) {
+    const profilePath = path.join(homeDir, ...pathParts);
+    conflicts.push(...parsePowerShellProfile(profilePath, keywords));
   }
 
   return conflicts;
@@ -185,6 +214,55 @@ function parseConfigFile(filePath, keywords) {
     }
   } catch (err) {
     // 忽略无法读取的文件
+    console.debug(`[EnvChecker] Cannot read ${filePath}:`, err.message);
+  }
+
+  return conflicts;
+}
+
+/**
+ * 解析 PowerShell profile，查找 $env:VAR=... 定义
+ */
+function parsePowerShellProfile(filePath, keywords) {
+  const conflicts = [];
+
+  try {
+    if (!fs.existsSync(filePath)) {
+      return conflicts;
+    }
+
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const lines = content.split('\n');
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmed = line.trim();
+
+      if (!trimmed || trimmed.startsWith('#')) {
+        continue;
+      }
+
+      const match = trimmed.match(/^\$env:([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$/);
+      if (!match) {
+        continue;
+      }
+
+      const [, varNameRaw, varValue] = match;
+      const varName = varNameRaw.toUpperCase();
+
+      if (matchesKeywords(varName, keywords)) {
+        conflicts.push({
+          varName,
+          varValue: maskSensitiveValue(cleanValue(varValue)),
+          sourceType: 'windows-profile',
+          sourcePath: `${filePath}:${i + 1}`,
+          filePath,
+          lineNumber: i + 1,
+          platform: detectPlatform(varName)
+        });
+      }
+    }
+  } catch (err) {
     console.debug(`[EnvChecker] Cannot read ${filePath}:`, err.message);
   }
 
@@ -302,6 +380,7 @@ module.exports = {
   getConflictStats,
   PLATFORM_KEYWORDS,
   SHELL_CONFIG_FILES,
+  WINDOWS_PROFILE_FILES,
   SENSITIVE_PATTERNS,
   EXACT_SENSITIVE_VARS
 };

@@ -219,7 +219,9 @@ async function runTrashTests() {
 
   await withTempDir(async (tempRoot) => {
     const originalHome = process.env.HOME;
+    const originalUserProfile = process.env.USERPROFILE;
     process.env.HOME = tempRoot;
+    process.env.USERPROFILE = tempRoot;
     process.env.CCTOOLBOX_HOME = tempRoot;
 
     const { moveToTrash, restoreFromTrash, getTrashMessages } = require('../src/server/services/trash');
@@ -283,6 +285,7 @@ async function runTrashTests() {
     assert.strictEqual(fs.existsSync(geminiPath), true);
 
     process.env.HOME = originalHome;
+    process.env.USERPROFILE = originalUserProfile;
   });
 
   await withTempDir(async (tempRoot) => {

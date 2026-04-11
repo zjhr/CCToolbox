@@ -12,6 +12,17 @@ const execAsync = promisify(exec);
 const CCTOOLBOX_PROCESS_NAMES = ['cctoolbox', 'coding-tool', 'cc-tool'];
 const CCTOOLBOX_DEFAULT_NAME = 'cctoolbox';
 
+function getWindowsAutoStartGuidance() {
+  return {
+    note: 'Windows 暂不支持由 CCToolbox 自动配置 PM2 开机自启',
+    actionableHints: [
+      '可手动创建“任务计划程序”启动项，在登录时执行 `pm2 resurrect`',
+      '先确认服务已保存：执行 `pm2 save`',
+      '若使用全局 Node 管理器，确保计划任务使用相同的 Node/PM2 路径'
+    ]
+  };
+}
+
 function findCCToolboxProcess(processes) {
   if (!Array.isArray(processes)) {
     return null;
@@ -85,9 +96,13 @@ async function checkAutoStartStatus() {
 
       return { enabled: rootExists || userExists, platform: 'linux' };
     } else if (platform === 'win32') {
-      // Windows - check for PM2 service in registry (simplified check)
-      // For now, assume Windows support via pm2 package manager
-      return { enabled: false, platform: 'win32', note: '暂不支持 Windows' };
+      const guidance = getWindowsAutoStartGuidance();
+      return {
+        enabled: false,
+        platform: 'win32',
+        note: guidance.note,
+        actionableHints: guidance.actionableHints
+      };
     }
 
     return { enabled: false, platform };
@@ -102,6 +117,16 @@ async function checkAutoStartStatus() {
  * Runs: pm2 startup && pm2 save
  */
 async function enableAutoStart() {
+  if (process.platform === 'win32') {
+    const guidance = getWindowsAutoStartGuidance();
+    return {
+      success: false,
+      message: guidance.note,
+      note: guidance.note,
+      actionableHints: guidance.actionableHints
+    };
+  }
+
   return new Promise((resolve) => {
     pm2.connect((err) => {
       if (err) {
@@ -241,6 +266,16 @@ async function enableAutoStart() {
  * Runs: pm2 unstartup
  */
 async function disableAutoStart() {
+  if (process.platform === 'win32') {
+    const guidance = getWindowsAutoStartGuidance();
+    return {
+      success: false,
+      message: guidance.note,
+      note: guidance.note,
+      actionableHints: guidance.actionableHints
+    };
+  }
+
   return new Promise((resolve) => {
     pm2.connect((err) => {
       if (err) {
@@ -381,10 +416,19 @@ module.exports = () => {
         });
       } else {
         // 返回 200 状态码，让前端通过 success 字段判断
-        res.json({
+        const errorPayload = {
           success: false,
           message: result.message
-        });
+        };
+
+        if (result.note) {
+          errorPayload.note = result.note;
+        }
+        if (Array.isArray(result.actionableHints)) {
+          errorPayload.actionableHints = result.actionableHints;
+        }
+
+        res.json(errorPayload);
       }
     } catch (err) {
       console.error('Failed to configure autostart:', err);

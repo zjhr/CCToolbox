@@ -11,7 +11,14 @@ function ensureDir(dirPath) {
 }
 
 function encodeProjectPath(fullPath) {
-  return `-${fullPath.replace(/\//g, '-')}`;
+  const normalized = String(fullPath).replace(/\\/g, '/');
+  const windowsMatch = normalized.match(/^([A-Za-z]):\/(.*)$/);
+  if (windowsMatch) {
+    const drive = windowsMatch[1].toUpperCase();
+    const rest = windowsMatch[2].replace(/\//g, '-');
+    return `${drive}--${rest}`;
+  }
+  return `-${normalized.replace(/\//g, '-')}`;
 }
 
 async function withTempDir(run) {

@@ -53,7 +53,8 @@ function loadConfig() {
   try {
     const configFile = resolveConfigFile();
     if (fs.existsSync(configFile)) {
-      const userConfig = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+      const rawContent = fs.readFileSync(configFile, 'utf8').replace(/^\uFEFF/, '');
+      const userConfig = JSON.parse(rawContent);
       const config = { ...DEFAULT_CONFIG, ...userConfig };
       config.projectsDir = expandHome(config.projectsDir);
 

@@ -27,6 +27,7 @@ async function runTests() {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cctoolbox-upload-service-test-'));
   process.env.CCTOOLBOX_HOME = tempRoot;
   process.env.HOME = tempRoot;
+  process.env.USERPROFILE = tempRoot;
 
   const { SkillService } = require('../src/server/services/skill-service');
   const service = new SkillService();
@@ -121,6 +122,7 @@ async function runTests() {
   const missingZip = path.join(missingDir, 'missing.zip');
   const emptySource = path.join(tempRoot, 'empty-skill');
   fs.mkdirSync(emptySource, { recursive: true });
+  fs.writeFileSync(path.join(emptySource, 'README.md'), '# Empty skill\n', 'utf-8');
   buildZipFromDir(emptySource, missingZip, 'empty-skill');
 
   await assert.rejects(

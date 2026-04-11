@@ -15,9 +15,11 @@ async function withTempHome(run) {
     path.join(os.tmpdir(), 'cctoolbox-codex-channels-test-')
   );
   const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
   const originalCctoolboxHome = process.env.CCTOOLBOX_HOME;
 
   process.env.HOME = tempRoot;
+  process.env.USERPROFILE = tempRoot;
   process.env.CCTOOLBOX_HOME = tempRoot;
 
   try {
@@ -33,6 +35,12 @@ async function withTempHome(run) {
       delete process.env.CCTOOLBOX_HOME;
     } else {
       process.env.CCTOOLBOX_HOME = originalCctoolboxHome;
+    }
+
+    if (originalUserProfile === undefined) {
+      delete process.env.USERPROFILE;
+    } else {
+      process.env.USERPROFILE = originalUserProfile;
     }
 
     removeDir(tempRoot);

@@ -149,32 +149,61 @@ async function startServer(port) {
     });
   }
 
-  // Start server
-  const server = app.listen(port, () => {
-    console.log(`\n🚀 CCToolbox Web UI running at:`);
-    console.log(`   http://localhost:${port}`);
+  // Start server (wait until listening or fail fast on startup error)
+  const server = app.listen(port);
 
-    // 附加 WebSocket 服务器到同一个端口
-    attachWebSocketServer(server);
-    console.log(`   ws://localhost:${port}/ws\n`);
+  await new Promise((resolve, reject) => {
+    const onListening = () => {
+      server.off('error', onStartupError);
+      resolve();
+    };
+    const onStartupError = (err) => {
+      server.off('listening', onListening);
+      reject(err);
+    };
 
-    startUpdateChecker();
-    console.log(chalk.gray('✅ 更新检查服务已启动'));
-    startSkillUpdateCheck();
-
-    // 自动恢复代理状态（已禁用：ct ui 启动不再自动恢复代理，避免篡改 settings.json）
-    // autoRestoreProxies();
+    server.once('listening', onListening);
+    server.once('error', onStartupError);
   });
 
-  // 监听端口占用错误
+  console.log(`\n🚀 CCToolbox Web UI running at:`);
+  console.log(`   http://localhost:${port}`);
+
+  if (!require('fs').existsSync(distPath)) {
+    console.log(chalk.yellow('\n⚠️  未检测到前端构建产物 dist/web，页面可能无法访问。'));
+    console.log(chalk.gray('   请先运行: npm run build:web\n'));
+  }
+
+  // 附加 WebSocket 服务器到同一个端口
+  attachWebSocketServer(server);
+  console.log(`   ws://localhost:${port}/ws\n`);
+
+  startUpdateChecker();
+  console.log(chalk.gray('✅ 更新检查服务已启动'));
+  startSkillUpdateCheck();
+
+  // 自动恢复代理状态（已禁用：ct ui 启动不再自动恢复代理，避免篡改 settings.json）
+  // autoRestoreProxies();
+
+  // 监听运行期错误
   server.on('error', (err) => {
     if (err.code === 'EADDRINUSE') {
       console.error(chalk.red(`\n❌ 端口 ${port} 已被占用`));
       console.error(chalk.yellow('\n💡 解决方案:'));
       console.error(chalk.gray('   1. 运行 ct 命令，选择"配置端口"修改端口'));
       console.error(chalk.gray(`   2. 或关闭占用端口 ${port} 的程序\n`));
-      process.exit(1);
+      return;
     }
+
+    if (err.code === 'EACCES') {
+      console.error(chalk.red(`\n❌ 无法监听端口 ${port}（权限不足）`));
+      console.error(chalk.yellow('\n💡 解决方案:'));
+      console.error(chalk.gray('   1. 以管理员权限运行终端后重试'));
+      console.error(chalk.gray('   2. 或修改为其他可用端口 (ct -> 配置端口)\n'));
+      return;
+    }
+
+    console.error(chalk.red('\n❌ Web 服务运行时错误:'), err.message);
   });
 
   return server;

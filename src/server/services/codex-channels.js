@@ -872,15 +872,29 @@ function getCurrentChannel() {
   }
 }
 
-// 服务启动时自动同步环境变量（静默执行，不影响其他功能）
-try {
-  const data = loadChannels();
-  if (data.channels && data.channels.length > 0) {
-    syncAllChannelEnvVars();
+function shouldAutoSyncEnvVarsOnModuleLoad() {
+  if (process.env.CCTOOLBOX_DISABLE_ENV_AUTOSYNC === '1') {
+    return false;
   }
-} catch (err) {
-  // 静默失败，不影响模块加载
-  console.warn("[Codex Channels] Auto sync env vars failed:", err.message);
+  // daemon 模式会由 PM2 守护，若启动异常可能进入重启循环。
+  // 避免在循环中不断触发 setx/reg 造成 Windows 弹窗风暴。
+  if (process.argv.includes('--daemon')) {
+    return false;
+  }
+  return true;
+}
+
+// 服务启动时自动同步环境变量（静默执行，不影响其他功能）
+if (shouldAutoSyncEnvVarsOnModuleLoad()) {
+  try {
+    const data = loadChannels();
+    if (data.channels && data.channels.length > 0) {
+      syncAllChannelEnvVars();
+    }
+  } catch (err) {
+    // 静默失败，不影响模块加载
+    console.warn("[Codex Channels] Auto sync env vars failed:", err.message);
+  }
 }
 
 module.exports = {

@@ -11,9 +11,35 @@ function removeDir(dirPath) {
 
 async function withTempDir(run) {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cctoolbox-skill-cache-test-'));
+  const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
+  const originalCctoolboxHome = process.env.CCTOOLBOX_HOME;
+
+  process.env.HOME = tempRoot;
+  process.env.USERPROFILE = tempRoot;
+  process.env.CCTOOLBOX_HOME = tempRoot;
+
   try {
     return await run(tempRoot);
   } finally {
+    if (originalHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = originalHome;
+    }
+
+    if (originalUserProfile === undefined) {
+      delete process.env.USERPROFILE;
+    } else {
+      process.env.USERPROFILE = originalUserProfile;
+    }
+
+    if (originalCctoolboxHome === undefined) {
+      delete process.env.CCTOOLBOX_HOME;
+    } else {
+      process.env.CCTOOLBOX_HOME = originalCctoolboxHome;
+    }
+
     removeDir(tempRoot);
   }
 }
@@ -27,9 +53,6 @@ function writeSkill(dir, name, description = 'test skill', version = '1.0.0') {
 
 async function runTests() {
   await withTempDir(async (tempRoot) => {
-    process.env.CCTOOLBOX_HOME = tempRoot;
-    process.env.HOME = tempRoot;
-
     const { SkillService, LRUSkillCache } = require('../src/server/services/skill-service');
     const service = new SkillService();
 

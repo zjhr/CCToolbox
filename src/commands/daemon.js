@@ -1,8 +1,9 @@
 const pm2 = require('pm2');
 const path = require('path');
 const chalk = require('chalk');
-const { loadConfig } = require('../config/loader');
+const { loadConfig, saveConfig } = require('../config/loader');
 const { getLogFile } = require('../utils/app-path-manager');
+const { canBindPort, findAvailablePort } = require('../utils/port-helper');
 
 const PM2_APP_NAME = 'cctoolbox';
 const LEGACY_PM2_NAMES = ['coding-tool', 'cc-tool'];
@@ -79,7 +80,23 @@ async function handleStart() {
     }
 
     const config = loadConfig();
-    const port = config.ports?.webUI || 10099;
+    const originalPort = config.ports?.webUI || 10099;
+    let port = originalPort;
+
+    const canBindOriginalPort = await canBindPort(port);
+    if (!canBindOriginalPort) {
+      const fallbackStart = port >= 18099 ? port + 1 : 18099;
+      const fallbackPort = await findAvailablePort(fallbackStart);
+      if (!fallbackPort) {
+        throw new Error(`Web UI port ${port} is unavailable, and no fallback port could be found`);
+      }
+
+      config.ports = { ...(config.ports || {}), webUI: fallbackPort };
+      saveConfig(config);
+      port = fallbackPort;
+
+      console.log(chalk.yellow(`\n⚠️  Web UI 端口 ${originalPort} 不可用，已自动切换到 ${fallbackPort}`));
+    }
 
     // 启动 PM2 进程
     const appName = existing.proc ? existing.name : PM2_APP_NAME;
