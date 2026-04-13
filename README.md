@@ -52,11 +52,21 @@
 
 ### 从源码构建
 
+**macOS / Linux:**
 ```bash
 git clone https://github.com/zjhr/coding-tool.git
 cd coding-tool
 ./install.sh
 ```
+
+**Windows:**
+```powershell
+git clone https://github.com/zjhr/coding-tool.git
+cd coding-tool
+.\run.ps1 -Task install
+```
+
+> **Windows 用户**：请参阅 [WINDOWS.md](WINDOWS.md) 获取详细的 Windows 兼容性说明和故障排除指南。
 
 ### 验证安装
 
