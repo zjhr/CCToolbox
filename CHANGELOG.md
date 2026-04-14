@@ -6,6 +6,23 @@
 
 ## [Unreleased]
 
+## [3.5.3] - 2026-04-14
+
+### Added
+
+- 🆕 **Codex Hooks 通知支持** - 新增 `/api/codex/hooks` API，支持读取、保存和测试 Codex CLI 的 Stop hook 通知配置
+- 🆕 **Gemini Hooks 通知支持** - 新增 `/api/gemini/hooks` API，支持读取、保存和测试 Gemini CLI 的 AfterAgent hook 通知配置
+- 🎨 **三渠道通知设置面板** - SettingsDrawer 通知面板统一支持 Claude Code / Codex CLI / Gemini CLI，移除"暂不支持"提示，各渠道独立开关与测试
+- ✅ **测试覆盖完善** - 新增 `claude-hooks-notify-script.test.js`、`codex-hooks-api.test.js`、`gemini-hooks.test.js` 等测试文件
+
+### Changed
+
+- 🔄 **通知脚本生成通用化** - 改造通知脚本生成逻辑，支持按渠道生成独立脚本文件（`notify-hook.js` / `codex-notify-hook.js` / `gemini-notify-hook.js`），通知文案区分渠道来源
+
+### Fixed
+
+- 🐛 **Gemini 清空配置后活跃渠道显示** - 修复 `BaseChannelPanel.vue` 在 `currentChannelId` 为 null 且显示清空按钮时仍回退显示渠道标签的问题
+
 ## [3.5.2] - 2026-04-10
 
 ### Fixed

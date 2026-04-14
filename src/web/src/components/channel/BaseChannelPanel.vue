@@ -231,6 +231,9 @@ const { state, validation, actions } = useChannelManager(config)
 const { getChannelInflight } = useChannelScheduler(config.schedulerSource)
 
 const activeChannel = computed(() => {
+  if (state.currentChannelId === null && config.showClearButton) {
+    return null
+  }
   if (state.currentChannelId) {
     const matched = state.channels.find(channel => channel.id === state.currentChannelId)
     if (matched) return matched

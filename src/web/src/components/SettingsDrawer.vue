@@ -273,9 +273,21 @@
                           通过 Claude Code 的 Stop Hook 在任务完成时发送通知
                         </n-text>
                       </div>
-                      <n-switch
-                        v-model:value="notificationSettings.claude.enabled"
-                      />
+                      <n-space align="center">
+                        <n-button 
+                          v-if="notificationSettings.claude.enabled"
+                          size="tiny" 
+                          secondary 
+                          type="primary"
+                          :loading="testingNotification.claude"
+                          @click="handleTestNotification('claude')"
+                        >
+                          测试通知
+                        </n-button>
+                        <n-switch
+                          v-model:value="notificationSettings.claude.enabled"
+                        />
+                      </n-space>
                     </div>
 
                     <!-- 通知方式 -->
@@ -326,6 +338,138 @@
                   </div>
                 </div>
 
+                <n-divider dashed />
+
+                <!-- Codex CLI 通知 -->
+                <div class="setting-item">
+                  <div class="setting-label">
+                    <n-text strong>Codex CLI</n-text>
+                    <n-text depth="3" style="font-size: 13px; margin-top: 4px;">
+                      当 Codex CLI 任务完成时发送系统通知
+                    </n-text>
+                  </div>
+
+                  <div class="notification-options">
+                    <!-- 开启通知 -->
+                    <div class="visibility-item">
+                      <div class="visibility-info">
+                        <n-text strong>启用任务完成通知</n-text>
+                        <n-text depth="3" style="font-size: 13px;">
+                          通过 Codex CLI 的 post-command hook 发送通知
+                        </n-text>
+                      </div>
+                      <n-space align="center">
+                        <n-button 
+                          v-if="notificationSettings.codex.enabled"
+                          size="tiny" 
+                          secondary 
+                          type="primary"
+                          :loading="testingNotification.codex"
+                          @click="handleTestNotification('codex')"
+                        >
+                          测试通知
+                        </n-button>
+                        <n-switch
+                          v-model:value="notificationSettings.codex.enabled"
+                        />
+                      </n-space>
+                    </div>
+
+                    <!-- 通知方式 -->
+                    <div v-if="notificationSettings.codex.enabled" class="notification-type-section">
+                      <n-text depth="2" style="font-size: 13px; margin-bottom: 12px; display: block;">
+                        选择通知方式
+                      </n-text>
+                      <n-radio-group v-model:value="notificationSettings.codex.type">
+                        <n-space vertical>
+                          <n-radio value="notification">
+                            <div class="radio-content">
+                              <n-text strong>右上角卡片通知</n-text>
+                              <n-text depth="3" style="font-size: 12px; display: block;">
+                                轻量提醒，几秒后自动消失
+                              </n-text>
+                            </div>
+                          </n-radio>
+                          <n-radio value="dialog">
+                            <div class="radio-content">
+                              <n-text strong>弹窗对话框</n-text>
+                              <n-text depth="3" style="font-size: 12px; display: block;">
+                                强制提醒，需手动关闭
+                              </n-text>
+                            </div>
+                          </n-radio>
+                        </n-space>
+                      </n-radio-group>
+                    </div>
+                  </div>
+                </div>
+
+                <n-divider dashed />
+
+                <!-- Gemini CLI 通知 -->
+                <div class="setting-item">
+                  <div class="setting-label">
+                    <n-text strong>Gemini CLI</n-text>
+                    <n-text depth="3" style="font-size: 13px; margin-top: 4px;">
+                      当 Gemini CLI 任务完成时发送系统通知
+                    </n-text>
+                  </div>
+
+                  <div class="notification-options">
+                    <!-- 开启通知 -->
+                    <div class="visibility-item">
+                      <div class="visibility-info">
+                        <n-text strong>启用任务完成通知</n-text>
+                        <n-text depth="3" style="font-size: 13px;">
+                          通过 Gemini CLI 的 AfterAgent hook 发送通知
+                        </n-text>
+                      </div>
+                      <n-space align="center">
+                        <n-button 
+                          v-if="notificationSettings.gemini.enabled"
+                          size="tiny" 
+                          secondary 
+                          type="primary"
+                          :loading="testingNotification.gemini"
+                          @click="handleTestNotification('gemini')"
+                        >
+                          测试通知
+                        </n-button>
+                        <n-switch
+                          v-model:value="notificationSettings.gemini.enabled"
+                        />
+                      </n-space>
+                    </div>
+
+                    <!-- 通知方式 -->
+                    <div v-if="notificationSettings.gemini.enabled" class="notification-type-section">
+                      <n-text depth="2" style="font-size: 13px; margin-bottom: 12px; display: block;">
+                        选择通知方式
+                      </n-text>
+                      <n-radio-group v-model:value="notificationSettings.gemini.type">
+                        <n-space vertical>
+                          <n-radio value="notification">
+                            <div class="radio-content">
+                              <n-text strong>右上角卡片通知</n-text>
+                              <n-text depth="3" style="font-size: 12px; display: block;">
+                                轻量提醒，几秒后自动消失
+                              </n-text>
+                            </div>
+                          </n-radio>
+                          <n-radio value="dialog">
+                            <div class="radio-content">
+                              <n-text strong>弹窗对话框</n-text>
+                              <n-text depth="3" style="font-size: 12px; display: block;">
+                                强制提醒，需手动关闭
+                              </n-text>
+                            </div>
+                          </n-radio>
+                        </n-space>
+                      </n-radio-group>
+                    </div>
+                  </div>
+                </div>
+
                 <n-divider />
 
                 <!-- 飞书通知 -->
@@ -367,21 +511,6 @@
                       </n-text>
                     </div>
                   </div>
-                </div>
-
-                <n-divider />
-
-                <!-- Codex / Gemini 提示 -->
-                <div class="setting-item">
-                  <div class="setting-label">
-                    <n-text strong>Codex CLI / Gemini CLI</n-text>
-                    <n-text depth="3" style="font-size: 13px; margin-top: 4px;">
-                      暂不支持 - Codex 和 Gemini 目前没有 hooks 功能
-                    </n-text>
-                  </div>
-                  <n-alert type="info" :bordered="false" style="margin-top: 12px;">
-                    Codex CLI 和 Gemini CLI 暂未提供 hooks 机制，未来如有支持将自动适配
-                  </n-alert>
                 </div>
               </div>
             </div>
@@ -945,6 +1074,14 @@ const notificationSettings = ref({
     enabled: false,
     type: 'notification' // 'notification' | 'dialog'
   },
+  codex: {
+    enabled: false,
+    type: 'notification'
+  },
+  gemini: {
+    enabled: false,
+    type: 'notification'
+  },
   feishu: {
     enabled: false,
     webhookUrl: ''
@@ -952,6 +1089,14 @@ const notificationSettings = ref({
 })
 const originalNotificationSettings = ref({
   claude: {
+    enabled: false,
+    type: 'notification'
+  },
+  codex: {
+    enabled: false,
+    type: 'notification'
+  },
+  gemini: {
     enabled: false,
     type: 'notification'
   },
@@ -1168,23 +1313,39 @@ async function loadPortsConfig() {
 // 加载通知设置
 async function loadNotificationSettings() {
   try {
-    const response = await fetch('/api/claude/hooks')
-    if (response.ok) {
-      const data = await response.json()
-      notificationSettings.value = {
-        claude: {
-          enabled: data.stopHook?.enabled || false,
-          type: data.stopHook?.type || 'notification'
-        },
-        feishu: {
-          enabled: data.feishu?.enabled || false,
-          webhookUrl: data.feishu?.webhookUrl || ''
-        }
+    const [claudeRes, codexRes, geminiRes] = await Promise.all([
+      fetch('/api/claude/hooks'),
+      fetch('/api/codex/hooks'),
+      fetch('/api/gemini/hooks')
+    ])
+
+    const [claudeData, codexData, geminiData] = await Promise.all([
+      claudeRes.ok ? claudeRes.json() : {},
+      codexRes.ok ? codexRes.json() : {},
+      geminiRes.ok ? geminiRes.json() : {}
+    ])
+
+    notificationSettings.value = {
+      claude: {
+        enabled: claudeData.stopHook?.enabled || false,
+        type: claudeData.stopHook?.type || 'notification'
+      },
+      codex: {
+        enabled: codexData.stopHook?.enabled || false,
+        type: codexData.stopHook?.type || 'notification'
+      },
+      gemini: {
+        enabled: geminiData.afterAgentHook?.enabled || false,
+        type: geminiData.afterAgentHook?.type || 'notification'
+      },
+      feishu: {
+        enabled: claudeData.feishu?.enabled || false,
+        webhookUrl: claudeData.feishu?.webhookUrl || ''
       }
-      originalNotificationSettings.value = JSON.parse(JSON.stringify(notificationSettings.value))
-      // 获取平台信息用于显示安装提示
-      notificationPlatform.value = data.platform || ''
     }
+    originalNotificationSettings.value = JSON.parse(JSON.stringify(notificationSettings.value))
+    // 获取平台信息用于显示安装提示 (三个渠道平台应该是一样的)
+    notificationPlatform.value = claudeData.platform || codexData.platform || geminiData.platform || ''
   } catch (error) {
     console.error('Failed to load notification settings:', error)
   }
@@ -1194,33 +1355,81 @@ async function loadNotificationSettings() {
 async function handleSaveNotification() {
   savingNotification.value = true
   try {
-    const response = await fetch('/api/claude/hooks', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        stopHook: {
-          enabled: notificationSettings.value.claude.enabled,
-          type: notificationSettings.value.claude.type
-        },
-        feishu: {
-          enabled: notificationSettings.value.feishu.enabled,
-          webhookUrl: notificationSettings.value.feishu.webhookUrl
-        }
+    // 同时保存三个渠道
+    const responses = await Promise.all([
+      fetch('/api/claude/hooks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          stopHook: {
+            enabled: notificationSettings.value.claude.enabled,
+            type: notificationSettings.value.claude.type
+          },
+          feishu: {
+            enabled: notificationSettings.value.feishu.enabled,
+            webhookUrl: notificationSettings.value.feishu.webhookUrl
+          }
+        })
+      }),
+      fetch('/api/codex/hooks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          stopHook: {
+            enabled: notificationSettings.value.codex.enabled,
+            type: notificationSettings.value.codex.type
+          }
+        })
+      }),
+      fetch('/api/gemini/hooks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          afterAgentHook: {
+            enabled: notificationSettings.value.gemini.enabled,
+            type: notificationSettings.value.gemini.type
+          }
+        })
       })
-    })
+    ])
 
-    if (response.ok) {
+    const allOk = responses.every(res => res.ok)
+
+    if (allOk) {
       originalNotificationSettings.value = JSON.parse(JSON.stringify(notificationSettings.value))
       message.success('通知设置已保存')
     } else {
-      const error = await response.json()
-      message.error('保存失败：' + (error.error || '未知错误'))
+      message.error('部分设置保存失败')
     }
   } catch (error) {
     console.error('Failed to save notification settings:', error)
     message.error('保存失败：' + error.message)
   } finally {
     savingNotification.value = false
+  }
+}
+
+const testingNotification = ref({
+  claude: false,
+  codex: false,
+  gemini: false
+})
+
+async function handleTestNotification(channel) {
+  testingNotification.value[channel] = true
+  try {
+    const response = await fetch(`/api/${channel}/hooks/test`, { method: 'POST' })
+    if (response.ok) {
+      message.success(`${channel} 测试通知已发送`)
+    } else {
+      const error = await response.json()
+      message.error(`${channel} 测试通知发送失败：` + (error.error || '未知错误'))
+    }
+  } catch (error) {
+    console.error(`Failed to send ${channel} test notification:`, error)
+    message.error(`${channel} 测试通知发送失败：` + error.message)
+  } finally {
+    testingNotification.value[channel] = false
   }
 }
 

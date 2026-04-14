@@ -133,11 +133,27 @@ async function startServer(port) {
   app.use('/api/openspec', require('./api/openspec')());
   app.use('/api/serena', require('./api/serena')());
   app.use('/api/trash', require('./api/trash')(config));
-  const claudeHooks = require('./api/claude-hooks');
-  app.use('/api/claude/hooks', claudeHooks);
+  const claudeHooksRouter = require('./api/claude-hooks');
+  const codexHooksRouter = require('./api/codex-hooks');
+  const geminiHooksRouter = require('./api/gemini-hooks');
+  app.use('/api/claude/hooks', claudeHooksRouter);
+  app.use('/api/codex/hooks', codexHooksRouter);
+  app.use('/api/gemini/hooks', geminiHooksRouter);
 
-  // 初始化 Claude hooks 配置（仅在用户明确启用时写入）
-  claudeHooks.initDefaultHooks();
+  // 初始化三渠道 hooks 配置（仅在用户明确启用时写入，失败不阻塞服务）
+  [
+    ['Claude', claudeHooksRouter],
+    ['Codex', codexHooksRouter],
+    ['Gemini', geminiHooksRouter]
+  ].forEach(([name, hooksRouter]) => {
+    try {
+      if (typeof hooksRouter.initDefaultHooks === 'function') {
+        hooksRouter.initDefaultHooks();
+      }
+    } catch (error) {
+      console.error(`[${name} Hooks] 初始化默认配置失败:`, error);
+    }
+  });
   startTrashCleanup();
 
   // Serve static files in production

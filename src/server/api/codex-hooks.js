@@ -6,8 +6,7 @@ const os = require('os');
 const https = require('https');
 const http = require('http');
 
-// Claude settings.json 路径
-const CLAUDE_SETTINGS_PATH = path.join(os.homedir(), '.claude', 'settings.json');
+const CODEX_HOOKS_PATH = path.join(os.homedir(), '.codex', 'hooks.json');
 
 const { getAppDir } = require('../../utils/app-path-manager');
 const {
@@ -17,117 +16,78 @@ const {
   writeUIConfig
 } = require('../services/feishu-config');
 
-const CHANNEL_DISPLAY_NAME_MAP = {
-  claude: 'Claude Code',
-  codex: 'Codex CLI',
-  gemini: 'Gemini CLI'
-};
-
-const CHANNEL_NOTIFY_SCRIPT_NAME_MAP = {
-  claude: 'notify-hook.js',
-  codex: 'codex-notify-hook.js',
-  gemini: 'gemini-notify-hook.js'
-};
-
-function normalizeChannelName(channelName = 'claude') {
-  const normalized = String(channelName || 'claude').toLowerCase();
-  return CHANNEL_DISPLAY_NAME_MAP[normalized] ? normalized : 'claude';
-}
-
-function getChannelDisplayName(channelName = 'claude') {
-  return CHANNEL_DISPLAY_NAME_MAP[normalizeChannelName(channelName)];
-}
-
-// 通知脚本路径（用于飞书通知）
-function getNotifyScriptPath(channelName = 'claude') {
-  const normalizedChannel = normalizeChannelName(channelName);
-  const fileName = CHANNEL_NOTIFY_SCRIPT_NAME_MAP[normalizedChannel];
-  return path.join(getAppDir(), fileName);
-}
-
-// 检测操作系统
 const platform = os.platform(); // 'darwin' | 'win32' | 'linux'
 
-// 读取 Claude settings.json
-function readClaudeSettings() {
+function getNotifyScriptPath() {
+  return path.join(getAppDir(), 'codex-notify-hook.js');
+}
+
+function readCodexHooks() {
   try {
-    if (fs.existsSync(CLAUDE_SETTINGS_PATH)) {
-      const content = fs.readFileSync(CLAUDE_SETTINGS_PATH, 'utf8');
+    if (fs.existsSync(CODEX_HOOKS_PATH)) {
+      const content = fs.readFileSync(CODEX_HOOKS_PATH, 'utf8');
       return JSON.parse(content);
     }
     return {};
   } catch (error) {
-    console.error('Failed to read Claude settings:', error);
+    console.error('Failed to read Codex hooks:', error);
     return {};
   }
 }
 
-// 写入 Claude settings.json
-function writeClaudeSettings(settings) {
+function writeCodexHooks(config) {
   try {
-    const dir = path.dirname(CLAUDE_SETTINGS_PATH);
+    const dir = path.dirname(CODEX_HOOKS_PATH);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    fs.writeFileSync(CLAUDE_SETTINGS_PATH, JSON.stringify(settings, null, 2), 'utf8');
+    fs.writeFileSync(CODEX_HOOKS_PATH, JSON.stringify(config, null, 2), 'utf8');
     return true;
   } catch (error) {
-    console.error('Failed to write Claude settings:', error);
+    console.error('Failed to write Codex hooks:', error);
     return false;
   }
 }
 
-// 生成系统通知命令（跨平台）
-function generateSystemNotificationCommand(type, channelName = 'claude') {
-  const channelDisplayName = getChannelDisplayName(channelName);
-  const notifyMessage = `${channelDisplayName} 任务已完成 | 等待交互`;
+function generateSystemNotificationCommand(type) {
+  const notifyMessage = 'Codex CLI 任务已完成 | 等待交互';
 
   if (platform === 'darwin') {
-    // macOS
     if (type === 'dialog') {
       return `osascript -e 'display dialog "${notifyMessage}" with title "CCToolbox" buttons {"好的"} default button 1 with icon note'`;
-    } else {
-      // 优先使用 terminal-notifier（点击可打开终端），否则使用 osascript
-      // terminal-notifier 需要 brew install terminal-notifier
-      return `if command -v terminal-notifier &>/dev/null; then terminal-notifier -title "CCToolbox" -message "${notifyMessage}" -sound Glass -activate com.apple.Terminal; else osascript -e 'display notification "${notifyMessage}" with title "CCToolbox" sound name "Glass"'; fi`;
     }
-  } else if (platform === 'win32') {
-    // Windows
+    return `if command -v terminal-notifier &>/dev/null; then terminal-notifier -title "CCToolbox" -message "${notifyMessage}" -sound Glass -activate com.apple.Terminal; else osascript -e 'display notification "${notifyMessage}" with title "CCToolbox" sound name "Glass"'; fi`;
+  }
+
+  if (platform === 'win32') {
     if (type === 'dialog') {
       return `powershell -Command "Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('${notifyMessage}', 'CCToolbox', 'OK', 'Information')"`;
-    } else {
-      return `powershell -Command "$wshell = New-Object -ComObject Wscript.Shell; $wshell.Popup('${notifyMessage}', 5, 'CCToolbox', 0x40)"`;
     }
-  } else {
-    // Linux
-    if (type === 'dialog') {
-      return `zenity --info --title="CCToolbox" --text="${notifyMessage}" 2>/dev/null || notify-send "CCToolbox" "${notifyMessage}"`;
-    } else {
-      return `notify-send "CCToolbox" "${notifyMessage}"`;
-    }
+    return `powershell -Command "$wshell = New-Object -ComObject Wscript.Shell; $wshell.Popup('${notifyMessage}', 5, 'CCToolbox', 0x40)"`;
   }
+
+  if (type === 'dialog') {
+    return `zenity --info --title="CCToolbox" --text="${notifyMessage}" 2>/dev/null || notify-send "CCToolbox" "${notifyMessage}"`;
+  }
+  return `notify-send "CCToolbox" "${notifyMessage}"`;
 }
 
-// 生成通知脚本内容（支持系统通知 + 飞书通知）
-function generateNotifyScript(config, channelName = 'claude') {
+function generateNotifyScript(config) {
   const { systemNotification, feishu } = config;
-  const channelDisplayName = getChannelDisplayName(channelName);
 
   let script = `#!/usr/bin/env node
-// CCToolbox 通知脚本 - 自动生成，请勿手动修改
+// CCToolbox Codex 通知脚本 - 自动生成，请勿手动修改
 const https = require('https');
 const http = require('http');
 const { execSync } = require('child_process');
 const os = require('os');
 
-const platform = os.platform();
 const timestamp = new Date().toLocaleString('zh-CN');
 
 `;
 
-  // 系统通知部分
   if (systemNotification && systemNotification.enabled) {
-    const cmd = generateSystemNotificationCommand(systemNotification.type, channelName);
+    const cmd = generateSystemNotificationCommand(systemNotification.type);
     script += `// 系统通知
 try {
   execSync(${JSON.stringify(cmd)}, { stdio: 'ignore' });
@@ -138,7 +98,6 @@ try {
 `;
   }
 
-  // 飞书通知部分
   if (feishu && feishu.enabled && feishu.webhookUrl) {
     script += `// 飞书通知
 const feishuUrl = ${JSON.stringify(feishu.webhookUrl)};
@@ -146,13 +105,13 @@ const feishuData = JSON.stringify({
   msg_type: 'interactive',
   card: {
     header: {
-      title: { tag: 'plain_text', content: ${JSON.stringify(`🎉 CCToolbox - ${channelDisplayName} 任务完成`)} },
+      title: { tag: 'plain_text', content: '🎉 CCToolbox - Codex CLI 任务完成' },
       template: 'green'
     },
     elements: [
       {
         tag: 'div',
-        text: { tag: 'lark_md', content: ${JSON.stringify(`**状态**: ${channelDisplayName} 任务已完成 | 等待交互`)} }
+        text: { tag: 'lark_md', content: '**状态**: Codex CLI 任务已完成 | 等待交互' }
       },
       {
         tag: 'div',
@@ -181,7 +140,7 @@ try {
   };
 
   const reqModule = urlObj.protocol === 'https:' ? https : http;
-  const req = reqModule.request(options, (res) => {
+  const req = reqModule.request(options, () => {
     // 忽略响应
   });
   req.on('error', (e) => {
@@ -198,31 +157,30 @@ try {
   return script;
 }
 
-// 写入通知脚本
-function writeNotifyScript(config, channelName = 'claude') {
+function writeNotifyScript(config) {
   try {
-    const notifyPath = getNotifyScriptPath(channelName);
+    const notifyPath = getNotifyScriptPath();
     const dir = path.dirname(notifyPath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
 
-    const script = generateNotifyScript(config, channelName);
+    const script = generateNotifyScript(config);
     fs.writeFileSync(notifyPath, script, { mode: 0o755 });
     return true;
   } catch (error) {
-    console.error('Failed to write notify script:', error);
+    console.error('Failed to write Codex notify script:', error);
     return false;
   }
 }
 
-// 从现有 hooks 配置中解析 Stop hook 状态
-function parseStopHookStatus(settings) {
-  const hooks = settings.hooks;
+function parseStopHookStatus(config) {
+  const hooks = config.hooks;
   if (!hooks || !hooks.Stop || !Array.isArray(hooks.Stop) || hooks.Stop.length === 0) {
     return { enabled: false, type: 'notification' };
   }
 
+  // Codex hooks 是嵌套结构: Stop[i].hooks[j].command
   for (const entry of hooks.Stop) {
     const innerHooks = entry.hooks || [];
     for (const inner of innerHooks) {
@@ -234,7 +192,7 @@ function parseStopHookStatus(settings) {
       const isNotification = command.includes('display notification') ||
                              command.includes('Popup') ||
                              command.includes('notify-send');
-      const isOurScript = command.includes('notify-hook.js');
+      const isOurScript = command.includes('codex-notify-hook.js');
 
       if (isDialog || isNotification || isOurScript) {
         return {
@@ -248,48 +206,50 @@ function parseStopHookStatus(settings) {
   return { enabled: false, type: 'notification' };
 }
 
+// 判断是否是 CCToolbox 自己的 hook 条目
 function isCCToolboxEntry(entry) {
   const innerHooks = entry.hooks || [];
   return innerHooks.some((inner) => {
     const cmd = inner.command || '';
-    return cmd.includes('notify-hook.js');
+    return cmd.includes('codex-notify-hook.js');
   });
 }
 
-// 更新 Stop hook 配置
 function updateStopHook(systemNotification, feishu) {
-  const settings = readClaudeSettings();
+  const hooksConfig = readCodexHooks();
 
-  // 检查是否有任何通知需要启用
   const hasSystemNotification = systemNotification && systemNotification.enabled;
   const hasFeishu = feishu && feishu.enabled && feishu.webhookUrl;
 
   if (!hasSystemNotification && !hasFeishu) {
     // 禁用：只删除 CCToolbox 自己的条目，保留用户的其他 hooks
-    if (settings.hooks && settings.hooks.Stop && Array.isArray(settings.hooks.Stop)) {
-      settings.hooks.Stop = settings.hooks.Stop.filter((entry) => !isCCToolboxEntry(entry));
-      if (settings.hooks.Stop.length === 0) {
-        delete settings.hooks.Stop;
+    if (hooksConfig.hooks && hooksConfig.hooks.Stop && Array.isArray(hooksConfig.hooks.Stop)) {
+      hooksConfig.hooks.Stop = hooksConfig.hooks.Stop.filter((entry) => !isCCToolboxEntry(entry));
+      if (hooksConfig.hooks.Stop.length === 0) {
+        delete hooksConfig.hooks.Stop;
       }
-      if (Object.keys(settings.hooks).length === 0) {
-        delete settings.hooks;
+      if (Object.keys(hooksConfig.hooks).length === 0) {
+        delete hooksConfig.hooks;
       }
     }
-    // 删除通知脚本
+
     const notifyPath = getNotifyScriptPath();
     if (fs.existsSync(notifyPath)) {
       fs.unlinkSync(notifyPath);
     }
   } else {
-    // 生成并写入通知脚本
     writeNotifyScript({ systemNotification, feishu });
 
-    settings.hooks = settings.hooks || {};
-    if (!Array.isArray(settings.hooks.Stop)) {
-      settings.hooks.Stop = [];
+    hooksConfig.hooks = hooksConfig.hooks || {};
+    if (!Array.isArray(hooksConfig.hooks.Stop)) {
+      hooksConfig.hooks.Stop = [];
     }
-    settings.hooks.Stop = settings.hooks.Stop.filter((entry) => !isCCToolboxEntry(entry));
-    settings.hooks.Stop.push({
+
+    // 先移除已有的 CCToolbox 条目（避免重复）
+    hooksConfig.hooks.Stop = hooksConfig.hooks.Stop.filter((entry) => !isCCToolboxEntry(entry));
+
+    // 追加 CCToolbox 条目（正确的嵌套格式）
+    hooksConfig.hooks.Stop.push({
       hooks: [{
         type: 'command',
         command: `node "${getNotifyScriptPath()}"`
@@ -297,52 +257,46 @@ function updateStopHook(systemNotification, feishu) {
     });
   }
 
-  return writeClaudeSettings(settings);
+  return writeCodexHooks(hooksConfig);
 }
 
-// 初始化默认 hooks 配置（服务启动时调用）
 function initDefaultHooks() {
   try {
     const uiConfig = readUIConfig();
 
-    // 如果用户主动关闭过通知，不自动开启
-    if (uiConfig.claudeNotificationDisabledByUser === true) {
-      console.log('[Claude Hooks] 用户已主动关闭通知，跳过自动初始化');
+    if (uiConfig.codexNotificationDisabledByUser === true) {
+      console.log('[Codex Hooks] 用户已主动关闭通知，跳过自动初始化');
       return;
     }
 
-    // 未明确启用过通知时不自动写入 Claude hooks
-    if (uiConfig.claudeNotificationEnabledByUser !== true) {
-      console.log('[Claude Hooks] 未检测到用户启用记录，跳过自动初始化');
+    if (uiConfig.codexNotificationEnabledByUser !== true) {
+      console.log('[Codex Hooks] 未检测到用户启用记录，跳过自动初始化');
       return;
     }
 
-    const settings = readClaudeSettings();
-    const currentStatus = parseStopHookStatus(settings);
+    const hooksConfig = readCodexHooks();
+    const currentStatus = parseStopHookStatus(hooksConfig);
 
-    // 如果已经有 Stop hook 配置，不覆盖
     if (currentStatus.enabled) {
-      console.log('[Claude Hooks] 已存在 Stop hook 配置，跳过初始化');
+      console.log('[Codex Hooks] 已存在 Stop hook 配置，跳过初始化');
       return;
     }
 
-    // 写入默认配置（右上角卡片通知）
     const systemNotification = { enabled: true, type: 'notification' };
     const feishu = getFeishuConfig();
 
     if (updateStopHook(systemNotification, feishu)) {
-      console.log('[Claude Hooks] 已自动开启任务完成通知（右上角卡片）');
+      console.log('[Codex Hooks] 已自动开启任务完成通知（右上角卡片）');
     }
   } catch (error) {
-    console.error('[Claude Hooks] 初始化默认配置失败:', error);
+    console.error('[Codex Hooks] 初始化默认配置失败:', error);
   }
 }
 
-// GET /api/claude/hooks - 获取 hooks 配置状态
 router.get('/', (req, res) => {
   try {
-    const settings = readClaudeSettings();
-    const stopHook = parseStopHookStatus(settings);
+    const hooksConfig = readCodexHooks();
+    const stopHook = parseStopHookStatus(hooksConfig);
     const feishu = getFeishuConfig();
 
     res.json({
@@ -352,22 +306,19 @@ router.get('/', (req, res) => {
       platform
     });
   } catch (error) {
-    console.error('Error getting Claude hooks:', error);
+    console.error('Error getting Codex hooks:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// POST /api/claude/hooks - 保存 hooks 配置
 router.post('/', (req, res) => {
   try {
     const { stopHook, feishu } = req.body;
 
-    // 保存飞书配置到 UI 配置文件
     if (feishu !== undefined) {
       saveFeishuConfig(feishu);
     }
 
-    // 更新 Stop hook
     const systemNotification = stopHook ? {
       enabled: stopHook.enabled,
       type: stopHook.type || 'notification'
@@ -375,19 +326,16 @@ router.post('/', (req, res) => {
 
     const feishuConfig = feishu || getFeishuConfig();
 
-    // 更新用户关闭标记
     const uiConfig = readUIConfig();
     if (systemNotification.enabled || feishuConfig.enabled) {
-      // 用户开启了通知，清除关闭标记并记录已启用
-      uiConfig.claudeNotificationEnabledByUser = true;
-      if (uiConfig.claudeNotificationDisabledByUser) {
-        delete uiConfig.claudeNotificationDisabledByUser;
+      uiConfig.codexNotificationEnabledByUser = true;
+      if (uiConfig.codexNotificationDisabledByUser) {
+        delete uiConfig.codexNotificationDisabledByUser;
       }
     } else {
-      // 用户关闭了所有通知
-      uiConfig.claudeNotificationDisabledByUser = true;
-      if (uiConfig.claudeNotificationEnabledByUser) {
-        delete uiConfig.claudeNotificationEnabledByUser;
+      uiConfig.codexNotificationDisabledByUser = true;
+      if (uiConfig.codexNotificationEnabledByUser) {
+        delete uiConfig.codexNotificationEnabledByUser;
       }
     }
     writeUIConfig(uiConfig);
@@ -403,30 +351,28 @@ router.post('/', (req, res) => {
       res.status(500).json({ error: '保存配置失败' });
     }
   } catch (error) {
-    console.error('Error saving Claude hooks:', error);
+    console.error('Error saving Codex hooks:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// POST /api/claude/hooks/test - 测试通知
 router.post('/test', (req, res) => {
   try {
     const { type, testFeishu, webhookUrl } = req.body;
 
     if (testFeishu && webhookUrl) {
-      // 测试飞书通知
       const urlObj = new URL(webhookUrl);
       const data = JSON.stringify({
         msg_type: 'interactive',
         card: {
           header: {
-            title: { tag: 'plain_text', content: '🧪 CCToolbox - 测试通知' },
+            title: { tag: 'plain_text', content: '🧪 CCToolbox - Codex CLI 测试通知' },
             template: 'blue'
           },
           elements: [
             {
               tag: 'div',
-              text: { tag: 'lark_md', content: '**状态**: 这是一条测试通知' }
+              text: { tag: 'lark_md', content: '**状态**: 这是一条 Codex CLI 测试通知' }
             },
             {
               tag: 'div',
@@ -453,12 +399,8 @@ router.post('/test', (req, res) => {
       };
 
       const reqModule = urlObj.protocol === 'https:' ? https : http;
-      const request = reqModule.request(options, (response) => {
-        let body = '';
-        response.on('data', chunk => body += chunk);
-        response.on('end', () => {
-          res.json({ success: true, message: '飞书测试通知已发送' });
-        });
+      const request = reqModule.request(options, () => {
+        res.json({ success: true, message: '飞书测试通知已发送' });
       });
 
       request.on('error', (e) => {
@@ -468,24 +410,16 @@ router.post('/test', (req, res) => {
       request.write(data);
       request.end();
     } else {
-      // 测试系统通知
       const command = generateSystemNotificationCommand(type || 'notification');
       const { execSync } = require('child_process');
       execSync(command, { stdio: 'ignore' });
       res.json({ success: true, message: '系统测试通知已发送' });
     }
   } catch (error) {
-    console.error('Error testing notification:', error);
+    console.error('Error testing Codex notification:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// 导出初始化函数供服务启动时调用
 module.exports = router;
 module.exports.initDefaultHooks = initDefaultHooks;
-module.exports.__test__ = {
-  getNotifyScriptPath,
-  generateSystemNotificationCommand,
-  generateNotifyScript,
-  writeNotifyScript
-};

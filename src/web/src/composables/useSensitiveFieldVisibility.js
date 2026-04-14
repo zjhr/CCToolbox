@@ -12,6 +12,22 @@ export default function useSensitiveFieldVisibility(options = {}) {
 
   const visibleState = reactive({})
 
+  function isMaskedValue(value, rawValue) {
+    if (typeof value !== 'string' || !value) return false
+    if (!value.includes('*')) return false
+
+    if (typeof rawValue === 'string' && rawValue) {
+      const prefixLength = Math.min(4, rawValue.length)
+      const rawPrefix = rawValue.slice(0, prefixLength)
+      if (rawPrefix && value.startsWith(rawPrefix)) {
+        return true
+      }
+    }
+
+    // 兜底：连续星号通常代表掩码（兼容短 key 掩码场景）
+    return /\*{2,}/.test(value)
+  }
+
   /**
    * 计算字段显示值：密码字段在显示态优先回退到原始值
    * @param {{ key?: string, type?: string }} field
@@ -23,6 +39,12 @@ export default function useSensitiveFieldVisibility(options = {}) {
     if (!visibleState[field.key]) return currentValue
 
     const rawValue = resolveRawValue(field)
+    if (typeof currentValue === 'string') {
+      // 用户已编辑（或清空）时，优先保留当前表单值，避免被旧密钥覆盖
+      if (!isMaskedValue(currentValue, rawValue)) {
+        return currentValue
+      }
+    }
     if (typeof rawValue === 'string' && rawValue) {
       return rawValue
     }
