@@ -150,6 +150,51 @@ function scanDirForHashes(dir, targetHashes, maxDepth, results, currentDepth = 0
 }
 
 /**
+ * 扫描目录及其子目录，查找指定名称的目录
+ * @param {string} dir - 要扫描的目录
+ * @param {Set} targetNames - 目标目录名集合
+ * @param {number} maxDepth - 最大扫描深度
+ * @param {Map} results - 结果映射 (hash → path)
+ * @param {number} currentDepth - 当前深度
+ */
+function scanDirForNames(dir, targetNames, maxDepth, results, currentDepth = 0) {
+  if (currentDepth > maxDepth || targetNames.size === 0) {
+    return;
+  }
+
+  try {
+    const items = fs.readdirSync(dir, { withFileTypes: true });
+    for (const item of items) {
+      // 跳过隐藏目录和常见的无关目录
+      if (item.name.startsWith('.') ||
+          item.name === 'node_modules' ||
+          item.name === 'Library' ||
+          item.name === 'Applications') {
+        continue;
+      }
+
+      if (item.isDirectory()) {
+        const fullPath = path.join(dir, item.name);
+
+        // 检查是否是目标目录名
+        if (targetNames.has(item.name)) {
+          const hash = getFilePathHash(fullPath);
+          results.set(hash, fullPath);
+          targetNames.delete(item.name);
+        }
+
+        // 继续递归搜索子目录
+        if (targetNames.size > 0) {
+          scanDirForNames(fullPath, targetNames, maxDepth, results, currentDepth + 1);
+        }
+      }
+    }
+  } catch (err) {
+    // 忽略权限错误等
+  }
+}
+
+/**
  * 建立所有项目 hash 到路径的映射（彩虹表方法）
  * @returns {Map} hash → path 映射
  */
@@ -161,42 +206,78 @@ function buildPathMapping() {
     return pathMappingCache;
   }
 
-  const projectHashes = scanProjects();
-  if (projectHashes.length === 0) {
+  const projectDirNames = scanProjects();
+  if (projectDirNames.length === 0) {
     pathMappingCache = new Map();
     pathMappingCacheTime = now;
     return pathMappingCache;
   }
 
-  const targetHashes = new Set(projectHashes);
   const results = new Map();
   const homeDir = os.homedir();
 
-  // 定义要扫描的目录及其最大深度
-  // 深度说明：depth=3 表示可以扫描到 Desktop/a/b/c 这样的 4 层目录
-  const searchPaths = [
-    { dir: homeDir, depth: 0 },                           // 只检查 home 目录本身
-    { dir: path.join(homeDir, 'Desktop'), depth: 4 },     // Desktop 及 4 层子目录
-    { dir: path.join(homeDir, 'Documents'), depth: 4 },   // Documents 及 4 层子目录
-    { dir: path.join(homeDir, 'Downloads'), depth: 3 },   // Downloads 及 3 层子目录
-    { dir: path.join(homeDir, 'Projects'), depth: 4 },    // Projects 及 4 层子目录
-    { dir: path.join(homeDir, 'Code'), depth: 4 },        // Code 及 4 层子目录
-    { dir: path.join(homeDir, 'workspace'), depth: 4 },   // workspace 及 4 层子目录
-    { dir: path.join(homeDir, 'dev'), depth: 4 },         // dev 及 4 层子目录
-    { dir: path.join(homeDir, 'src'), depth: 4 },         // src 及 4 层子目录
-    { dir: path.join(homeDir, 'work'), depth: 4 },        // work 及 4 层子目录
-    { dir: path.join(homeDir, 'repos'), depth: 4 },       // repos 及 4 层子目录
-    { dir: path.join(homeDir, 'github'), depth: 4 },      // github 及 4 层子目录
-  ];
+  // 分离旧风格（64位hash）和新风格（可读名称）的目录
+  const hashStyleDirs = projectDirNames.filter(name => /^[a-f0-9]{64}$/.test(name));
+  const nameStyleDirs = projectDirNames.filter(name => !/^[a-f0-9]{64}$/.test(name));
 
-  for (const { dir, depth } of searchPaths) {
-    if (fs.existsSync(dir)) {
-      scanDirForHashes(dir, targetHashes, depth, results);
+  // 处理旧风格：彩虹表扫描
+  if (hashStyleDirs.length > 0) {
+    const targetHashes = new Set(hashStyleDirs);
+    const searchPaths = [
+      { dir: homeDir, depth: 0 },                           // 只检查 home 目录本身
+      { dir: path.join(homeDir, 'Desktop'), depth: 4 },     // Desktop 及 4 层子目录
+      { dir: path.join(homeDir, 'Documents'), depth: 4 },   // Documents 及 4 层子目录
+      { dir: path.join(homeDir, 'Downloads'), depth: 3 },   // Downloads 及 3 层子目录
+      { dir: path.join(homeDir, 'Projects'), depth: 4 },    // Projects 及 4 层子目录
+      { dir: path.join(homeDir, 'Code'), depth: 4 },        // Code 及 4 层子目录
+      { dir: path.join(homeDir, 'workspace'), depth: 4 },   // workspace 及 4 层子目录
+      { dir: path.join(homeDir, 'dev'), depth: 4 },         // dev 及 4 层子目录
+      { dir: path.join(homeDir, 'src'), depth: 4 },         // src 及 4 层子目录
+      { dir: path.join(homeDir, 'work'), depth: 4 },        // work 及 4 层子目录
+      { dir: path.join(homeDir, 'repos'), depth: 4 },       // repos 及 4 层子目录
+      { dir: path.join(homeDir, 'github'), depth: 4 },      // github 及 4 层子目录
+    ];
+
+    for (const { dir, depth } of searchPaths) {
+      if (fs.existsSync(dir)) {
+        scanDirForHashes(dir, targetHashes, depth, results);
+      }
+
+      // 如果所有目标都已找到，提前结束
+      if (results.size >= targetHashes.size) {
+        break;
+      }
     }
+  }
 
-    // 如果所有目标都已找到，提前结束
-    if (results.size >= targetHashes.size) {
-      break;
+  // 处理新风格：递归搜索同名目录
+  if (nameStyleDirs.length > 0) {
+    const targetNames = new Set(nameStyleDirs);
+    const searchPaths = [
+      { dir: homeDir, depth: 0 },
+      { dir: path.join(homeDir, '.gemini', 'history'), depth: 1 },  // Gemini CLI 历史目录
+      { dir: path.join(homeDir, 'Desktop'), depth: 4 },
+      { dir: path.join(homeDir, 'Documents'), depth: 4 },
+      { dir: path.join(homeDir, 'Downloads'), depth: 3 },
+      { dir: path.join(homeDir, 'Projects'), depth: 4 },
+      { dir: path.join(homeDir, 'Code'), depth: 4 },
+      { dir: path.join(homeDir, 'workspace'), depth: 4 },
+      { dir: path.join(homeDir, 'dev'), depth: 4 },
+      { dir: path.join(homeDir, 'src'), depth: 4 },
+      { dir: path.join(homeDir, 'work'), depth: 4 },
+      { dir: path.join(homeDir, 'repos'), depth: 4 },
+      { dir: path.join(homeDir, 'github'), depth: 4 },
+      { dir: path.join(homeDir, 'ai'), depth: 4 },  // 常见的 AI 项目目录
+    ];
+
+    for (const { dir, depth } of searchPaths) {
+      if (!fs.existsSync(dir)) continue;
+
+      scanDirForNames(dir, targetNames, depth, results);
+
+      if (targetNames.size === 0) {
+        break;
+      }
     }
   }
 
@@ -208,7 +289,7 @@ function buildPathMapping() {
 
 /**
  * 扫描所有项目目录
- * @returns {Array} 项目 hash 数组
+ * @returns {Array} 项目目录名数组（可能是 64 位 hash 或可读名称）
  */
 function scanProjects() {
   const tmpDir = getTmpDir();
@@ -221,9 +302,12 @@ function scanProjects() {
 
   return entries
     .filter(entry => entry.isDirectory())
-    // 过滤掉非项目目录（如 bin）- projectHash 是 64 位十六进制字符串
-    .filter(entry => /^[a-f0-9]{64}$/.test(entry.name))
-    .map(entry => entry.name); // 项目 hash
+    // 过滤掉非项目目录（如 bin）- 只保留包含 chats 子目录的
+    .filter(entry => {
+      const chatsDir = path.join(tmpDir, entry.name, 'chats');
+      return fs.existsSync(chatsDir);
+    })
+    .map(entry => entry.name); // 项目目录名（可能是 hash 也可能是可读名称）
 }
 
 /**
@@ -382,11 +466,11 @@ function readSessionFull(filePath) {
  * @returns {Array} 会话对象数组
  */
 function getAllSessions() {
-  const projectHashes = scanProjects();
+  const projectDirNames = scanProjects();
   const allSessions = [];
 
-  projectHashes.forEach(projectHash => {
-    const sessionFiles = scanProjectSessions(projectHash);
+  projectDirNames.forEach(projectDirName => {
+    const sessionFiles = scanProjectSessions(projectDirName);
 
     sessionFiles.forEach(file => {
       const meta = readSessionMeta(file.filePath);
@@ -409,7 +493,8 @@ function getAllSessions() {
         filePath: file.filePath,
         size,
         mtime,
-        source: 'gemini'
+        source: 'gemini',
+        projectDirName // 保留目录名用于 displayName fallback
       });
     });
   });
@@ -475,8 +560,11 @@ function getProjects() {
         if (projectPath === os.homedir()) {
           displayName = '~';
         }
+      } else if (session.projectDirName && !/^[a-f0-9]{64}$/.test(session.projectDirName)) {
+        // 新风格目录：目录名本身就是可读的项目名
+        displayName = session.projectDirName;
       } else {
-        // 未找到路径，使用 hash 前 8 位
+        // 旧风格目录且未找到路径，使用 hash 前 8 位
         displayName = `Project ${projectHash.substring(0, 8)}`;
       }
 
