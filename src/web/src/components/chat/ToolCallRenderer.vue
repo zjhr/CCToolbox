@@ -125,18 +125,24 @@
           <div class="json-header">
             <span>JSON 详情</span>
           </div>
-          <n-collapse-transition :show="!isCollapsed(index, call)">
-            <div class="json-body">
-              <div v-if="call.input !== undefined" class="json-block">
-                <div class="json-title">输入</div>
-                <pre>{{ formatJson(call.input) }}</pre>
-              </div>
-              <div v-if="call.output !== undefined" class="json-block">
-                <div class="json-title">输出</div>
-                <pre>{{ formatJson(call.output) }}</pre>
-              </div>
+          <div class="json-body">
+            <div v-if="call.input !== undefined" class="json-block">
+              <div class="json-title">输入</div>
+              <VueJsonPretty
+                :key="'input-' + index + '-' + getExpandDepth(index, call)"
+                :data="parseJsonData(call.input)"
+                :deep="getExpandDepth(index, call)"
+              />
             </div>
-          </n-collapse-transition>
+            <div v-if="call.output !== undefined" class="json-block">
+              <div class="json-title">输出</div>
+              <VueJsonPretty
+                :key="'output-' + index + '-' + getExpandDepth(index, call)"
+                :data="parseJsonData(call.output)"
+                :deep="getExpandDepth(index, call)"
+              />
+            </div>
+          </div>
           <button
             v-if="shouldShowJsonToggle(call)"
             class="expand-btn"
@@ -155,6 +161,8 @@
 import { ref, watch, computed } from 'vue'
 import { NCheckbox, NCollapseTransition, NTag, NIcon, NButton } from 'naive-ui'
 import { BuildOutline as ToolIcon } from '@vicons/ionicons5'
+import VueJsonPretty from 'vue-json-pretty'
+import 'vue-json-pretty/lib/styles.css'
 
 const props = defineProps({
   toolCalls: {
@@ -169,7 +177,7 @@ const props = defineProps({
 
 const emit = defineEmits(['click-task'])
 
-const collapseStates = ref({})
+const expandDepths = ref({})
 const terminalCollapseStates = ref({})
 const listCollapseStates = ref({})
 const toolCalls = computed(() => props.toolCalls || [])
@@ -492,6 +500,14 @@ function extractOutputText(value) {
   return String(value)
 }
 
+function parseJsonData(data) {
+  if (data === undefined || data === null) return null
+  if (typeof data === 'string') {
+    try { return JSON.parse(data) } catch { return data }
+  }
+  return data
+}
+
 function normalizeData(data) {
   if (typeof data === 'string') {
     try {
@@ -565,22 +581,31 @@ function shouldCollapsePlan(items) {
   return items.length > 4 || totalChars > 240
 }
 
-function isCollapsed(index, call) {
+function getExpandDepth(index, call) {
   const key = getCallKey(call, index)
-  return Boolean(collapseStates.value[key])
+  if (expandDepths.value[key] !== undefined) return expandDepths.value[key]
+  const target = getCollapseTarget(call)
+  return shouldCollapse(parseJsonData(target)) ? 0 : Infinity
+}
+
+function isCollapsed(index, call) {
+  return getExpandDepth(index, call) !== Infinity
 }
 
 function toggleCollapse(index, call) {
   const key = getCallKey(call, index)
-  const collapseTarget = getCollapseTarget(call)
-  if (collapseStates.value[key] === undefined) {
-    collapseStates.value[key] = shouldCollapse(collapseTarget)
-  }
-  collapseStates.value[key] = !collapseStates.value[key]
+  const current = getExpandDepth(index, call)
+  expandDepths.value[key] = current === Infinity ? 0 : Infinity
+}
+
+function isFoldableJson(data) {
+  const parsed = parseJsonData(data)
+  return parsed !== null && parsed !== undefined && typeof parsed === 'object'
 }
 
 function shouldShowJsonToggle(call) {
-  return shouldCollapse(call?.input) || shouldCollapse(call?.output)
+  return (shouldCollapse(parseJsonData(call?.input)) && isFoldableJson(call?.input))
+    || (shouldCollapse(parseJsonData(call?.output)) && isFoldableJson(call?.output))
 }
 
 function getCollapseTarget(call) {
@@ -660,16 +685,16 @@ function isTextTruncated(text, maxLines = 2, maxChars = 120) {
 watch(
   () => props.toolCalls,
   (calls) => {
-    const nextStates = {}
+    const nextExpandDepths = {}
     const nextTerminalStates = {}
     const nextListStates = {}
     ;(calls || []).forEach((call, index) => {
       const key = getCallKey(call, index)
-      if (collapseStates.value[key] !== undefined) {
-        nextStates[key] = collapseStates.value[key]
+      if (expandDepths.value[key] !== undefined) {
+        nextExpandDepths[key] = expandDepths.value[key]
       } else {
-        const collapseTarget = call?.input !== undefined ? call.input : call?.output
-        nextStates[key] = shouldCollapse(collapseTarget)
+        const collapseTarget = getCollapseTarget(call)
+        nextExpandDepths[key] = shouldCollapse(parseJsonData(collapseTarget)) ? 0 : Infinity
       }
 
       const terminalKey = getTerminalKey(call, index)
@@ -706,7 +731,7 @@ watch(
         }
       }
     })
-    collapseStates.value = nextStates
+    expandDepths.value = nextExpandDepths
     terminalCollapseStates.value = nextTerminalStates
     listCollapseStates.value = nextListStates
   },
@@ -1011,18 +1036,6 @@ watch(
   margin-bottom: 6px;
 }
 
-.json-body pre {
-  margin: 0;
-  padding: 8px;
-  border-radius: 6px;
-  background: var(--n-code-color);
-  overflow-x: hidden;
-  white-space: pre-wrap;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-  font-size: 12px;
-}
-
 .expand-btn {
   margin-top: 8px;
   padding: 4px 12px;
@@ -1048,5 +1061,85 @@ watch(
   font-size: 11px;
   color: var(--n-text-color-3);
   margin-bottom: 4px;
+}
+
+/* vue-json-pretty 主题覆盖（浅色默认） */
+.json-view :deep(.vjs-tree) {
+  background: var(--n-code-color);
+  border-radius: 6px;
+  padding: 8px;
+  overflow-x: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.5;
+  font-family: 'Monaco', 'Consolas', 'Courier New', monospace;
+}
+
+.json-view :deep(.vjs-tree-node) {
+  line-height: 18px;
+}
+
+.json-view :deep(.vjs-key) {
+  color: #c678dd;
+}
+
+.json-view :deep(.vjs-value-string) {
+  color: #98c379;
+}
+
+.json-view :deep(.vjs-value-number),
+.json-view :deep(.vjs-value-boolean) {
+  color: #d19a66;
+}
+
+.json-view :deep(.vjs-value-null),
+.json-view :deep(.vjs-value-undefined) {
+  color: #c678dd;
+}
+
+.json-view :deep(.vjs-tree-node.is-highlight),
+.json-view :deep(.vjs-tree-node:hover),
+.json-view :deep(.vjs-tree-node .vjs-tree-node-actions) {
+  background-color: rgba(148, 163, 184, 0.16);
+}
+
+.json-view :deep(.vjs-tree-node .vjs-indent-unit.has-line) {
+  border-left-color: rgba(148, 163, 184, 0.55);
+}
+
+.json-view :deep(.vjs-tree-brackets),
+.json-view :deep(.vjs-carets) {
+  color: var(--n-text-color-2);
+}
+
+/* 深色主题覆盖 */
+:global([data-theme="dark"]) .json-view :deep(.vjs-key) {
+  color: #c792ea;
+}
+
+:global([data-theme="dark"]) .json-view :deep(.vjs-value-string) {
+  color: #c3e88d;
+}
+
+:global([data-theme="dark"]) .json-view :deep(.vjs-value-number),
+:global([data-theme="dark"]) .json-view :deep(.vjs-value-boolean) {
+  color: #f78c6c;
+}
+
+:global([data-theme="dark"]) .json-view :deep(.vjs-value-null),
+:global([data-theme="dark"]) .json-view :deep(.vjs-value-undefined) {
+  color: #c792ea;
+}
+
+:global([data-theme="dark"]) .json-view :deep(.vjs-tree-node.is-highlight),
+:global([data-theme="dark"]) .json-view :deep(.vjs-tree-node:hover),
+:global([data-theme="dark"]) .json-view :deep(.vjs-tree-node .vjs-tree-node-actions) {
+  background-color: rgba(46, 69, 88, 0.75);
+}
+
+:global([data-theme="dark"]) .json-view :deep(.vjs-tree-node .vjs-indent-unit.has-line) {
+  border-left-color: rgba(148, 163, 184, 0.42);
 }
 </style>

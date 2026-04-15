@@ -6,6 +6,16 @@
 
 ## [Unreleased]
 
+## [3.5.5] - 2026-04-15
+
+### Changed
+
+- 🔄 **ToolCallRenderer JSON 展示升级** - 引入 `vue-json-pretty` 组件替换原生 JSON 渲染，支持语法高亮、折叠导航和交互式展开
+
+### Added
+
+- 📦 **新增依赖包** - 添加 `@vueuse/core`、`diff`、`fast-diff`、`md-editor-v3`、`codemirror` 等依赖，完善前端工具链
+
 ## [3.5.4] - 2026-04-15
 
 ### Added
