@@ -19,6 +19,10 @@ const { isGeminiInstalled } = require('../services/gemini-config');
 const { loadAliases } = require('../services/alias');
 const { getTerminalLaunchCommand } = require('../services/terminal-config');
 const { buildMessageCounts } = require('../services/message-counts');
+const {
+  normalizeGeminiMessageContent,
+  recordGeminiUnknownShape
+} = require('../services/gemini-message-normalizer');
 
 module.exports = (config) => {
   const sessionListCache = getSessionListCache();
@@ -191,25 +195,37 @@ module.exports = (config) => {
 
       // 转换消息格式为前端期望的格式
       const convertedMessages = [];
+      let unknownShapeCountInSession = 0;
 
-      for (const msg of session.messages || []) {
+      for (const [index, msg] of (session.messages || []).entries()) {
+        const normalized = normalizeGeminiMessageContent(msg);
+        if (normalized.isUnknownStructure) {
+          unknownShapeCountInSession += 1;
+          recordGeminiUnknownShape({
+            sessionId,
+            messageIndex: index,
+            messageType: msg?.type,
+            unknownReason: normalized.unknownReason
+          });
+        }
+
         // 用户消息
         if (msg.type === 'user') {
           convertedMessages.push({
             type: 'user',
-            content: msg.content || '[空消息]',
+            content: normalized.normalizedText,
             timestamp: msg.timestamp,
             model: null
           });
         }
         // Gemini 助手消息（type 是 'gemini' 而不是 'assistant'）
         else if (msg.type === 'gemini' || msg.type === 'assistant') {
-          let content = msg.content || '[空消息]';
+          let content = normalized.normalizedText;
 
           // 如果有 thoughts（思考过程），添加到内容前面
           if (msg.thoughts && Array.isArray(msg.thoughts) && msg.thoughts.length > 0) {
             const thoughtsText = msg.thoughts.map(t =>
-              `**[思考: ${t.subject}]**\n${t.description}`
+              `**[思考: ${String(t?.subject || '未命名')}]**\n${String(t?.description || '')}`
             ).join('\n\n');
 
             content = `**[思考过程]**\n${thoughtsText}\n\n---\n\n${content}`;
@@ -222,6 +238,12 @@ module.exports = (config) => {
             model: msg.model || session.model || 'gemini'
           });
         }
+      }
+
+      if (unknownShapeCountInSession > 0) {
+        console.warn(
+          `[Gemini API] Session ${sessionId} has ${unknownShapeCountInSession} message(s) with unknown content shape`
+        );
       }
 
       // 分页处理

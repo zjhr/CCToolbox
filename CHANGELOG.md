@@ -6,6 +6,21 @@
 
 ## [Unreleased]
 
+## [3.5.4] - 2026-04-15
+
+### Added
+
+- 🆕 **Gemini 消息规范化服务** - 新增 `gemini-message-normalizer.js`，统一处理 Gemini 响应的消息格式标准化、角色转换和内容提取
+- 🆕 **ChatMessage 组件增强** - 前端 `ChatMessage.vue` 支持渲染规范化后的工具调用卡片和数据结构
+
+### Changed
+
+- 🔄 **Gemini 会话 API 优化** - `gemini-sessions.js` 集成消息规范化服务，提升消息处理一致性
+
+### Fixed
+
+- ✅ **测试覆盖完善** - 新增 `gemini-session-message-normalization.test.js` 测试文件
+
 ## [3.5.3] - 2026-04-14
 
 ### Added

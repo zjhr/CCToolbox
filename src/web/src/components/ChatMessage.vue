@@ -62,6 +62,7 @@
                 <span>图片内容</span>
               </template>
             </div>
+            <div v-else-if="item.__fallback" class="fallback-text">{{ item.__fallbackText }}</div>
           </div>
         </template>
       </div>
@@ -134,7 +135,8 @@ const emit = defineEmits(['click-task'])
 const messageRole = computed(() => props.message.role || props.message.type || 'assistant')
 const messageContent = computed(() => props.message.content ?? '')
 const arrayContent = computed(() => Array.isArray(messageContent.value) ? messageContent.value : [])
-const arrayPreview = computed(() => buildArrayPreview(arrayContent.value))
+const normalizedArrayContent = computed(() => normalizeArrayItems(arrayContent.value))
+const arrayPreview = computed(() => buildArrayPreview(normalizedArrayContent.value))
 
 const normalizedModel = computed(() => {
   const raw = (props.message.model || '').toString().toLowerCase()
@@ -196,8 +198,8 @@ const truncatedContent = computed(() => {
 })
 
 const displayArray = computed(() => {
-  if (!Array.isArray(messageContent.value)) return []
-  if (expanded.value || !arrayPreview.value.truncated) return messageContent.value
+  if (!Array.isArray(normalizedArrayContent.value)) return []
+  if (expanded.value || !arrayPreview.value.truncated) return normalizedArrayContent.value
   return arrayPreview.value.items
 })
 
@@ -305,6 +307,16 @@ function buildArrayPreview(items) {
   if (!Array.isArray(items)) return { items: [], truncated: false }
   let truncated = false
   const preview = items.slice(0, ARRAY_LIMIT).map((item) => {
+    if (item && typeof item === 'object' && item.__fallback) {
+      if (typeof item.__fallbackText === 'string' && item.__fallbackText.length > ARRAY_TEXT_LIMIT) {
+        truncated = true
+        return {
+          ...item,
+          __fallbackText: item.__fallbackText.substring(0, ARRAY_TEXT_LIMIT) + '...'
+        }
+      }
+      return item
+    }
     if (item && typeof item === 'object' && item.type === 'text' && typeof item.text === 'string') {
       if (item.text.length > ARRAY_TEXT_LIMIT) {
         truncated = true
@@ -326,6 +338,69 @@ function buildArrayPreview(items) {
     preview.push({ type: 'text', text: `... 还有 ${remaining} 项 ...` })
   }
   return { items: preview, truncated }
+}
+
+/**
+ * 将数组消息项规范化为前端可渲染结构
+ * 约束：仅在缺失 type 时打 fallback 标记，不覆盖已有规范 type
+ */
+function normalizeArrayItems(items) {
+  if (!Array.isArray(items)) return []
+  return items.map((item) => normalizeArrayItem(item))
+}
+
+function normalizeArrayItem(item) {
+  if (typeof item === 'string') {
+    return { type: 'text', text: item }
+  }
+
+  if (item === null || item === undefined) {
+    return { __fallback: true, __fallbackText: '' }
+  }
+
+  if (typeof item !== 'object') {
+    return {
+      __fallback: true,
+      __fallbackText: safeStringify(item)
+    }
+  }
+
+  // 已规范类型的消息保持原语义，避免兜底覆盖
+  if (item.type === 'text') {
+    return {
+      ...item,
+      text: typeof item.text === 'string' ? item.text : safeStringify(item.text)
+    }
+  }
+  if (item.type === 'image') {
+    return item
+  }
+  if (item.type) {
+    return item
+  }
+
+  // 仅对缺失 type 的历史/异常结构触发 fallback
+  const fallbackText = typeof item.text === 'string'
+    ? item.text
+    : item.content !== undefined && item.content !== null
+      ? safeStringify(item.content)
+      : safeStringify(item)
+
+  return {
+    ...item,
+    __fallback: true,
+    __fallbackText: fallbackText
+  }
+}
+
+function safeStringify(value) {
+  if (value === null || value === undefined) return ''
+  if (typeof value === 'string') return value
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch (err) {
+    return String(value)
+  }
 }
 
 function getImageSrc(item) {
@@ -486,6 +561,11 @@ function getImageSrc(item) {
 
 .content-item {
   margin-bottom: 8px;
+}
+
+.fallback-text {
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .image-item {
