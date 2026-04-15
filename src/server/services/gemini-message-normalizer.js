@@ -116,6 +116,12 @@ function normalizeGeminiMessageContent(message) {
     unknownReason = 'content_primitive_unexpected';
   }
 
+  if (!normalizedText && Array.isArray(message?.toolCalls) && message.toolCalls.length > 0) {
+    normalizedText = formatGeminiToolCalls(message.toolCalls);
+    isUnknownStructure = false;
+    unknownReason = null;
+  }
+
   normalizedText = typeof normalizedText === 'string'
     ? normalizedText.trim()
     : toSafeText(normalizedText).trim();
@@ -130,6 +136,63 @@ function normalizeGeminiMessageContent(message) {
     isUnknownStructure,
     unknownReason
   };
+}
+
+/**
+ * 将 Gemini toolCalls 转成统一 markdown 文本，供前端 messageAdapter 解析
+ * @param {Array<any>} toolCalls 工具调用数组
+ * @returns {string}
+ */
+function formatGeminiToolCalls(toolCalls) {
+  if (!Array.isArray(toolCalls) || toolCalls.length === 0) return '';
+  const blocks = [];
+
+  toolCalls.forEach((call) => {
+    const toolName = String(call?.name || call?.displayName || 'unknown_tool');
+    const inputPayload = call?.args ?? call?.input ?? {};
+    blocks.push(`**[调用工具: ${toolName}]**\n\`\`\`json\n${toSafeText(inputPayload)}\n\`\`\``);
+
+    const output = extractToolCallOutput(call);
+    if (output) {
+      blocks.push(`**[工具结果]**\n\`\`\`\n${output}\n\`\`\``);
+    }
+  });
+
+  return blocks.join('\n\n').trim();
+}
+
+function extractToolCallOutput(call) {
+  if (!call || typeof call !== 'object') return '';
+
+  if (typeof call.resultDisplay === 'string' && call.resultDisplay.trim()) {
+    return call.resultDisplay.trim();
+  }
+
+  if (typeof call.output === 'string' && call.output.trim()) {
+    return call.output.trim();
+  }
+
+  if (Array.isArray(call.result) && call.result.length > 0) {
+    const chunks = call.result.map((item) => {
+      const functionOutput = item?.functionResponse?.response?.output;
+      if (typeof functionOutput === 'string' && functionOutput.trim()) {
+        return functionOutput.trim();
+      }
+      if (typeof item?.output === 'string' && item.output.trim()) {
+        return item.output.trim();
+      }
+      return toSafeText(item);
+    }).filter(Boolean);
+    if (chunks.length > 0) {
+      return chunks.join('\n\n');
+    }
+  }
+
+  if (call.error) {
+    return toSafeText(call.error);
+  }
+
+  return '';
 }
 
 function resetUnknownWindowIfNeeded(nowMs) {
@@ -170,6 +233,7 @@ module.exports = {
   normalizeGeminiMessageContent,
   extractTextParts,
   toSafeText,
+  formatGeminiToolCalls,
   recordGeminiUnknownShape,
   __resetUnknownShapeCounterForTest
 };
