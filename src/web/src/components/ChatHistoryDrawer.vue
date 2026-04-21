@@ -43,6 +43,10 @@
             />
           </div>
 
+          <div v-if="showRealtimeDisconnectedHint" class="realtime-disconnected-hint">
+            实时更新已暂停，请手动刷新查看最新消息
+          </div>
+
           <!-- Loading state -->
           <div v-if="loading && messages.length === 0" class="loading-container">
             <n-spin size="medium">
@@ -154,6 +158,7 @@
 import { ref, computed, nextTick, watch } from 'vue'
 import { NDrawer, NIcon, NTag, NSpin, NEmpty, NButton, NVirtualList } from 'naive-ui'
 import { useResponsiveDrawer } from '../composables/useResponsiveDrawer'
+import { useSessionRealtime } from '../composables/useSessionRealtime'
 import { Chatbubbles as ChatbubblesIcon, GitBranch as GitBranchIcon, ChevronUp as ChevronUpIcon, ArrowDown as ArrowDownIcon, Close as CloseIcon, ArrowBackOutline } from '@vicons/ionicons5'
 import ChatMessage from './ChatMessage.vue'
 import SessionSummaryCard from './SessionSummaryCard.vue'
@@ -193,6 +198,28 @@ const props = defineProps({
 const emit = defineEmits(['update:show', 'error'])
 
 const { drawerWidth } = useResponsiveDrawer(900, 800)
+
+const realtimeWatchActive = ref(false)
+const hadRealtimeConnected = ref(false)
+
+const { startWatch, stopWatch, isConnected: realtimeConnected } = useSessionRealtime({
+  onUpdate: (newMessages) => {
+    if (!newMessages || newMessages.length === 0) return
+    // 同步到组件内的 messages，并保持去重（虽然 composable 内部已经去重了，这里为了保险再做一次）
+    const existingIds = new Set(messages.value.map(m => m.id))
+    const uniqueOnes = newMessages.filter(m => !existingIds.has(m.id))
+    
+    if (uniqueOnes.length > 0) {
+      messages.value.push(...uniqueOnes)
+      // 实时追加新消息时，如果用户在底部，则自动跟进
+      if (isAtBottom.value) {
+        nextTick(() => {
+          scrollToBottom()
+        })
+      }
+    }
+  }
+})
 
 const visible = computed({
   get: () => props.show,
@@ -234,9 +261,16 @@ const FILTER_MAX_PAGES = 5
 const MAX_SUBAGENT_STACK = 10
 const subagentVisible = ref(false)
 const subagentStack = ref([])
+const BOTTOM_AUTO_SCROLL_THRESHOLD = 100
 
 const adaptedMessages = computed(() => adaptMessages(messages.value, props.channel))
 const currentSubagent = computed(() => subagentStack.value[subagentStack.value.length - 1] || null)
+const showRealtimeDisconnectedHint = computed(() => {
+  return !props.trashId
+    && realtimeWatchActive.value
+    && hadRealtimeConnected.value
+    && !realtimeConnected.value
+})
 
 function isSubagentMessage(item) {
   if (!item || item.role !== 'tool') return false
@@ -496,8 +530,8 @@ function handleScroll(e) {
   const distanceToBottom = scrollHeight - scrollTop - clientHeight
   showScrollButton.value = distanceToBottom > 200
   if (direction !== 'up') {
-    isAtBottom.value = distanceToBottom <= 2
-  } else if (distanceToBottom > 2) {
+    isAtBottom.value = distanceToBottom <= BOTTOM_AUTO_SCROLL_THRESHOLD
+  } else if (distanceToBottom > BOTTOM_AUTO_SCROLL_THRESHOLD) {
     isAtBottom.value = false
   }
 
@@ -562,6 +596,7 @@ function open() {
   totalMessages.value = 0
   hasMore.value = false
   showScrollButton.value = false
+  isAtBottom.value = true // 开启时默认在底部
   isAutoFilling.value = false
   filterNoMatchStreak.value = 0
   hasStableCounts.value = false
@@ -574,6 +609,14 @@ function open() {
   }
   activeFilters.value = ['user', 'assistant', 'tool', 'thinking', 'subagent']
   closeSubagentDrawer()
+  
+  // 开启实时监听 (仅非回收站 session)
+  if (!props.trashId && props.sessionId) {
+    realtimeWatchActive.value = true
+    hadRealtimeConnected.value = false
+    startWatch(props.sessionId, props.projectName, props.channel)
+  }
+  
   loadMessages(1)
 }
 
@@ -589,10 +632,30 @@ watch(
   () => visible.value,
   (value) => {
     if (!value) {
+      realtimeWatchActive.value = false
+      hadRealtimeConnected.value = false
+      stopWatch()
       closeSubagentDrawer()
     }
   }
 )
+
+watch(
+  () => props.sessionId,
+  (newId) => {
+    if (visible.value && newId && !props.trashId) {
+      realtimeWatchActive.value = true
+      hadRealtimeConnected.value = false
+      startWatch(newId, props.projectName, props.channel)
+    }
+  }
+)
+
+watch(realtimeConnected, (value) => {
+  if (value) {
+    hadRealtimeConnected.value = true
+  }
+})
 
 defineExpose({
   generateSummary,
@@ -666,6 +729,17 @@ defineExpose({
 .summary-container {
   flex-shrink: 0;
   padding: 12px 20px 0;
+}
+
+.realtime-disconnected-hint {
+  margin: 12px 20px 0;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #d46b08;
+  background: rgba(250, 173, 20, 0.14);
+  border: 1px solid rgba(250, 173, 20, 0.35);
 }
 
 .loading-container,

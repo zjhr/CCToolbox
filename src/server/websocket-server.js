@@ -23,6 +23,106 @@ function getMaxLogsLimit() {
 
 let wss = null;
 let wsClients = new Set();
+const sessionSubscribers = new Map();
+const clientSessionSubscriptions = new Map();
+
+function getSessionsService() {
+  // 延迟加载，避免 sessions.js 与 websocket-server.js 在 require 阶段形成循环依赖死锁
+  return require('./services/sessions');
+}
+
+function addClientSessionSubscription(client, sessionId) {
+  if (!client || !sessionId) {
+    return;
+  }
+  if (!clientSessionSubscriptions.has(client)) {
+    clientSessionSubscriptions.set(client, new Set());
+  }
+  clientSessionSubscriptions.get(client).add(sessionId);
+}
+
+function removeClientSessionSubscription(client, sessionId) {
+  if (!client) {
+    return;
+  }
+
+  const sessionSet = clientSessionSubscriptions.get(client);
+  if (!sessionSet) {
+    return;
+  }
+
+  sessionSet.delete(sessionId);
+  if (sessionSet.size === 0) {
+    clientSessionSubscriptions.delete(client);
+  }
+}
+
+function subscribeSession(sessionId, client, options = {}) {
+  const normalizedSessionId = String(sessionId || '').trim();
+  if (!normalizedSessionId || !client) {
+    return;
+  }
+
+  let subscribers = sessionSubscribers.get(normalizedSessionId);
+  if (!subscribers) {
+    subscribers = new Set();
+    sessionSubscribers.set(normalizedSessionId, subscribers);
+  }
+
+  if (subscribers.has(client)) {
+    return;
+  }
+
+  const needWatch = subscribers.size === 0;
+  subscribers.add(client);
+  addClientSessionSubscription(client, normalizedSessionId);
+
+  if (needWatch) {
+    const { watchSession } = getSessionsService();
+    watchSession(normalizedSessionId, options);
+  }
+}
+
+function unsubscribeSession(sessionId, client, options = {}) {
+  const normalizedSessionId = String(sessionId || '').trim();
+  if (!normalizedSessionId || !client) {
+    return;
+  }
+
+  const subscribers = sessionSubscribers.get(normalizedSessionId);
+  if (!subscribers || !subscribers.has(client)) {
+    return;
+  }
+
+  subscribers.delete(client);
+  removeClientSessionSubscription(client, normalizedSessionId);
+
+  if (subscribers.size === 0) {
+    sessionSubscribers.delete(normalizedSessionId);
+    const { unwatchSession } = getSessionsService();
+    unwatchSession(normalizedSessionId, options);
+  }
+}
+
+function removeClientFromSessionSubscriptions(client) {
+  if (!client) {
+    return;
+  }
+
+  const sessions = clientSessionSubscriptions.get(client);
+  if (sessions && sessions.size > 0) {
+    Array.from(sessions).forEach((sessionId) => {
+      unsubscribeSession(sessionId, client);
+    });
+    return;
+  }
+
+  for (const [sessionId, subscribers] of Array.from(sessionSubscribers.entries())) {
+    if (subscribers.has(client)) {
+      unsubscribeSession(sessionId, client);
+    }
+  }
+}
 
 // 日志持久化文件路径
 function getLogsFilePath() {
@@ -139,7 +239,6 @@ function saveLogsToFile(logs) {
 // 内存中的日志缓存
 let logsCache = [];
 
-// 启动 WebSocket 服务器（附加到现有的 HTTP 服务器）
 function startWebSocketServer(httpServer) {
   if (wss) {
     console.log('WebSocket server already running');
@@ -199,13 +298,38 @@ function startWebSocketServer(httpServer) {
         ws.pong();
       });
 
+      ws.on('message', (data) => {
+        try {
+          const raw = typeof data === 'string' ? data : data?.toString?.('utf8');
+          const payload = JSON.parse(raw || '{}');
+          if (payload.type === 'subscribe-session') {
+            console.log(`[WS] subscribe-session: sessionId=${payload.sessionId}, channel=${payload.channel}, projectName=${payload.projectName}`);
+            subscribeSession(payload.sessionId, ws, {
+              projectName: payload.projectName,
+              channel: payload.channel || 'claude'
+            });
+            return;
+          }
+          if (payload.type === 'unsubscribe-session') {
+            unsubscribeSession(payload.sessionId, ws, {
+              projectName: payload.projectName,
+              channel: payload.channel || 'claude'
+            });
+          }
+        } catch (err) {
+          // 忽略非 JSON 或未知消息类型，保留兼容性
+        }
+      });
+
       ws.on('close', () => {
         wsClients.delete(ws);
+        removeClientFromSessionSubscriptions(ws);
       });
 
       ws.on('error', (error) => {
         console.error('WebSocket error:', error);
         wsClients.delete(ws);
+        removeClientFromSessionSubscriptions(ws);
       });
     });
 
@@ -216,6 +340,7 @@ function startWebSocketServer(httpServer) {
           // 客户端没有响应 pong，断开连接
           console.log('❌ WebSocket client timeout, terminating');
           wsClients.delete(ws);
+          removeClientFromSessionSubscriptions(ws);
           return ws.terminate();
         }
 
@@ -256,9 +381,18 @@ function stopWebSocketServer() {
 
   // 关闭所有客户端连接
   wsClients.forEach(client => {
+    removeClientFromSessionSubscriptions(client);
     client.close();
   });
   wsClients.clear();
+  if (sessionSubscribers.size > 0) {
+    const { unwatchSession } = getSessionsService();
+    Array.from(sessionSubscribers.keys()).forEach((sessionId) => {
+      unwatchSession(sessionId);
+    });
+  }
+  sessionSubscribers.clear();
+  clientSessionSubscriptions.clear();
 
   // 关闭服务器
   wss.close(() => {
@@ -299,6 +433,32 @@ function broadcastLog(logData) {
       }
     });
   }
+}
+
+function broadcastSessionUpdate(sessionId, messages = []) {
+  const normalizedSessionId = String(sessionId || '').trim();
+  if (!normalizedSessionId) {
+    return;
+  }
+
+  const payload = {
+    type: 'session-update',
+    sessionId: normalizedSessionId,
+    messages: Array.isArray(messages) ? messages : []
+  };
+
+  const subscribers = sessionSubscribers.get(normalizedSessionId);
+  console.log(`[broadcastSessionUpdate] sessionId=${normalizedSessionId}, messageCount=${messages.length}, subscriberCount=${subscribers?.size || 0}`);
+  if (!subscribers || subscribers.size === 0) {
+    return;
+  }
+
+  const message = JSON.stringify(payload);
+  subscribers.forEach((client) => {
+    if (client && client.readyState === WebSocket.OPEN) {
+      client.send(message);
+    }
+  });
 }
 
 // 清空所有日志
@@ -409,5 +569,8 @@ module.exports = {
   broadcastProxyState,
   broadcastSchedulerState,
   broadcastUpdate,
-  broadcastOpenSpecChange
+  broadcastOpenSpecChange,
+  subscribeSession,
+  unsubscribeSession,
+  broadcastSessionUpdate
 };

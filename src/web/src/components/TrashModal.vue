@@ -1,5 +1,5 @@
 <template>
-  <n-modal
+  <n-modal :mask-closable="false"
     v-model:show="visible"
     preset="card"
     :bordered="false"

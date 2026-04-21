@@ -1,5 +1,5 @@
 <template>
-  <n-modal
+  <n-modal :mask-closable="false"
     v-model:show="visible"
     preset="card"
     title="创建自定义技能"

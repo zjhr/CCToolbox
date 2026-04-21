@@ -121,7 +121,7 @@
       </div>
     </div>
 
-    <n-modal
+    <n-modal :mask-closable="false"
       v-model:show="state.showDialog"
       preset="card"
       :title="state.editingChannel ? config.editTitle : config.addTitle"
@@ -570,7 +570,8 @@ function buildMeta(channel) {
 }
 
 function resolveFieldComponent(field) {
-  switch (field.type) {
+  const fieldType = typeof field === 'string' ? field : field?.type
+  switch (fieldType) {
     case 'password':
     case 'text':
       return NInput
@@ -578,6 +579,8 @@ function resolveFieldComponent(field) {
       return NInputNumber
     case 'switch':
       return NSwitch
+    case 'select':
+      return NSelect
     default:
       return NInput
   }
@@ -595,6 +598,10 @@ function buildFieldProps(field) {
     base.step = field.step ?? 1
     base.clearable = field.clearable
     base.style = 'width: 100%;'
+  }
+  if (field.type === 'select') {
+    base.options = field.options || []
+    base.clearable = field.clearable
   }
   if (field.disabledOnEdit && state.editingChannel) {
     base.disabled = true

@@ -1,5 +1,5 @@
 <template>
-  <n-modal
+  <n-modal :mask-closable="false"
     v-model:show="visible"
     preset="card"
     title="设置更新源"

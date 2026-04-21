@@ -1,5 +1,5 @@
 <template>
-  <n-modal
+  <n-modal :mask-closable="false"
     :show="visible"
     @update:show="updateVisible"
     preset="card"

@@ -264,7 +264,8 @@ function createChannel(name, baseUrl, apiKey, websiteUrl, extraConfig = {}) {
     modelConfig: extraConfig.modelConfig || null,
     proxyUrl: extraConfig.proxyUrl || '',
     customModels: normalizeCustomModels(extraConfig.customModels),
-    enable1M: normalizeEnable1M(extraConfig.enable1M)
+    enable1M: normalizeEnable1M(extraConfig.enable1M),
+    enableToolSearch: extraConfig.enableToolSearch
   });
 
   data.channels.push(newChannel);
@@ -290,7 +291,8 @@ function updateChannel(id, updates) {
     modelConfig: merged.modelConfig,
     proxyUrl: merged.proxyUrl,
     customModels: merged.customModels,
-    enable1M: merged.enable1M
+    enable1M: merged.enable1M,
+    enableToolSearch: merged.enableToolSearch
   });
 
   saveChannels(data);
@@ -338,6 +340,18 @@ function validateChannelData(channel) {
   if (channel.apiKey.includes('\0')) {
     throw new Error('Channel apiKey contains invalid characters');
   }
+}
+
+// 统一处理 env 的写入/删除，避免重复分支逻辑
+function setEnvValue(settings, key, value) {
+  if (!settings.env) {
+    settings.env = {};
+  }
+  if (value === undefined || value === null || value === '') {
+    delete settings.env[key];
+    return;
+  }
+  settings.env[key] = value;
 }
 
 function applyChannelToSettings(id) {
@@ -440,7 +454,7 @@ function updateClaudeSettingsWithModelConfig(channel) {
     settings.env = {};
   }
 
-  const { baseUrl, apiKey, modelConfig, proxyUrl, enable1M } = channel;
+  const { baseUrl, apiKey, modelConfig, proxyUrl, enable1M, enableToolSearch } = channel;
 
   const useAuthToken = settings.env.ANTHROPIC_AUTH_TOKEN !== undefined;
   const useApiKey = settings.env.ANTHROPIC_API_KEY !== undefined;
@@ -455,47 +469,37 @@ function updateClaudeSettingsWithModelConfig(channel) {
   }
 
   if (modelConfig && typeof modelConfig === 'object') {
-    if (modelConfig.model) {
-      settings.env.ANTHROPIC_MODEL = modelConfig.model;
-    } else {
-      delete settings.env.ANTHROPIC_MODEL;
-    }
-    if (modelConfig.haikuModel) {
-      settings.env.ANTHROPIC_DEFAULT_HAIKU_MODEL = modelConfig.haikuModel;
-    } else {
-      delete settings.env.ANTHROPIC_DEFAULT_HAIKU_MODEL;
-    }
-    if (modelConfig.sonnetModel) {
-      settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL = modelConfig.sonnetModel;
-    } else {
-      delete settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL;
-    }
-    if (modelConfig.opusModel) {
-      settings.env.ANTHROPIC_DEFAULT_OPUS_MODEL = modelConfig.opusModel;
-    } else {
-      delete settings.env.ANTHROPIC_DEFAULT_OPUS_MODEL;
-    }
+    setEnvValue(settings, 'ANTHROPIC_MODEL', modelConfig.model);
+    setEnvValue(settings, 'ANTHROPIC_DEFAULT_HAIKU_MODEL', modelConfig.haikuModel);
+    setEnvValue(settings, 'ANTHROPIC_DEFAULT_SONNET_MODEL', modelConfig.sonnetModel);
+    setEnvValue(settings, 'ANTHROPIC_DEFAULT_OPUS_MODEL', modelConfig.opusModel);
   } else {
-    delete settings.env.ANTHROPIC_MODEL;
-    delete settings.env.ANTHROPIC_DEFAULT_HAIKU_MODEL;
-    delete settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL;
-    delete settings.env.ANTHROPIC_DEFAULT_OPUS_MODEL;
+    setEnvValue(settings, 'ANTHROPIC_MODEL');
+    setEnvValue(settings, 'ANTHROPIC_DEFAULT_HAIKU_MODEL');
+    setEnvValue(settings, 'ANTHROPIC_DEFAULT_SONNET_MODEL');
+    setEnvValue(settings, 'ANTHROPIC_DEFAULT_OPUS_MODEL');
   }
 
+  let disable1MContext;
   if (enable1M === true) {
-    settings.env.CLAUDE_CODE_DISABLE_1M_CONTEXT = '0';
+    disable1MContext = '0';
   } else if (enable1M === false) {
-    settings.env.CLAUDE_CODE_DISABLE_1M_CONTEXT = '1';
-  } else {
-    delete settings.env.CLAUDE_CODE_DISABLE_1M_CONTEXT;
+    disable1MContext = '1';
   }
+  setEnvValue(settings, 'CLAUDE_CODE_DISABLE_1M_CONTEXT', disable1MContext);
+
+  let toolSearchValue;
+  if (enableToolSearch === '1' || enableToolSearch === '0' || enableToolSearch === 'auto') {
+    toolSearchValue = enableToolSearch;
+  }
+  setEnvValue(settings, 'ENABLE_TOOL_SEARCH', toolSearchValue);
 
   if (proxyUrl) {
-    settings.env.HTTPS_PROXY = proxyUrl;
-    settings.env.HTTP_PROXY = proxyUrl;
+    setEnvValue(settings, 'HTTPS_PROXY', proxyUrl);
+    setEnvValue(settings, 'HTTP_PROXY', proxyUrl);
   } else {
-    delete settings.env.HTTPS_PROXY;
-    delete settings.env.HTTP_PROXY;
+    setEnvValue(settings, 'HTTPS_PROXY');
+    setEnvValue(settings, 'HTTP_PROXY');
     delete settings.env.NO_PROXY;
   }
 

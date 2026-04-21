@@ -6,6 +6,22 @@
 
 ## [Unreleased]
 
+## [3.6.0] - 2026-04-21
+
+### Added
+
+- 🆕 **Session 实时更新** - 通过 WebSocket 实现会话消息实时推送，支持 `useSessionRealtime` composable 订阅会话变更
+- 🆕 **Session 文件监听服务** - `sessions.js` 新增 `watchSession`/`unwatchSession`，基于文件系统监听实现消息增量检测
+- 🆕 **WebSocket 会话订阅** - `websocket-server.js` 新增 `subscribeSession`/`unsubscribeSession`，支持按会话粒度推送实时更新
+- 🧰 **Channel ToolSearch 配置** - `BaseChannelPanel` 和渠道服务新增 `enableToolSearch` 字段支持
+- ✅ **测试覆盖完善** - 新增 `ChatHistoryDrawer.spec.ts`、`session-realtime-update.test.js`、`BaseChannelPanel.spec.ts` 测试文件
+
+### Changed
+
+- 🔄 **ChatHistoryDrawer 实时集成** - 集成 `useSessionRealtime`，打开会话时自动接收消息更新，无需手动刷新
+- 🔄 **代理环境变量设置优化** - 统一使用 `setEnvValue` 设置 `HTTP_PROXY`/`HTTPS_PROXY`，避免直接 delete 导致的配置丢失
+- 🔄 **Modal 组件统一修复** - 修复多个 Modal 组件（Alias、Search、Skill、Trash 等）的通用问题
+
 ## [3.5.5] - 2026-04-15
 
 ### Changed

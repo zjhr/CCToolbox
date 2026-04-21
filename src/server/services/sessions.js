@@ -15,6 +15,7 @@ const {
   checkHasMessagesCache,
   rememberHasMessages
 } = require('./session-cache');
+const { broadcastSessionUpdate } = require('../websocket-server');
 
 const SESSION_LIST_CACHE_TTL_MS = 30 * 1000;
 const SESSION_LIST_CACHE_MAX_ENTRIES = 100;
@@ -1298,6 +1299,352 @@ function cleanupSessionRelations(sessionId) {
   }
 }
 
+const sessionWatchers = new Map();
+
+function resolveWatchChannel(options = {}) {
+  if (options && typeof options === 'object' && typeof options.channel === 'string') {
+    const normalizedChannel = options.channel.trim().toLowerCase();
+    if (normalizedChannel) {
+      return normalizedChannel;
+    }
+  }
+  return 'claude';
+}
+
+function resolveWatchProjectName(options = {}) {
+  return typeof options === 'string' ? options : options.projectName;
+}
+
+function resolveSessionWatchFilePath(sessionId, options = {}) {
+  const channel = resolveWatchChannel(options);
+  const projectName = resolveWatchProjectName(options);
+  const fileName = `${sessionId}.jsonl`;
+  console.log(`[resolveSessionWatchFilePath] sessionId=${sessionId}, channel=${channel}, projectName=${projectName}`);
+
+  if (channel === 'codex') {
+    console.log(`[resolveSessionWatchFilePath] codex branch: looking up session ${sessionId}`);
+    try {
+      const codexSessions = require('./codex-sessions');
+      const session = codexSessions.getSessionById(sessionId);
+      console.log('[resolveSessionWatchFilePath] codex session found:', session ? {
+        filePath: session.filePath,
+        exists: session.filePath ? fs.existsSync(session.filePath) : false
+      } : 'NOT FOUND');
+      if (session?.filePath && fs.existsSync(session.filePath)) {
+        return session.filePath;
+      }
+    } catch (err) {
+      // 忽略 codex session 查询异常，继续 fallback
+    }
+  }
+
+  if (channel === 'gemini') {
+    try {
+      const geminiSessions = require('./gemini-sessions');
+      const session = geminiSessions.getSessionById(sessionId);
+      if (session?.filePath && fs.existsSync(session.filePath)) {
+        return session.filePath;
+      }
+    } catch (err) {
+      // 忽略 gemini session 查询异常，继续 fallback
+    }
+  }
+
+  if (!projectName) {
+    return path.join(getAppDir(), fileName);
+  }
+
+  try {
+    const { fullPath } = parseRealProjectPath(projectName);
+    const projectPath = path.join(fullPath, '.claude', 'sessions', fileName);
+    if (fs.existsSync(projectPath)) {
+      return projectPath;
+    }
+  } catch (err) {
+    // 忽略路径解析异常，继续 fallback
+  }
+
+  const homePath = path.join(os.homedir(), '.claude', 'projects', projectName, fileName);
+  if (fs.existsSync(homePath)) {
+    return homePath;
+  }
+
+  return path.join(getAppDir(), fileName);
+}
+
+function parseSessionUpdateMessages(chunk) {
+  const messages = [];
+  const lines = String(chunk || '').split('\n');
+  const normalizeRole = (role) => {
+    if (role === 'assistant' || role === 'user') {
+      return role;
+    }
+    return null;
+  };
+  const extractTextContent = (value) => {
+    if (typeof value === 'string') {
+      return value;
+    }
+    if (!Array.isArray(value)) {
+      return '';
+    }
+    return value
+      .filter((item) => item && typeof item === 'object')
+      .map((item) => {
+        if (typeof item.text === 'string') {
+          return item.text;
+        }
+        if (typeof item.input_text === 'string') {
+          return item.input_text;
+        }
+        return '';
+      })
+      .filter(Boolean)
+      .join('\n');
+  };
+
+  lines.forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(trimmed);
+      // Claude JSONL 格式（保持原有逻辑不变）
+      if (parsed.type === 'user' || parsed.type === 'assistant') {
+        let content = '';
+        if (typeof parsed.message?.content === 'string') {
+          content = parsed.message.content;
+        } else if (Array.isArray(parsed.message?.content)) {
+          content = parsed.message.content
+            .filter((item) => item && item.type === 'text' && typeof item.text === 'string')
+            .map((item) => item.text)
+            .join('\n');
+        }
+
+        const messageId = parsed.id
+          || parsed.uuid
+          || parsed.message?.id
+          || `${parsed.type}-${parsed.timestamp || Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+
+        messages.push({
+          id: String(messageId),
+          type: parsed.type,
+          content,
+          timestamp: parsed.timestamp || null,
+          model: parsed.model || null
+        });
+        return;
+      }
+
+      // Codex JSONL: 仅以 response_item/message 作为权威消息源
+      if (parsed.type === 'response_item' && parsed.payload) {
+        const payload = parsed.payload;
+        if (payload.type !== 'message') {
+          return;
+        }
+
+        const role = normalizeRole(payload.role);
+        if (!role) {
+          return;
+        }
+
+        const content = extractTextContent(payload.content).trim();
+        if (!content) {
+          return;
+        }
+
+        const messageId = parsed.id
+          || parsed.uuid
+          || payload.id
+          || `${role}-${parsed.timestamp || Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+
+        messages.push({
+          id: String(messageId),
+          type: role,
+          role,
+          content,
+          timestamp: parsed.timestamp || null,
+          model: parsed.model || null
+        });
+        return;
+      }
+
+      // Codex JSONL: event_msg 为事件通知，消息以 response_item 为准，统一跳过
+      if (parsed.type === 'event_msg') {
+        return;
+      }
+
+      // Codex JSONL: 顶层 user_message 与 response_item 重复，跳过
+      if (parsed.type === 'user_message') {
+        return;
+      }
+    } catch (err) {
+      // 忽略半行或非 JSON 行
+    }
+  });
+
+  return messages;
+}
+
+/**
+ * 监听 Session 文件变化（引用计数）
+ * @param {string} sessionId 会话 ID
+ * @param {string|object} options 可选参数，支持 projectName/channel
+ */
+function watchSession(sessionId, options = {}) {
+  const normalizedSessionId = String(sessionId || '').trim();
+  if (!normalizedSessionId) {
+    return null;
+  }
+
+  const watcherInfo = sessionWatchers.get(normalizedSessionId);
+  if (watcherInfo) {
+    watcherInfo.count += 1;
+    return watcherInfo.filePath;
+  }
+
+  const filePath = resolveSessionWatchFilePath(normalizedSessionId, options);
+  const channel = resolveWatchChannel(options);
+  console.log(`[watchSession] sessionId=${normalizedSessionId}, channel=${options.channel}, filePath=${filePath}, fileExists=${fs.existsSync(filePath)}`);
+  const state = {
+    count: 1,
+    filePath,
+    offset: 0,
+    messageCount: 0,
+    pendingChunk: '',
+    listener: null
+  };
+
+  if (channel === 'gemini') {
+    try {
+      if (fs.existsSync(filePath)) {
+        const content = fs.readFileSync(filePath, 'utf8');
+        const session = JSON.parse(content);
+        state.messageCount = Array.isArray(session?.messages) ? session.messages.length : 0;
+      }
+    } catch (err) {
+      state.messageCount = 0;
+    }
+  } else {
+    try {
+      if (fs.existsSync(filePath)) {
+        state.offset = fs.readFileSync(filePath, 'utf8').length;
+      }
+    } catch (err) {
+      state.offset = 0;
+    }
+  }
+
+  state.listener = () => {
+    console.log(`[watchSession.listener] FILE CHANGED: sessionId=${normalizedSessionId}, filePath=${filePath}`);
+    try {
+      if (channel === 'gemini') {
+        const content = fs.readFileSync(filePath, 'utf8');
+        const session = JSON.parse(content);
+        const currentMessages = Array.isArray(session?.messages) ? session.messages : [];
+        const prevCount = Number.isInteger(state.messageCount) ? state.messageCount : 0;
+
+        if (currentMessages.length <= prevCount) {
+          state.messageCount = currentMessages.length;
+          return;
+        }
+
+        const newMessages = currentMessages.slice(prevCount);
+        state.messageCount = currentMessages.length;
+
+        const messages = newMessages.map((message, index) => {
+          const role = message?.type === 'user' ? 'user' : 'assistant';
+          let parsedContent = '';
+          if (typeof message?.content === 'string') {
+            parsedContent = message.content;
+          } else if (Array.isArray(message?.content)) {
+            parsedContent = message.content
+              .filter((item) => item && typeof item === 'object' && typeof item.text === 'string')
+              .map((item) => item.text)
+              .join('\n');
+          }
+          const normalizedContent = parsedContent.trim();
+          if (!normalizedContent) {
+            return null;
+          }
+
+          const messageId = message?.id || `${role}-${message?.timestamp || Date.now()}-${index}`;
+          return {
+            id: String(messageId),
+            type: role,
+            role,
+            content: normalizedContent,
+            timestamp: message?.timestamp || null
+          };
+        }).filter(Boolean);
+
+        if (messages.length > 0) {
+          broadcastSessionUpdate(normalizedSessionId, messages);
+        }
+        return;
+      }
+
+      const content = fs.readFileSync(filePath, 'utf8');
+
+      if (content.length < state.offset) {
+        state.offset = 0;
+        state.pendingChunk = '';
+      }
+
+      const appended = content.slice(state.offset);
+      state.offset = content.length;
+      if (!appended) {
+        return;
+      }
+
+      const merged = state.pendingChunk + appended;
+      const lines = merged.split('\n');
+      state.pendingChunk = lines.pop() || '';
+      const messages = parseSessionUpdateMessages(lines.join('\n'));
+
+      if (messages.length > 0) {
+        broadcastSessionUpdate(normalizedSessionId, messages);
+      }
+    } catch (err) {
+      // 文件可能暂时不可读，忽略本次变更
+    }
+  };
+
+  fs.watchFile(filePath, { persistent: false }, state.listener);
+  sessionWatchers.set(normalizedSessionId, state);
+  return filePath;
+}
+
+/**
+ * 停止监听 Session 文件变化（引用计数）
+ * @param {string} sessionId 会话 ID
+ * @param {string|object} options 可选参数，支持 projectName/channel
+ */
+function unwatchSession(sessionId, options = {}) {
+  const normalizedSessionId = String(sessionId || '').trim();
+  if (!normalizedSessionId) {
+    return;
+  }
+
+  const watcherInfo = sessionWatchers.get(normalizedSessionId);
+  const filePath = watcherInfo?.filePath || resolveSessionWatchFilePath(normalizedSessionId, options);
+
+  if (!watcherInfo) {
+    fs.unwatchFile(filePath);
+    return;
+  }
+
+  watcherInfo.count -= 1;
+  if (watcherInfo.count > 0) {
+    return;
+  }
+
+  fs.unwatchFile(filePath, watcherInfo.listener);
+  sessionWatchers.delete(normalizedSessionId);
+}
+
 module.exports = {
   getProjects,
   getProjectsWithStats,
@@ -1322,5 +1669,7 @@ module.exports = {
   saveForkRelations,
   hasActualMessages,
   getProjectAndSessionCounts,
-  getSubagentMessages
+  getSubagentMessages,
+  watchSession,
+  unwatchSession
 };

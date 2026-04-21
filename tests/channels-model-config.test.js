@@ -269,6 +269,119 @@ async function runTests() {
   );
 
   await runTestCase(
+    'applyChannelToSettings 应写入 ENABLE_TOOL_SEARCH=1',
+    async () => {
+      await withTempHome(async (tempRoot) => {
+        ensureDir(path.join(tempRoot, '.claude'));
+        const service = loadClaudeChannelsService();
+        const channel = service.createChannel(
+          'ToolSearch One',
+          'https://api.anthropic.com',
+          'sk-tool-one'
+        );
+
+        service.updateChannel(channel.id, { enableToolSearch: '1' });
+        service.applyChannelToSettings(channel.id);
+
+        const settings = readClaudeSettings(tempRoot);
+        assert.strictEqual(settings.env.ENABLE_TOOL_SEARCH, '1');
+      });
+    },
+    failures
+  );
+
+  await runTestCase(
+    'applyChannelToSettings 应写入 ENABLE_TOOL_SEARCH=0',
+    async () => {
+      await withTempHome(async (tempRoot) => {
+        ensureDir(path.join(tempRoot, '.claude'));
+        const service = loadClaudeChannelsService();
+        const channel = service.createChannel(
+          'ToolSearch Zero',
+          'https://api.anthropic.com',
+          'sk-tool-zero'
+        );
+
+        service.updateChannel(channel.id, { enableToolSearch: '0' });
+        service.applyChannelToSettings(channel.id);
+
+        const settings = readClaudeSettings(tempRoot);
+        assert.strictEqual(settings.env.ENABLE_TOOL_SEARCH, '0');
+      });
+    },
+    failures
+  );
+
+  await runTestCase(
+    'applyChannelToSettings 应写入 ENABLE_TOOL_SEARCH=auto',
+    async () => {
+      await withTempHome(async (tempRoot) => {
+        ensureDir(path.join(tempRoot, '.claude'));
+        const service = loadClaudeChannelsService();
+        const channel = service.createChannel(
+          'ToolSearch Auto',
+          'https://api.anthropic.com',
+          'sk-tool-auto'
+        );
+
+        service.updateChannel(channel.id, { enableToolSearch: 'auto' });
+        service.applyChannelToSettings(channel.id);
+
+        const settings = readClaudeSettings(tempRoot);
+        assert.strictEqual(settings.env.ENABLE_TOOL_SEARCH, 'auto');
+      });
+    },
+    failures
+  );
+
+  await runTestCase(
+    'createChannel 应保存 enableToolSearch 字段',
+    async () => {
+      await withTempHome(async () => {
+        const service = loadClaudeChannelsService();
+        const channel = service.createChannel(
+          'Create ToolSearch',
+          'https://api.anthropic.com',
+          'sk-create-tool',
+          '',
+          { enableToolSearch: 'auto' }
+        );
+
+        assert.strictEqual(channel.enableToolSearch, 'auto');
+        const reloaded = service.getAllChannels().find((item) => item.id === channel.id);
+        assert.strictEqual(reloaded.enableToolSearch, 'auto');
+      });
+    },
+    failures
+  );
+
+  await runTestCase(
+    'updateChannel 应更新 enableToolSearch 字段',
+    async () => {
+      await withTempHome(async (tempRoot) => {
+        ensureDir(path.join(tempRoot, '.claude'));
+        const service = loadClaudeChannelsService();
+        const channel = service.createChannel(
+          'Update ToolSearch',
+          'https://api.anthropic.com',
+          'sk-update-tool'
+        );
+
+        const updated = service.updateChannel(channel.id, { enableToolSearch: '0' });
+        assert.strictEqual(updated.enableToolSearch, '0');
+
+        const reloaded = service.getAllChannels().find((item) => item.id === channel.id);
+        assert.strictEqual(reloaded.enableToolSearch, '0');
+
+        service.applyChannelToSettings(channel.id);
+        const settings = readClaudeSettings(tempRoot);
+        assert.strictEqual(settings.env.ENABLE_TOOL_SEARCH, '0');
+      });
+    },
+    failures
+  );
+
+  await runTestCase(
     'updateCustomModels 应支持 claude/codex/gemini 的统一更新与清空',
     async () => {
       await withTempHome(async () => {

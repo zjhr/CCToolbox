@@ -16,10 +16,16 @@ const {
   getSubagentMessages,
   getSessionListCache,
   getSessionListCacheKey,
-  getRecentSessionsOptimized
+  getRecentSessionsOptimized,
+  watchSession,
+  unwatchSession
 } = require('../services/sessions');
 const { loadAliases } = require('../services/alias');
-const { broadcastLog } = require('../websocket-server');
+const {
+  broadcastLog,
+  subscribeSession,
+  unsubscribeSession
+} = require('../websocket-server');
 const { buildMessageCounts } = require('../services/message-counts');
 const { startSessionCacheWatcher } = require('../services/cache-watcher');
 
@@ -44,6 +50,7 @@ function extractProgressEntry(json) {
 
 module.exports = (config) => {
   const sessionListCache = getSessionListCache();
+  const apiSessionSubscribers = new Map();
   startSessionCacheWatcher(config, sessionListCache);
 
   // GET /api/sessions/search/global - Search sessions across all projects
@@ -210,7 +217,7 @@ module.exports = (config) => {
   });
 
   // GET /api/sessions/:projectName/:sessionId/messages - Get session messages with pagination
-router.get('/:projectName/:sessionId/messages', async (req, res) => {
+  router.get('/:projectName/:sessionId/messages', async (req, res) => {
   try {
       const { projectName, sessionId } = req.params;
       const { page = 1, limit = 20, order = 'desc' } = req.query;
@@ -383,6 +390,60 @@ router.get('/:projectName/:sessionId/messages', async (req, res) => {
       });
     } catch (error) {
       console.error('Error fetching session messages:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // POST /api/sessions/:projectName/:sessionId/subscribe - Subscribe session realtime update
+  router.post('/:projectName/:sessionId/subscribe', (req, res) => {
+    try {
+      const { projectName, sessionId } = req.params;
+      const client = req.wsClient || null;
+      const subscriptionKey = `${projectName}:${sessionId}`;
+
+      const current = apiSessionSubscribers.get(subscriptionKey) || 0;
+      apiSessionSubscribers.set(subscriptionKey, current + 1);
+      watchSession(sessionId, { projectName });
+
+      if (client) {
+        subscribeSession(sessionId, client);
+      }
+
+      res.json({
+        success: true,
+        subscriptionKey
+      });
+    } catch (error) {
+      console.error('Error subscribing session realtime update:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // POST /api/sessions/:projectName/:sessionId/unsubscribe - Unsubscribe session realtime update
+  router.post('/:projectName/:sessionId/unsubscribe', (req, res) => {
+    try {
+      const { projectName, sessionId } = req.params;
+      const client = req.wsClient || null;
+      const subscriptionKey = `${projectName}:${sessionId}`;
+      const current = apiSessionSubscribers.get(subscriptionKey) || 0;
+
+      if (current <= 1) {
+        apiSessionSubscribers.delete(subscriptionKey);
+        unwatchSession(sessionId, { projectName });
+      } else {
+        apiSessionSubscribers.set(subscriptionKey, current - 1);
+      }
+
+      if (client) {
+        unsubscribeSession(sessionId, client);
+      }
+
+      res.json({
+        success: true,
+        subscriptionKey
+      });
+    } catch (error) {
+      console.error('Error unsubscribing session realtime update:', error);
       res.status(500).json({ error: error.message });
     }
   });

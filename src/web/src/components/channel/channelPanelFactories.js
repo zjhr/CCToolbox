@@ -266,6 +266,16 @@ const channelPanelFactories = {
             checkedText: "开启",
             uncheckedText: "关闭",
           },
+          {
+            key: "enableToolSearch",
+            label: "ToolSearch",
+            type: "select",
+            options: [
+              { label: "开启", value: "1" },
+              { label: "关闭", value: "0" },
+              { label: "自动", value: "auto" },
+            ],
+          },
         ],
       },
       {
@@ -346,6 +356,7 @@ const channelPanelFactories = {
       weight: 1,
       enabled: true,
       enable1M: false,
+      enableToolSearch: "auto",
     }),
     mapChannelToForm: (channel) => {
       const normalizedModelConfig =
@@ -381,6 +392,12 @@ const channelPanelFactories = {
         weight: channel.weight || 1,
         enabled: channel.enabled !== false,
         enable1M: channel.enable1M === true,
+        enableToolSearch:
+          channel.enableToolSearch === "1" ||
+          channel.enableToolSearch === "0" ||
+          channel.enableToolSearch === "auto"
+            ? channel.enableToolSearch
+            : "auto",
       };
     },
     onPresetChange: (presetId, form) => {
@@ -420,6 +437,7 @@ const channelPanelFactories = {
             weight: normalizeWeight(form.weight),
             enabled: form.enabled,
             enable1M: form.enable1M,
+            enableToolSearch: form.enableToolSearch,
             presetId: form.presetId,
             modelConfig: form.modelConfig,
             proxyUrl: form.proxyUrl || "",
@@ -436,6 +454,7 @@ const channelPanelFactories = {
           weight: normalizeWeight(form.weight),
           enabled: form.enabled,
           enable1M: form.enable1M,
+          enableToolSearch: form.enableToolSearch,
           presetId: form.presetId,
           modelConfig: form.modelConfig,
           proxyUrl: form.proxyUrl || "",

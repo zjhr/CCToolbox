@@ -1,6 +1,7 @@
 import { reactive, nextTick } from 'vue'
 import { mount } from '@vue/test-utils'
 import { describe, it, expect, vi } from 'vitest'
+import { NSelect } from 'naive-ui'
 import BaseChannelPanel from './BaseChannelPanel.vue'
 
 const FULL_API_KEY = 'sk-live-1234567890abcdef'
@@ -132,5 +133,80 @@ describe('BaseChannelPanel API Key 显隐（Red）', () => {
     expect(switchItem!.classes()).toContain('form-item-switch')
 
     wrapper.unmount()
+  })
+})
+
+describe('BaseChannelPanel 字段组件解析（Red）', () => {
+  function mountPanel() {
+    return mount(BaseChannelPanel, {
+      props: { type: 'claude' },
+      attachTo: document.body,
+      global: {
+        stubs: {
+          teleport: true
+        }
+      }
+    })
+  }
+
+  it('GIVEN type=select WHEN 调用 resolveFieldComponent THEN 返回 NSelect', async () => {
+    const wrapper = mountPanel()
+    try {
+      await nextTick()
+
+      const setupState = wrapper.vm.$.setupState as {
+        resolveFieldComponent: (type: string) => unknown
+      }
+      const fieldComponent = setupState.resolveFieldComponent('select')
+
+      expect(fieldComponent).toBe(NSelect)
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('GIVEN 字段包含 options WHEN 调用 buildFieldProps THEN 正确透传 options', async () => {
+    const wrapper = mountPanel()
+    try {
+      await nextTick()
+
+      const options = [
+        { label: '开启(1)', value: '1' },
+        { label: '关闭(0)', value: '0' },
+        { label: '自动(auto)', value: 'auto' }
+      ]
+      const setupState = wrapper.vm.$.setupState as {
+        buildFieldProps: (field: {
+          type: string
+          placeholder: string
+          options: Array<{ label: string, value: string }>
+        }) => Record<string, unknown>
+      }
+      const fieldProps = setupState.buildFieldProps({
+        type: 'select',
+        placeholder: '请选择',
+        options
+      })
+
+      expect(fieldProps.options).toEqual(options)
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('GIVEN type 非 select WHEN 调用 resolveFieldComponent THEN 返回非 NSelect', async () => {
+    const wrapper = mountPanel()
+    try {
+      await nextTick()
+
+      const setupState = wrapper.vm.$.setupState as {
+        resolveFieldComponent: (type: string) => unknown
+      }
+      const fieldComponent = setupState.resolveFieldComponent('text')
+
+      expect(fieldComponent).not.toBe(NSelect)
+    } finally {
+      wrapper.unmount()
+    }
   })
 })
