@@ -6,6 +6,18 @@
 
 ## [Unreleased]
 
+## [3.6.1] - 2026-04-22
+
+### Added
+
+- 🆕 **消息内容归一化** - 新增 `normalizeMessageContent`/`stringifyMessagePayload` 函数，统一处理文本、工具调用、工具结果、思考块等多种消息格式
+- ✅ **测试覆盖** - 新增 `parse-session-messages.test.js` 测试文件
+
+### Changed
+
+- 🔄 **ChatHistoryDrawer 滚动改进** - 新增"滚动到顶部"按钮，支持从顶部/底部双向加载消息，优化滚动行为
+- 🔍 **搜索功能增强** - 搜索结果添加 `mtime` 修改时间字段，SearchModal 按时间降序排序并显示时间信息
+
 ## [3.6.0] - 2026-04-21
 
 ### Added

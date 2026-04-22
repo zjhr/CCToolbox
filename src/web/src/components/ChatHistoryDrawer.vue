@@ -101,7 +101,10 @@
             </n-virtual-list>
           </div>
 
-          <!-- Scroll to bottom button -->
+          <!-- Scroll buttons -->
+          <div v-if="showScrollTopButton" class="scroll-btn scroll-top-btn" @click="scrollToTop">
+            <n-icon :size="18" :component="ArrowUpOutline" />
+          </div>
           <div v-if="showScrollButton" class="scroll-btn" @click="scrollToBottom">
             <n-icon :size="18" :component="ArrowDownIcon" />
           </div>
@@ -159,7 +162,7 @@ import { ref, computed, nextTick, watch } from 'vue'
 import { NDrawer, NIcon, NTag, NSpin, NEmpty, NButton, NVirtualList } from 'naive-ui'
 import { useResponsiveDrawer } from '../composables/useResponsiveDrawer'
 import { useSessionRealtime } from '../composables/useSessionRealtime'
-import { Chatbubbles as ChatbubblesIcon, GitBranch as GitBranchIcon, ChevronUp as ChevronUpIcon, ArrowDown as ArrowDownIcon, Close as CloseIcon, ArrowBackOutline } from '@vicons/ionicons5'
+import { Chatbubbles as ChatbubblesIcon, GitBranch as GitBranchIcon, ChevronUp as ChevronUpIcon, ArrowDown as ArrowDownIcon, ArrowUpOutline, Close as CloseIcon, ArrowBackOutline } from '@vicons/ionicons5'
 import ChatMessage from './ChatMessage.vue'
 import SessionSummaryCard from './SessionSummaryCard.vue'
 import FilterBar from './chat/FilterBar.vue'
@@ -214,7 +217,7 @@ const { startWatch, stopWatch, isConnected: realtimeConnected } = useSessionReal
       // 实时追加新消息时，如果用户在底部，则自动跟进
       if (isAtBottom.value) {
         nextTick(() => {
-          scrollToBottom()
+          scrollToBottomImmediate()
         })
       }
     }
@@ -234,9 +237,12 @@ const progressEntries = ref([])
 const currentPage = ref(1)
 const totalMessages = ref(0)
 const hasMore = ref(false)
+const scrollTarget = ref('bottom') // 'top' or 'bottom' — controls auto-scroll direction on load
 const virtualListRef = ref(null)
 const showScrollButton = ref(false)
+const showScrollTopButton = ref(false)
 const isAtBottom = ref(true)
+const isAtTop = ref(true)
 const lastScrollTop = ref(0)
 const lastScrollDirection = ref('down')
 const lastAutoLoadAt = ref(0)
@@ -340,25 +346,40 @@ const virtualItems = computed(() => {
 const estimatedItemSize = 64
 
 // Load messages
-async function loadMessages(page = 1) {
+async function loadMessages(page = 1, options = {}) {
   if (loading.value) return
+
+  const { order = 'desc', limit = 20 } = options
 
   try {
     loading.value = true
     const response = props.trashId
-      ? await getTrashMessages(props.projectName, props.trashId, page, 20, 'desc', props.channel)
-      : await getSessionMessages(props.projectName, props.sessionId, page, 20, 'desc', props.channel)
+      ? await getTrashMessages(props.projectName, props.trashId, page, limit, order, props.channel)
+      : await getSessionMessages(props.projectName, props.sessionId, page, limit, order, props.channel)
 
     const { messages: newMessages, metadata: meta, pagination } = response
 
-    if (page === 1) {
-      // First load - reverse to show oldest first (newest at bottom)
-      messages.value = newMessages.reverse()
-      metadata.value = meta
-      progressEntries.value = Array.isArray(meta?.progress) ? meta.progress : []
+    if (order === 'asc') {
+      // asc 模式：消息已按时间正序排列（最早在前），无需 reverse
+      if (page === 1) {
+        messages.value = newMessages
+        metadata.value = meta
+        progressEntries.value = Array.isArray(meta?.progress) ? meta.progress : []
+      } else {
+        // Load more (append newer messages)
+        messages.value = [...messages.value, ...newMessages]
+      }
     } else {
-      // Load more (prepend older messages) - reverse new messages too
-      messages.value = [...newMessages.reverse(), ...messages.value]
+      // desc 模式（默认）：API 返回最新→最旧，reverse 后变成最旧→最新
+      if (page === 1) {
+        // First load - reverse to show oldest first (newest at bottom)
+        messages.value = newMessages.reverse()
+        metadata.value = meta
+        progressEntries.value = Array.isArray(meta?.progress) ? meta.progress : []
+      } else {
+        // Load more (prepend older messages) - reverse new messages too
+        messages.value = [...newMessages.reverse(), ...messages.value]
+      }
     }
 
     currentPage.value = pagination.page
@@ -372,11 +393,24 @@ async function loadMessages(page = 1) {
       applyMessageCounts(buildCounts(adaptedMessages.value))
     }
 
-    // Scroll to bottom on first load
+    // Auto-scroll on first load
     if (page === 1) {
-      nextTick(() => {
-        scrollToBottom(false)
-      })
+      if (scrollTarget.value === 'top') {
+        // scrollToTop: many items need real render time, use setTimeout
+        setTimeout(() => {
+          const list = virtualListRef.value
+          if (list?.scrollTo && virtualItems.value.length > 0) {
+            setProgrammaticScroll(() => {
+              list.scrollTo({ index: 0, behavior: 'auto', debounce: false })
+            })
+          }
+        }, 300)
+      } else {
+        // scrollToBottom: give Drawer transition + virtual list time to render
+        setTimeout(() => {
+          scrollToBottomImmediate(false)
+        }, 150)
+      }
     }
   } catch (err) {
     console.error('Failed to load messages:', err)
@@ -488,8 +522,21 @@ function loadMore() {
   })
 }
 
-// Scroll to bottom
-function scrollToBottom(smooth = true) {
+// Scroll to top — load all messages in asc order and scroll to the top (earliest messages)
+async function scrollToTop() {
+  scrollTarget.value = 'top'
+  messages.value = []
+  currentPage.value = 1
+  hasMore.value = false
+  showScrollButton.value = false
+  showScrollTopButton.value = false
+  isAtTop.value = true
+
+  await loadMessages(1, { order: 'asc', limit: 99999 })
+}
+
+// Virtual list scroll to bottom (internal use)
+function scrollToBottomImmediate(smooth = true) {
   nextTick(() => {
     const list = virtualListRef.value
     if (list?.scrollTo && virtualItems.value.length > 0) {
@@ -509,6 +556,19 @@ function scrollToBottom(smooth = true) {
   })
 }
 
+// Scroll to bottom — reset and reload from the last message
+async function scrollToBottom() {
+  scrollTarget.value = 'bottom'
+  messages.value = []
+  currentPage.value = 1
+  hasMore.value = false
+  showScrollButton.value = false
+  showScrollTopButton.value = false
+  isAtBottom.value = true
+
+  await loadMessages(1)
+}
+
 function generateSummary() {
   summaryCardRef.value?.summarize?.()
 }
@@ -526,9 +586,13 @@ function handleScroll(e) {
     lastUserScrollAt.value = Date.now()
   }
 
-  // Show scroll button when not at bottom
+  // Show scroll buttons
   const distanceToBottom = scrollHeight - scrollTop - clientHeight
   showScrollButton.value = distanceToBottom > 200
+  showScrollTopButton.value = scrollTop > 200
+
+  // Update position status
+  isAtTop.value = scrollTop <= 12
   if (direction !== 'up') {
     isAtBottom.value = distanceToBottom <= BOTTOM_AUTO_SCROLL_THRESHOLD
   } else if (distanceToBottom > BOTTOM_AUTO_SCROLL_THRESHOLD) {
@@ -568,7 +632,7 @@ function handleScroll(e) {
 function handleItemResize() {
   nextTick(() => {
     if (isAtBottom.value && lastScrollDirection.value !== 'up') {
-      scrollToBottom(false)
+      scrollToBottomImmediate(false)
     }
   })
 }
@@ -596,7 +660,10 @@ function open() {
   totalMessages.value = 0
   hasMore.value = false
   showScrollButton.value = false
+  showScrollTopButton.value = false
+  scrollTarget.value = 'bottom'
   isAtBottom.value = true // 开启时默认在底部
+  isAtTop.value = true
   isAutoFilling.value = false
   filterNoMatchStreak.value = 0
   hasStableCounts.value = false
@@ -794,5 +861,9 @@ defineExpose({
 .scroll-btn:hover {
   background: var(--n-color-hover);
   transform: scale(1.05);
+}
+
+.scroll-top-btn {
+  bottom: 66px;
 }
 </style>

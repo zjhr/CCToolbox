@@ -853,7 +853,26 @@ function searchSessions(keyword, contextLength = 35) {
 
       // 提取消息内容
       if (msg.type === 'user' || msg.type === 'assistant') {
-        content = msg.content || '';
+        if (typeof msg.content === 'string') {
+          content = msg.content;
+        } else if (Array.isArray(msg.content)) {
+          content = msg.content
+            .map((part) => {
+              if (typeof part === 'string') return part;
+              if (part && typeof part === 'object' && typeof part.text === 'string') {
+                return part.text;
+              }
+              return '';
+            })
+            .filter(Boolean)
+            .join('\n');
+        } else if (msg.content !== null && msg.content !== undefined) {
+          content = String(msg.content);
+        }
+      }
+
+      if (!content) {
+        return;
       }
 
       // 搜索关键词
@@ -890,6 +909,7 @@ function searchSessions(keyword, contextLength = 35) {
         lastUpdated: sessionMeta.lastUpdated,
         matches,
         matchCount: matches.length,
+        mtime: sessionMeta.mtime || sessionMeta.lastUpdated,
         source: 'gemini'
       });
     }
@@ -933,6 +953,7 @@ function searchSessionsByTag(tagKeyword) {
           timestamp: sessionMeta.lastUpdated
         })),
         matchCount: matchedTags.length,
+        mtime: sessionMeta.mtime || sessionMeta.lastUpdated,
         source: 'gemini'
       });
     }

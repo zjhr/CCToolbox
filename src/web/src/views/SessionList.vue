@@ -176,7 +176,10 @@
         <template #item="{ element: session }">
           <div
             class="session-item"
-            :class="{ selected: isSelected(session.sessionId) }"
+            :class="{
+              selected: isSelected(session.sessionId),
+              active: !store.selectionMode && activeSessionId === session.sessionId
+            }"
             @mouseenter="hoveredSession = session.sessionId"
             @mouseleave="hoveredSession = null"
             @click="handleSessionClick(session)"
@@ -385,6 +388,9 @@
               <n-text strong>
                 {{ session.alias ? `${session.alias} (${session.sessionId.substring(0, 8)})` : session.sessionId.substring(0, 8) }}
               </n-text>
+              <n-text depth="3" style="font-size: 12px; margin-left: 4px">
+                {{ formatDate(session.mtime) }}
+              </n-text>
               <n-tag size="small" :bordered="false">{{ session.matchCount }} 个匹配</n-tag>
             </div>
             <div @click.stop>
@@ -512,6 +518,7 @@ const showAliasConflictModal = ref(false)
 const aliasConflicts = ref([])
 const pendingRestoreTrashIds = ref([])
 const selectedTrashId = ref('')
+const activeSessionId = ref(null)
 
 // Chat history drawer state
 const showChatHistory = ref(false)
@@ -711,6 +718,16 @@ async function handleSearch() {
   try {
     // 增加上下文长度到 35 (15 + 20)
     const data = await searchSessionsApi(props.projectName, searchQuery.value, 35, currentChannel.value)
+    
+    // Sort results by mtime descending (latest first)
+    if (data && Array.isArray(data.sessions)) {
+      data.sessions.sort((a, b) => {
+        const timeA = new Date(a.mtime || 0).getTime()
+        const timeB = new Date(b.mtime || 0).getTime()
+        return timeB - timeA
+      })
+    }
+
     searchResults.value = data
     showSearchResults.value = true
   } catch (err) {
@@ -718,6 +735,18 @@ async function handleSearch() {
   } finally {
     searching.value = false
   }
+}
+
+function formatDate(timestamp) {
+  if (!timestamp) return '-'
+  const date = new Date(timestamp)
+  if (isNaN(date.getTime())) return '-'
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  return `${year}-${month}-${day} ${hours}:${minutes}`
 }
 
 async function handleRefresh() {
@@ -795,6 +824,7 @@ function handleSessionClick(session) {
     store.toggleSelection(session.sessionId)
     return
   }
+  activeSessionId.value = session.sessionId
   handleViewChatHistory(session)
 }
 
@@ -1299,7 +1329,8 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
-.session-item.selected {
+.session-item.selected,
+.session-item.active {
   border-color: #4f7cff;
   background: #f6f8ff;
 }

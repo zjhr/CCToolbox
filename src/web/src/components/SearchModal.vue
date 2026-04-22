@@ -52,6 +52,9 @@
             <n-text strong>
               {{ getSessionLabel(session) }}
             </n-text>
+            <n-text depth="3" style="font-size: 12px; margin-left: 4px">
+              {{ formatDate(session.mtime || session.lastUpdated || session.timestamp) }}
+            </n-text>
             <n-tag size="small" :bordered="false">{{ session.matchCount }} 个匹配</n-tag>
           </div>
         </div>
@@ -147,6 +150,16 @@ async function handleSearch() {
     const data = props.channel === 'claude'
       ? await searchSessionsAcrossProjects(searchQuery.value, 35)
       : await searchSessionsGlobally(searchQuery.value, 35, props.channel)
+
+    // Sort results by mtime descending (latest first)
+    if (data && Array.isArray(data.sessions)) {
+      data.sessions.sort((a, b) => {
+        const timeA = new Date(a.mtime || a.lastUpdated || a.timestamp || 0).getTime()
+        const timeB = new Date(b.mtime || b.lastUpdated || b.timestamp || 0).getTime()
+        return timeB - timeA
+      })
+    }
+
     searchResults.value = data
   } catch (err) {
     message.error('搜索失败: ' + (err?.message || '未知错误'))
@@ -200,6 +213,18 @@ function getSessionLabel(session) {
     return `${session.alias} (${session.sessionId.substring(0, 8)})`
   }
   return session.sessionId.substring(0, 8)
+}
+
+function formatDate(timestamp) {
+  if (!timestamp) return '-'
+  const date = new Date(timestamp)
+  if (isNaN(date.getTime())) return '-'
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  return `${year}-${month}-${day} ${hours}:${minutes}`
 }
 </script>
 

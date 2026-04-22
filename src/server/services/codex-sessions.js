@@ -458,6 +458,7 @@ function searchSessions(keyword) {
           role: message.role,
           context: (startIndex > 0 ? '...' : '') + context + (endIndex < content.length ? '...' : ''),
           timestamp: message.timestamp,
+          mtime: fs.statSync(file.filePath).mtime.toISOString(),
           source: 'codex'
         });
       }
@@ -506,6 +507,7 @@ function searchSessionsByTag(tagKeyword) {
         role: 'tag',
         context: `tag:${tag}`,
         timestamp: session.meta.timestamp,
+        mtime: fs.statSync(file.filePath).mtime.toISOString(),
         source: 'codex'
       });
     });

@@ -20,6 +20,192 @@ const { broadcastSessionUpdate } = require('../websocket-server');
 const SESSION_LIST_CACHE_TTL_MS = 30 * 1000;
 const SESSION_LIST_CACHE_MAX_ENTRIES = 100;
 
+/**
+ * 将工具返回内容统一序列化为字符串，避免内容类型不一致导致展示异常。
+ * @param {*} value 任意内容
+ * @returns {string}
+ */
+function stringifyMessagePayload(value) {
+  if (typeof value === 'string') {
+    return value;
+  }
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch (err) {
+    return String(value ?? '');
+  }
+}
+
+/**
+ * 统一归一化消息 content，支持文本、工具调用、工具结果、思考块等结构。
+ * @param {string|Array|*} value 原始消息 content
+ * @param {object} options 归一化选项
+ * @returns {string}
+ */
+function normalizeMessageContent(value, options = {}) {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (!Array.isArray(value)) {
+    return '';
+  }
+
+  const {
+    includeAnyTextField = false,
+    includeInputText = false,
+    includeToolResult = true,
+    includeToolResultName = false,
+    includeToolUse = false,
+    toolUseUnknownName = null,
+    includeExtendedToolName = true,
+    includeThinking = false,
+    requireThinkingTrim = false,
+    includeImagePlaceholder = false,
+    joinWith = '\n\n',
+    emptyFallback = ''
+  } = options;
+
+  const parts = [];
+  value
+    .filter((item) => item && typeof item === 'object')
+    .forEach((item) => {
+      if (item.type === 'text' && typeof item.text === 'string') {
+        parts.push(item.text);
+        return;
+      }
+
+      if (includeAnyTextField && typeof item.text === 'string') {
+        parts.push(item.text);
+        return;
+      }
+
+      if (includeInputText && typeof item.input_text === 'string') {
+        parts.push(item.input_text);
+        return;
+      }
+
+      if (includeToolResult && item.type === 'tool_result') {
+        const resultContent = stringifyMessagePayload(item.content);
+        const toolName = includeExtendedToolName
+          ? (item.name || item.tool_name || item.toolName || null)
+          : (item.name || null);
+        if (includeToolResultName && toolName) {
+          parts.push(`**[工具结果: ${toolName}]**\n\`\`\`\n${resultContent}\n\`\`\``);
+        } else {
+          parts.push(`**[工具结果]**\n\`\`\`\n${resultContent}\n\`\`\``);
+        }
+        return;
+      }
+
+      if (includeToolUse && item.type === 'tool_use') {
+        const inputStr = stringifyMessagePayload(item.input);
+        const toolName = includeExtendedToolName
+          ? (item.name || item.tool_name || item.toolName || toolUseUnknownName)
+          : (item.name || toolUseUnknownName);
+        parts.push(`**[调用工具: ${toolName}]**\n\`\`\`json\n${inputStr}\n\`\`\``);
+        return;
+      }
+
+      if (includeThinking && item.type === 'thinking' && typeof item.thinking === 'string') {
+        if (!requireThinkingTrim || item.thinking.trim()) {
+          parts.push(`**[思考]**\n${item.thinking}`);
+        }
+        return;
+      }
+
+      if (includeImagePlaceholder && item.type === 'image') {
+        parts.push('[图片]');
+      }
+    });
+
+  if (parts.length === 0) {
+    return emptyFallback;
+  }
+
+  return parts.join(joinWith);
+}
+
+/**
+ * 将 Gemini 原生 parts 结构转换为统一 content 结构，便于复用共享归一化逻辑。
+ * @param {Array|*} value 原始 Gemini parts
+ * @returns {Array<object>}
+ */
+function normalizeGeminiContentParts(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((item) => item && typeof item === 'object')
+    .map((item) => {
+      if (typeof item.type === 'string') {
+        return item;
+      }
+
+      if (typeof item.text === 'string') {
+        return { type: 'text', text: item.text };
+      }
+
+      if (item.functionCall && typeof item.functionCall === 'object') {
+        return {
+          type: 'tool_use',
+          name: item.functionCall.name || null,
+          input: item.functionCall.args ?? {}
+        };
+      }
+
+      if (item.functionResponse && typeof item.functionResponse === 'object') {
+        return {
+          type: 'tool_result',
+          name: item.functionResponse.name || null,
+          content: item.functionResponse.response
+        };
+      }
+
+      return item;
+    });
+}
+
+const SESSION_UPDATE_NORMALIZE_OPTIONS = Object.freeze({
+  includeAnyTextField: true,
+  includeInputText: true,
+  includeToolResult: true,
+  includeToolResultName: true,
+  includeToolUse: true,
+  toolUseUnknownName: 'unknown',
+  includeThinking: true,
+  requireThinkingTrim: true
+});
+
+const GEMINI_SESSION_UPDATE_NORMALIZE_OPTIONS = Object.freeze({
+  includeAnyTextField: true,
+  includeToolResult: true,
+  includeToolResultName: true,
+  includeToolUse: true,
+  toolUseUnknownName: 'unknown',
+  joinWith: '\n'
+});
+
+/**
+ * 统一会话增量消息 content 的归一化路径。
+ * - Claude/Codex: 直接走 normalizeMessageContent
+ * - Gemini: 先执行 parts 预处理，再走 normalizeMessageContent
+ * @param {*} value 原始 content
+ * @param {object} options 归一化控制项
+ * @returns {string}
+ */
+function normalizeSessionUpdateContent(value, options = {}) {
+  const {
+    preprocessGeminiParts = false,
+    trim = false,
+    normalizeOptions = SESSION_UPDATE_NORMALIZE_OPTIONS
+  } = options;
+
+  const normalizedInput = preprocessGeminiParts ? normalizeGeminiContentParts(value) : value;
+  const normalizedContent = normalizeMessageContent(normalizedInput, normalizeOptions);
+  return trim ? normalizedContent.trim() : normalizedContent;
+}
+
 function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -764,35 +950,20 @@ async function getSubagentMessages(projectName, sessionId, agentId, options = {}
             if (typeof json.message?.content === 'string') {
               message.content = json.message.content;
             } else if (Array.isArray(json.message?.content)) {
-              const parts = [];
-              for (const item of json.message.content) {
-                if (item.type === 'text' && item.text) {
-                  parts.push(item.text);
-                } else if (item.type === 'tool_result') {
-                  const resultContent = typeof item.content === 'string'
-                    ? item.content
-                    : JSON.stringify(item.content, null, 2);
-                  parts.push(`**[工具结果]**\n\`\`\`\n${resultContent}\n\`\`\``);
-                } else if (item.type === 'image') {
-                  parts.push('[图片]');
-                }
-              }
-              message.content = parts.join('\n\n') || '[工具交互]';
+              message.content = normalizeMessageContent(json.message.content, {
+                includeToolResult: true,
+                includeImagePlaceholder: true,
+                emptyFallback: '[工具交互]'
+              });
             }
           } else if (json.type === 'assistant') {
             if (Array.isArray(json.message?.content)) {
-              const parts = [];
-              for (const item of json.message.content) {
-                if (item.type === 'text' && item.text) {
-                  parts.push(item.text);
-                } else if (item.type === 'tool_use') {
-                  const inputStr = JSON.stringify(item.input, null, 2);
-                  parts.push(`**[调用工具: ${item.name}]**\n\`\`\`json\n${inputStr}\n\`\`\``);
-                } else if (item.type === 'thinking' && item.thinking) {
-                  parts.push(`**[思考]**\n${item.thinking}`);
-                }
-              }
-              message.content = parts.join('\n\n') || '[处理中...]';
+              message.content = normalizeMessageContent(json.message.content, {
+                includeToolUse: true,
+                includeExtendedToolName: false,
+                includeThinking: true,
+                emptyFallback: '[处理中...]'
+              });
             } else if (typeof json.message?.content === 'string') {
               message.content = json.message.content;
             }
@@ -987,7 +1158,8 @@ function searchSessionsByTag(config, projectName, tagKeyword) {
           role: 'tag',
           context: `tag:${tag}`,
           position: 0
-        }))
+        })),
+        mtime: fs.statSync(filePath).mtime.toISOString()
       });
     }
   }
@@ -1068,7 +1240,8 @@ function searchSessions(config, projectName, keyword, contextLength = 15) {
           sessionId,
           alias: aliases[sessionId] || null,
           matchCount: matches.length,
-          matches: matches.slice(0, 5) // Limit to 5 matches per session
+          matches: matches.slice(0, 5), // Limit to 5 matches per session
+          mtime: fs.statSync(filePath).mtime.toISOString()
         });
       }
     } catch (e) {
@@ -1381,28 +1554,6 @@ function parseSessionUpdateMessages(chunk) {
     }
     return null;
   };
-  const extractTextContent = (value) => {
-    if (typeof value === 'string') {
-      return value;
-    }
-    if (!Array.isArray(value)) {
-      return '';
-    }
-    return value
-      .filter((item) => item && typeof item === 'object')
-      .map((item) => {
-        if (typeof item.text === 'string') {
-          return item.text;
-        }
-        if (typeof item.input_text === 'string') {
-          return item.input_text;
-        }
-        return '';
-      })
-      .filter(Boolean)
-      .join('\n');
-  };
-
   lines.forEach((line) => {
     const trimmed = line.trim();
     if (!trimmed) {
@@ -1413,15 +1564,9 @@ function parseSessionUpdateMessages(chunk) {
       const parsed = JSON.parse(trimmed);
       // Claude JSONL 格式（保持原有逻辑不变）
       if (parsed.type === 'user' || parsed.type === 'assistant') {
-        let content = '';
-        if (typeof parsed.message?.content === 'string') {
-          content = parsed.message.content;
-        } else if (Array.isArray(parsed.message?.content)) {
-          content = parsed.message.content
-            .filter((item) => item && item.type === 'text' && typeof item.text === 'string')
-            .map((item) => item.text)
-            .join('\n');
-        }
+        const content = normalizeSessionUpdateContent(parsed.message?.content, {
+          normalizeOptions: SESSION_UPDATE_NORMALIZE_OPTIONS
+        });
 
         const messageId = parsed.id
           || parsed.uuid
@@ -1450,7 +1595,10 @@ function parseSessionUpdateMessages(chunk) {
           return;
         }
 
-        const content = extractTextContent(payload.content).trim();
+        const content = normalizeSessionUpdateContent(payload.content, {
+          trim: true,
+          normalizeOptions: SESSION_UPDATE_NORMALIZE_OPTIONS
+        });
         if (!content) {
           return;
         }
@@ -1556,16 +1704,11 @@ function watchSession(sessionId, options = {}) {
 
         const messages = newMessages.map((message, index) => {
           const role = message?.type === 'user' ? 'user' : 'assistant';
-          let parsedContent = '';
-          if (typeof message?.content === 'string') {
-            parsedContent = message.content;
-          } else if (Array.isArray(message?.content)) {
-            parsedContent = message.content
-              .filter((item) => item && typeof item === 'object' && typeof item.text === 'string')
-              .map((item) => item.text)
-              .join('\n');
-          }
-          const normalizedContent = parsedContent.trim();
+          const normalizedContent = normalizeSessionUpdateContent(message?.content, {
+            preprocessGeminiParts: true,
+            trim: true,
+            normalizeOptions: GEMINI_SESSION_UPDATE_NORMALIZE_OPTIONS
+          });
           if (!normalizedContent) {
             return null;
           }
@@ -1670,6 +1813,7 @@ module.exports = {
   hasActualMessages,
   getProjectAndSessionCounts,
   getSubagentMessages,
+  parseSessionUpdateMessages,
   watchSession,
   unwatchSession
 };
