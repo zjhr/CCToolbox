@@ -469,6 +469,7 @@ import { useDeleteProgress } from '../composables/useDeleteProgress'
 import message, { dialog } from '../utils/message'
 import { searchSessions as searchSessionsApi } from '../api/sessions'
 import { getTagColor } from '../utils/tag-color'
+import { sortSessionsByMtimeDesc } from '../utils/session-sort'
 import ChatHistoryDrawer from '../components/ChatHistoryDrawer.vue'
 import TerminalLauncher from '../components/TerminalLauncher.vue'
 import OpenSpecDrawer from '../components/openspecui/OpenSpecDrawer.vue'
@@ -719,14 +720,7 @@ async function handleSearch() {
     // 增加上下文长度到 35 (15 + 20)
     const data = await searchSessionsApi(props.projectName, searchQuery.value, 35, currentChannel.value)
     
-    // Sort results by mtime descending (latest first)
-    if (data && Array.isArray(data.sessions)) {
-      data.sessions.sort((a, b) => {
-        const timeA = new Date(a.mtime || 0).getTime()
-        const timeB = new Date(b.mtime || 0).getTime()
-        return timeB - timeA
-      })
-    }
+    sortSessionsByMtimeDesc(data?.sessions, ['mtime'])
 
     searchResults.value = data
     showSearchResults.value = true

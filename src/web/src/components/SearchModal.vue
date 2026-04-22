@@ -94,6 +94,7 @@ import ChatHistoryDrawer from './ChatHistoryDrawer.vue'
 import message from '../utils/message'
 import { searchSessionsAcrossProjects } from '../api/search'
 import { searchSessionsGlobally } from '../api/sessions'
+import { sortSessionsByMtimeDesc } from '../utils/session-sort'
 
 const props = defineProps({
   show: {
@@ -151,14 +152,7 @@ async function handleSearch() {
       ? await searchSessionsAcrossProjects(searchQuery.value, 35)
       : await searchSessionsGlobally(searchQuery.value, 35, props.channel)
 
-    // Sort results by mtime descending (latest first)
-    if (data && Array.isArray(data.sessions)) {
-      data.sessions.sort((a, b) => {
-        const timeA = new Date(a.mtime || a.lastUpdated || a.timestamp || 0).getTime()
-        const timeB = new Date(b.mtime || b.lastUpdated || b.timestamp || 0).getTime()
-        return timeB - timeA
-      })
-    }
+    sortSessionsByMtimeDesc(data?.sessions)
 
     searchResults.value = data
   } catch (err) {

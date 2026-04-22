@@ -286,10 +286,10 @@ function runTests() {
   );
 
   runTestCase(
-    'watchSession(gemini): thinking 内容保持现状不输出',
+    'watchSession(gemini): thinking 内容应被保留并触发广播',
     () => {
       const broadcastCalls = runGeminiWatchSessionUpdateTest({
-        sessionId: 'gemini-watch-thinking-no-output',
+        sessionId: 'gemini-watch-thinking-keep',
         initialMessages: [],
         updatedMessages: [
           {
@@ -306,7 +306,12 @@ function runTests() {
         ]
       });
 
-      assert.strictEqual(broadcastCalls.length, 0);
+      assert.strictEqual(broadcastCalls.length, 1);
+      assert.strictEqual(broadcastCalls[0].sessionId, 'gemini-watch-thinking-keep');
+      assert.strictEqual(broadcastCalls[0].messages.length, 1);
+      assert.strictEqual(broadcastCalls[0].messages[0].type, 'assistant');
+      assert.ok(broadcastCalls[0].messages[0].content.includes('**[思考]**'));
+      assert.ok(broadcastCalls[0].messages[0].content.includes('内部推理'));
     },
     failures
   );

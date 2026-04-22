@@ -183,6 +183,8 @@ const GEMINI_SESSION_UPDATE_NORMALIZE_OPTIONS = Object.freeze({
   includeToolResultName: true,
   includeToolUse: true,
   toolUseUnknownName: 'unknown',
+  includeThinking: true,
+  requireThinkingTrim: true,
   joinWith: '\n'
 });
 
