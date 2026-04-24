@@ -17,11 +17,46 @@
         </n-button>
       </n-space>
     </div>
+
+    <!-- Search Section -->
+    <div class="search-section">
+      <div class="search-input-wrapper">
+        <n-input
+          :value="searchKeyword"
+          size="small"
+          placeholder="搜索对话内容关键字..."
+          clearable
+          class="search-input"
+          @update:value="onKeywordUpdate"
+          @keydown.enter="emit('search')"
+          @clear="emit('clear')"
+        >
+          <template #prefix>
+            <n-icon :component="SearchIcon" />
+          </template>
+        </n-input>
+      </div>
+      
+      <div v-if="searchMatchesCount > 0" class="search-controls">
+        <span class="search-counter">
+          {{ searchMatchesCount > 0 ? searchCurrentIndex + 1 : 0 }}/{{ searchMatchesCount }}
+        </span>
+        <n-button-group size="small">
+          <n-button quaternary circle size="small" @click="emit('prev')">
+            <template #icon><n-icon :component="ChevronUpIcon" /></template>
+          </n-button>
+          <n-button quaternary circle size="small" @click="emit('next')">
+            <template #icon><n-icon :component="ChevronDownIcon" /></template>
+          </n-button>
+        </n-button-group>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { NButton, NSpace } from 'naive-ui'
+import { NButton, NSpace, NInput, NIcon, NButtonGroup } from 'naive-ui'
+import { Search as SearchIcon, ChevronUp as ChevronUpIcon, ChevronDown as ChevronDownIcon } from '@vicons/ionicons5'
 
 const props = defineProps({
   modelValue: {
@@ -31,10 +66,33 @@ const props = defineProps({
   counts: {
     type: Object,
     default: () => ({})
+  },
+  searchKeyword: {
+    type: String,
+    default: ''
+  },
+  searchMatchesCount: {
+    type: Number,
+    default: 0
+  },
+  searchCurrentIndex: {
+    type: Number,
+    default: 0
+  },
+  loadingSearch: {
+    type: Boolean,
+    default: false
   }
 })
 
-const emit = defineEmits(['update:modelValue'])
+const emit = defineEmits([
+  'update:modelValue',
+  'update:searchKeyword',
+  'search',
+  'next',
+  'prev',
+  'clear'
+])
 
 const options = [
   { label: '用户', value: 'user' },
@@ -57,6 +115,10 @@ function toggleFilter(value) {
   }
   emit('update:modelValue', Array.from(next))
 }
+
+function onKeywordUpdate(val) {
+  emit('update:searchKeyword', val)
+}
 </script>
 
 <style scoped>
@@ -64,9 +126,12 @@ function toggleFilter(value) {
   position: sticky;
   top: 0;
   z-index: 8;
-  padding: 6px 16px;
+  padding: 8px 16px;
   border-bottom: 1px solid var(--n-border-color);
   background: var(--n-color);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .filter-scroll {
@@ -87,12 +152,12 @@ function toggleFilter(value) {
 .filter-btn {
   border-radius: 6px;
   padding: 0 10px;
-  height: 30px;
+  height: 28px;
   font-size: 12px;
   color: var(--n-text-color-3);
   border: 1px solid var(--n-border-color);
   background: var(--n-color-embedded);
-  transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+  transition: all 0.2s ease;
 }
 
 .filter-btn:hover {
@@ -110,7 +175,6 @@ function toggleFilter(value) {
   margin-right: 6px;
   font-size: 12px;
   font-weight: 500;
-  letter-spacing: 0.01em;
 }
 
 .filter-count {
@@ -123,7 +187,6 @@ function toggleFilter(value) {
   text-align: center;
   color: var(--n-text-color-3);
   background: var(--n-color);
-  font-variant-numeric: tabular-nums;
 }
 
 .filter-btn.active .filter-count {
@@ -131,19 +194,40 @@ function toggleFilter(value) {
   background: rgba(245, 158, 11, 0.2);
 }
 
+/* Search Section Styles */
+.search-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+.search-input-wrapper {
+  flex: 1;
+}
+
+.search-input {
+  --n-border-radius: 8px;
+}
+
+.search-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.search-counter {
+  font-size: 12px;
+  color: var(--n-text-color-3);
+  font-variant-numeric: tabular-nums;
+  min-width: 40px;
+  text-align: right;
+}
+
 @media (max-width: 640px) {
   .filter-bar {
-    padding: 8px 10px;
-  }
-
-  .filter-btn {
-    height: 32px;
-    padding: 0 12px;
-  }
-
-  .filter-count {
-    height: 18px;
-    line-height: 18px;
+    padding: 8px 12px;
   }
 }
 </style>

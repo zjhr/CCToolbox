@@ -6,6 +6,29 @@
 
 ## [Unreleased]
 
+## [3.6.2] - 2026-04-24
+
+### Added
+
+- 🆕 **会话内消息搜索** - 新增 `searchSessionMessages` API，支持在会话 JSONL 文件中搜索关键字，返回匹配消息索引、上下文摘要和角色信息
+- 🔍 **ChatHistoryDrawer 搜索集成** - 消息抽屉集成搜索功能，支持关键字输入、匹配计数显示、上一个/下一个导航
+- 🔍 **FilterBar 搜索控件** - 过滤栏新增搜索区域，包含搜索输入框和导航按钮
+- 🏷️ **渠道标签显示** - 消息抽屉标题区显示渠道类型标签（Claude/Codex/Gemini），不同渠道使用不同颜色
+
+### Changed
+
+- 🔄 **Codex 渠道删除清理优化** - 删除渠道时同步清理 TOML 配置的 model_providers 和 auth.json 的 API Key，避免残留历史配置
+- 🔄 **filePath 绝对路径** - 会话信息返回的 filePath 改为绝对路径，便于前端直接使用
+- 🔄 **滚动到底部优化** - 修复虚拟列表 scrollToBottom 定位逻辑，增加延迟兜底确保完全置底
+
+### Fixed
+
+- 🐛 **虚拟列表滚动定位** - 修复使用 position: 'bottom' 时可能无法正确滚动到底部的问题
+
+### Tests
+
+- ✅ **测试覆盖完善** - 新增 `session-search.test.js`、`sessions.test.js` 测试文件
+
 ## [3.6.1] - 2026-04-22
 
 ### Added

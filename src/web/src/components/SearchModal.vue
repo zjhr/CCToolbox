@@ -2,7 +2,7 @@
   <n-modal :mask-closable="false"
     v-model:show="visible"
     preset="card"
-    title="全局搜索"
+    :title="modalTitle"
     :z-index="900"
     style="width: 900px; max-width: 90vw;"
     :style="{ marginTop: '80px' }"
@@ -112,6 +112,12 @@ const emit = defineEmits(['update:show'])
 const visible = computed({
   get: () => props.show,
   set: (value) => emit('update:show', value)
+})
+
+const modalTitle = computed(() => {
+  if (!props.channel) return '全局搜索'
+  const name = props.channel.charAt(0).toUpperCase() + props.channel.slice(1)
+  return `全局搜索 - ${name}`
 })
 
 const searchQuery = ref('')

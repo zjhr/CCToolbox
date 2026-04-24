@@ -5,6 +5,13 @@ const os = require('os');
 const { getGeminiDir } = require('./gemini-config');
 const { getAllMetadata } = require('./session-metadata');
 
+function resolveAbsoluteFilePath(filePath) {
+  if (typeof filePath !== 'string' || !filePath.trim()) {
+    return '';
+  }
+  return path.resolve(filePath);
+}
+
 class MinHeap {
   constructor(compareFn) {
     this.compareFn = compareFn;
@@ -327,7 +334,7 @@ function scanProjectSessions(projectHash) {
   return entries
     .filter(entry => entry.isFile() && entry.name.match(/^session-.*\.json$/))
     .map(entry => {
-      const filePath = path.join(chatsDir, entry.name);
+      const filePath = resolveAbsoluteFilePath(path.join(chatsDir, entry.name));
       // 文件名格式：session-2025-11-23T02-09-87570eb4.json
       // session-{timestamp}-{shortId}.json
       const match = entry.name.match(/^session-(.*)-([a-f0-9]+)\.json$/);
@@ -490,7 +497,7 @@ function getAllSessions() {
 
       allSessions.push({
         ...meta,
-        filePath: file.filePath,
+        filePath: resolveAbsoluteFilePath(file.filePath),
         size,
         mtime,
         source: 'gemini',
@@ -515,7 +522,7 @@ function normalizeSession(geminiSession) {
     sessionId: geminiSession.sessionId,
     mtime: geminiSession.mtime,
     size: geminiSession.size,
-    filePath: geminiSession.filePath,
+    filePath: resolveAbsoluteFilePath(geminiSession.filePath),
     gitBranch: null, // Gemini 不记录 git branch
     firstMessage: geminiSession.firstMessage,
     forkedFrom: geminiSession.forkedFrom || null,
@@ -742,7 +749,7 @@ async function getRecentSessionsOptimized(limit = 5) {
 
     const sessionFiles = entries.filter(entry => entry.isFile() && entry.name.match(/^session-.*\.json$/));
     await Promise.all(sessionFiles.map(async (entry) => {
-      const filePath = path.join(chatsDir, entry.name);
+      const filePath = resolveAbsoluteFilePath(path.join(chatsDir, entry.name));
       try {
         const stats = await fs.promises.stat(filePath);
         if (!stats.isFile()) {
@@ -816,7 +823,7 @@ function getSessionById(sessionId) {
   // 合并元数据
   return {
     ...fullSession,
-    filePath: sessionMeta.filePath,
+    filePath: resolveAbsoluteFilePath(sessionMeta.filePath),
     size: sessionMeta.size,
     mtime: sessionMeta.mtime,
     source: 'gemini'

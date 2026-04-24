@@ -48,11 +48,11 @@
       <!-- User message: plain text or array content -->
       <div v-if="messageRole === 'user'" class="user-content">
         <template v-if="typeof messageContent === 'string'">
-          {{ expanded ? messageContent : truncatedContent }}
+          <div v-html="highlightText(escapeHtml(expanded ? messageContent : truncatedContent), keyword)"></div>
         </template>
         <template v-else-if="Array.isArray(messageContent)">
           <div v-for="(item, index) in displayArray" :key="index" class="content-item">
-            <div v-if="item.type === 'text'">{{ item.text }}</div>
+            <div v-if="item.type === 'text'" v-html="highlightText(escapeHtml(item.text), keyword)"></div>
             <div v-else-if="item.type === 'image'" class="image-item">
               <template v-if="getImageSrc(item)">
                 <img :src="getImageSrc(item)" alt="会话图片" loading="lazy" />
@@ -62,7 +62,7 @@
                 <span>图片内容</span>
               </template>
             </div>
-            <div v-else-if="item.__fallback" class="fallback-text">{{ item.__fallbackText }}</div>
+            <div v-else-if="item.__fallback" class="fallback-text" v-html="highlightText(escapeHtml(item.__fallbackText), keyword)"></div>
           </div>
         </template>
       </div>
@@ -81,8 +81,7 @@
         />
       </div>
       <!-- Thinking message -->
-      <div v-else-if="messageRole === 'thinking'" class="thinking-text">
-        {{ expanded ? messageContent : truncatedContent }}
+      <div v-else-if="messageRole === 'thinking'" class="thinking-text" v-html="highlightText(escapeHtml(expanded ? messageContent : truncatedContent), keyword)">
       </div>
     </div>
     <!-- Expand button -->
@@ -127,8 +126,40 @@ const props = defineProps({
   progressEntries: {
     type: Array,
     default: () => []
+  },
+  keyword: {
+    type: String,
+    default: ''
   }
 })
+
+// 工具函数：转义 HTML 特殊字符
+const escapeHtml = (unsafe) => {
+  if (!unsafe || typeof unsafe !== 'string') return ''
+  return unsafe
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}
+
+// 工具函数：高亮文本（用于纯文本，需配合 v-html 使用，调用前需先 escapeHtml）
+const highlightText = (text, keyword) => {
+  if (!keyword || !text) return text
+  const escapedKeyword = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const regex = new RegExp(`(${escapedKeyword})`, 'gi')
+  return text.replace(regex, '<mark>$1</mark>')
+}
+
+// 工具函数：高亮 HTML 内容（用于 Markdown 渲染后的结果，避开标签内部）
+const highlightHtml = (html, keyword) => {
+  if (!keyword || !html) return html
+  const escapedKeyword = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  // 使用正则 lookahead 确保不在标签属性中匹配
+  const regex = new RegExp(`(${escapedKeyword})(?![^<]*>)`, 'gi')
+  return html.replace(regex, '<mark>$1</mark>')
+}
 
 const emit = defineEmits(['click-task'])
 
@@ -223,10 +254,11 @@ marked.setOptions({
 const renderedMarkdown = computed(() => {
   if (messageRole.value === 'assistant' && messageContent.value) {
     try {
-      return marked.parse(messageContent.value)
+      const html = marked.parse(messageContent.value)
+      return highlightHtml(html, props.keyword)
     } catch (err) {
       console.error('Markdown parse error:', err)
-      return messageContent.value
+      return highlightText(escapeHtml(messageContent.value), props.keyword)
     }
   }
   return ''
@@ -238,9 +270,10 @@ const truncatedMarkdown = computed(() => {
     try {
       const content = messageContent.value
       const truncated = truncateText(content)
-      return marked.parse(truncated)
+      const html = marked.parse(truncated)
+      return highlightHtml(html, props.keyword)
     } catch (err) {
-      return truncateText(messageContent.value)
+      return highlightText(escapeHtml(truncateText(messageContent.value)), props.keyword)
     }
   }
   return ''
@@ -589,6 +622,13 @@ function getImageSrc(item) {
 .markdown-body {
   font-size: 13px;
   line-height: 1.5;
+}
+
+/* 搜索高亮标记样式 */
+:deep(mark) {
+  background-color: rgba(255, 200, 0, 0.4);
+  padding: 2px;
+  border-radius: 2px;
 }
 
 .markdown-body :deep(h1),

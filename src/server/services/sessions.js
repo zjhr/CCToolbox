@@ -208,6 +208,172 @@ function normalizeSessionUpdateContent(value, options = {}) {
   return trim ? normalizedContent.trim() : normalizedContent;
 }
 
+/**
+ * 将任意角色值归一化为 user/assistant/tool 之一，保证搜索结果角色稳定。
+ * @param {*} role 原始角色
+ * @param {string} fallbackRole 兜底角色
+ * @returns {'user'|'assistant'|'tool'}
+ */
+function normalizeSearchRole(role, fallbackRole = 'assistant') {
+  const normalizedRole = String(role || '').trim().toLowerCase();
+  if (normalizedRole === 'user' || normalizedRole === 'assistant' || normalizedRole === 'tool') {
+    return normalizedRole;
+  }
+
+  const fallback = String(fallbackRole || '').trim().toLowerCase();
+  if (fallback === 'user' || fallback === 'assistant' || fallback === 'tool') {
+    return fallback;
+  }
+
+  return 'assistant';
+}
+
+/**
+ * 将消息 content 统一转换为可检索文本。
+ * @param {*} content 原始 content
+ * @returns {string}
+ */
+function normalizeSearchText(content) {
+  if (typeof content === 'string') {
+    return content;
+  }
+
+  if (Array.isArray(content)) {
+    return normalizeMessageContent(content, {
+      includeAnyTextField: true,
+      includeInputText: true,
+      includeToolResult: true,
+      includeToolResultName: true,
+      includeToolUse: true,
+      includeThinking: true,
+      includeImagePlaceholder: true
+    });
+  }
+
+  return '';
+}
+
+/**
+ * 从一行 JSONL 中提取可检索的消息（兼容 Claude/Codex/Gemini 与历史结构）。
+ * @param {*} json 解析后的 JSON 对象
+ * @returns {{ role: 'user'|'assistant'|'tool', content: string }|null}
+ */
+function extractSearchableMessage(json) {
+  if (!json || typeof json !== 'object') {
+    return null;
+  }
+
+  if (json.type === 'response_item' && json.payload?.type === 'message') {
+    const role = normalizeSearchRole(json.payload.role, 'assistant');
+    const content = normalizeSearchText(json.payload.content).trim();
+    return content ? { role, content } : null;
+  }
+
+  if (json.type === 'user' || json.type === 'assistant' || json.type === 'tool') {
+    const role = normalizeSearchRole(json.type, json.type);
+    const content = normalizeSearchText(json.message?.content ?? json.content).trim();
+    return content && content !== 'Warmup' ? { role, content } : null;
+  }
+
+  if (json.message && typeof json.message === 'object') {
+    const role = normalizeSearchRole(json.message.role, json.type);
+    const content = normalizeSearchText(json.message.content).trim();
+    return content && content !== 'Warmup' ? { role, content } : null;
+  }
+
+  return null;
+}
+
+/**
+ * 生成匹配关键字的上下文摘要，避免返回整段长文本。
+ * @param {string} text 原始文本
+ * @param {number} hitStart 命中起始位置
+ * @param {number} keywordLength 关键字长度
+ * @param {number} contextLength 前后保留的字符数
+ * @returns {string}
+ */
+function buildMatchContext(text, hitStart, keywordLength, contextLength) {
+  const safeContextLength = Number.isFinite(contextLength) && contextLength >= 0 ? contextLength : 20;
+  const start = Math.max(0, hitStart - safeContextLength);
+  const end = Math.min(text.length, hitStart + keywordLength + safeContextLength);
+  const snippet = text.slice(start, end);
+  return `${start > 0 ? '...' : ''}${snippet}${end < text.length ? '...' : ''}`;
+}
+
+/**
+ * 在单个会话中搜索关键字，并返回消息索引、摘要上下文和角色信息。
+ * @param {{ projectsDir: string }} config 服务配置
+ * @param {string} projectName 项目名
+ * @param {string} sessionId 会话 ID
+ * @param {string} keyword 搜索关键字
+ * @param {number} contextLength 上下文长度
+ * @returns {{ matches: Array<{ messageIndex: number, context: string, role: 'user'|'assistant'|'tool' }> }}
+ */
+function searchSessionMessages(config, projectName, sessionId, keyword, contextLength = 20) {
+  const normalizedKeyword = String(keyword || '').trim();
+  if (!normalizedKeyword) {
+    return { matches: [] };
+  }
+
+  const possiblePaths = [];
+  const directProjectPath = path.join(config.projectsDir, projectName, `${sessionId}.jsonl`);
+  possiblePaths.push(directProjectPath);
+
+  try {
+    const { fullPath } = parseRealProjectPath(projectName);
+    possiblePaths.push(path.join(fullPath, '.claude', 'sessions', `${sessionId}.jsonl`));
+  } catch (err) {
+    // 忽略路径解析异常，继续使用其他 fallback 路径
+  }
+
+  possiblePaths.push(path.join(os.homedir(), '.claude', 'projects', projectName, `${sessionId}.jsonl`));
+
+  const sessionFile = possiblePaths.find((filePath) => fs.existsSync(filePath));
+  if (!sessionFile) {
+    const error = new Error(`Session file not found: ${sessionId}`);
+    error.code = 'SESSION_NOT_FOUND';
+    error.triedPaths = possiblePaths;
+    throw error;
+  }
+
+  const matches = [];
+  const lowerKeyword = normalizedKeyword.toLowerCase();
+  let messageIndex = -1;
+  const lines = fs.readFileSync(sessionFile, 'utf8').split('\n');
+
+  lines.forEach((line) => {
+    const trimmedLine = line.trim();
+    if (!trimmedLine) {
+      return;
+    }
+
+    try {
+      const json = JSON.parse(trimmedLine);
+      const message = extractSearchableMessage(json);
+      if (!message || !message.content) {
+        return;
+      }
+
+      messageIndex += 1;
+      const lowerContent = message.content.toLowerCase();
+      let hitStart = 0;
+
+      while ((hitStart = lowerContent.indexOf(lowerKeyword, hitStart)) !== -1) {
+        matches.push({
+          messageIndex,
+          context: buildMatchContext(message.content, hitStart, normalizedKeyword.length, contextLength),
+          role: message.role
+        });
+        hitStart += Math.max(1, normalizedKeyword.length);
+      }
+    } catch (err) {
+      // 忽略无效 JSON 行
+    }
+  });
+
+  return { matches };
+}
+
 function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -849,7 +1015,7 @@ function getSessionsForProject(config, projectName) {
         sessionId: session.sessionId,
         mtime: session.mtime,
         size: session.size,
-        filePath: session.filePath,
+        filePath: path.resolve(session.filePath),
         gitBranch: info.gitBranch || null,
         firstMessage: info.firstMessage || null,
         forkedFrom: forkRelations[session.sessionId] || null
@@ -1284,7 +1450,7 @@ function getRecentSessions(config, limit = 5) {
         projectFullPath: fullPath,
         mtime: session.mtime,
         size: session.size,
-        filePath: session.filePath,
+        filePath: path.resolve(session.filePath),
         gitBranch: info.gitBranch || null,
         firstMessage: info.firstMessage || null,
         forkedFrom: forkRelations[session.sessionId] || null,
@@ -1326,7 +1492,7 @@ async function getRecentSessionsOptimized(config, limit = 5) {
 
     await Promise.all(sessionFiles.map(async (entry) => {
       const sessionId = entry.name.replace(/\.jsonl$/, '');
-      const filePath = path.join(projectDir, entry.name);
+      const filePath = path.resolve(projectDir, entry.name);
       try {
         const stats = await promisesFs.stat(filePath);
         if (!stats.isFile()) {
@@ -1804,6 +1970,7 @@ module.exports = {
   deleteProject,
   parseRealProjectPath,
   searchSessions,
+  searchSessionMessages,
   searchSessionsAcrossProjects,
   SessionListCache,
   getSessionListCache,

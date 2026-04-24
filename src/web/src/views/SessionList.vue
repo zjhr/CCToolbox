@@ -212,6 +212,19 @@
                     <span class="session-title">
                       {{ session.alias ? `${session.alias} (${session.sessionId.substring(0, 8)})` : session.sessionId }}
                     </span>
+                    <n-tooltip trigger="hover" v-if="!store.selectionMode">
+                      <template #trigger>
+                        <n-icon
+                          class="copy-path-icon"
+                          :class="{ 'copy-success': copiedSessionId === session.sessionId }"
+                          size="14"
+                          @click.stop="handleCopyPath(session.filePath, session.sessionId)"
+                        >
+                          <ClipboardOutline />
+                        </n-icon>
+                      </template>
+                      复制文件路径
+                    </n-tooltip>
                     <n-tooltip v-if="session.forkedFrom" placement="top">
                       <template #trigger>
                         <n-tag size="small" type="warning" :bordered="false" style="margin-left: 8px; cursor: help;">
@@ -460,7 +473,7 @@ import {
   ChatbubbleEllipsesOutline, GitBranchOutline, CreateOutline, TrashOutline,
   ReorderThreeOutline, StarOutline, Star, TimeOutline,
   CheckmarkCircleOutline, ArchiveOutline, SparklesOutline,
-  RefreshOutline
+  RefreshOutline, ClipboardOutline
 } from '@vicons/ionicons5'
 import draggable from 'vuedraggable'
 import { useSessionsStore } from '../stores/sessions'
@@ -520,6 +533,8 @@ const aliasConflicts = ref([])
 const pendingRestoreTrashIds = ref([])
 const selectedTrashId = ref('')
 const activeSessionId = ref(null)
+const copiedSessionId = ref(null)
+let copyTimer = null
 
 // Chat history drawer state
 const showChatHistory = ref(false)
@@ -820,6 +835,25 @@ function handleSessionClick(session) {
   }
   activeSessionId.value = session.sessionId
   handleViewChatHistory(session)
+}
+
+async function handleCopyPath(filePath, sessionId) {
+  if (!filePath) {
+    message.warning('该会话文件路径不可用')
+    return
+  }
+  try {
+    await navigator.clipboard.writeText(filePath)
+    copiedSessionId.value = sessionId
+    message.success('路径已复制到剪贴板')
+
+    if (copyTimer) clearTimeout(copyTimer)
+    copyTimer = setTimeout(() => {
+      copiedSessionId.value = null
+    }, 1500)
+  } catch (err) {
+    message.error('复制失败: ' + err.message)
+  }
 }
 
 // View chat history
@@ -1432,6 +1466,24 @@ onUnmounted(() => {
   white-space: nowrap;
   flex-shrink: 1;
   min-width: 0;
+}
+
+.copy-path-icon {
+  cursor: pointer;
+  opacity: 0.5;
+  transition: all 0.3s ease;
+  margin-left: 4px;
+  flex-shrink: 0;
+}
+
+.copy-path-icon:hover {
+  opacity: 1;
+  transform: scale(1.1);
+}
+
+.copy-path-icon.copy-success {
+  color: #18a058;
+  opacity: 1;
 }
 
 .session-meta {

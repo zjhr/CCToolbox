@@ -164,7 +164,6 @@
                   :value="getFieldValue(field)"
                   v-bind="buildFieldProps(field)"
                   @update:value="(val) => setNestedValue(state.formData, field.key, val)"
-                  @click="(event) => handlePasswordEyeToggle(field, event)"
                 />
                 <FieldHint
                   :text="getOriginalFieldHint(field.key)"
@@ -213,7 +212,6 @@ import { updateReasoningEffort, getReasoningEffort } from '../../api/channels'
 import useChannelManager from '../../composables/useChannelManager'
 import { useChannelScheduler } from '../../composables/useChannelScheduler'
 import useFieldHint from '../../composables/useFieldHint'
-import useSensitiveFieldVisibility from '../../composables/useSensitiveFieldVisibility'
 import message from '../../utils/message'
 
 const props = defineProps({
@@ -257,13 +255,6 @@ const reasoningEffortOptions = [
   { label: 'medium', value: 'medium' },
   { label: 'low', value: 'low' }
 ]
-const { getDisplayValue, toggleByEyeClick } = useSensitiveFieldVisibility({
-  resolveRawValue: (field) => {
-    if (field.key !== 'apiKey') return undefined
-    return state.editingChannel?.rawApiKey || state.editingChannel?.apiKey
-  }
-})
-
 async function loadReasoningEffort() {
   if (!showReasoningEffort.value) return
   try {
@@ -510,12 +501,7 @@ function getNestedValue(obj, path) {
 }
 
 function getFieldValue(field) {
-  const value = getNestedValue(state.formData, field.key)
-  return getDisplayValue(field, value)
-}
-
-function handlePasswordEyeToggle(field, event) {
-  toggleByEyeClick(field, event)
+  return getNestedValue(state.formData, field.key)
 }
 
 // 设置嵌套值
@@ -572,7 +558,6 @@ function buildMeta(channel) {
 function resolveFieldComponent(field) {
   const fieldType = typeof field === 'string' ? field : field?.type
   switch (fieldType) {
-    case 'password':
     case 'text':
       return NInput
     case 'number':
@@ -588,10 +573,6 @@ function resolveFieldComponent(field) {
 
 function buildFieldProps(field) {
   const base = { placeholder: field.placeholder }
-  if (field.type === 'password') {
-    base.type = 'password'
-    base['show-password-on'] = 'click'
-  }
   if (field.type === 'number') {
     base.min = field.min ?? 1
     base.max = field.max ?? 100

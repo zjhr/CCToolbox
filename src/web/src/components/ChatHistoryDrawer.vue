@@ -15,6 +15,9 @@
           <div class="header-row">
             <n-icon :size="18" :component="ChatbubblesIcon" />
             <span class="session-name">{{ sessionAlias || sessionId.substring(0, 8) }} ({{ totalMessages }})</span>
+            <n-tag :type="channelTagType" size="small" round style="text-transform: capitalize">
+              {{ props.channel }}
+            </n-tag>
             <n-tag v-if="metadata.gitBranch" size="small" type="info">
               <template #icon>
                 <n-icon :component="GitBranchIcon" />
@@ -61,7 +64,19 @@
 
           <!-- Messages list -->
           <div v-else class="messages-container">
-            <FilterBar v-model="activeFilters" :counts="messageCounts" />
+            <FilterBar
+              v-model="activeFilters"
+              :counts="messageCounts"
+              :search-keyword="searchKeyword"
+              :search-matches-count="searchMatches.length"
+              :search-current-index="currentSearchIndex"
+              :loading-search="loadingSearch"
+              @update:search-keyword="searchKeyword = $event"
+              @search="onSearch"
+              @next="onNextMatch"
+              @prev="onPrevMatch"
+              @clear="onClearSearch"
+            />
             <n-virtual-list
               ref="virtualListRef"
               class="messages-list"
@@ -94,6 +109,7 @@
                     :key="item.id"
                     :message="item"
                     :progress-entries="progressEntries"
+                    :keyword="searchKeyword"
                     @click-task="handleTaskClick"
                   />
                 </div>
@@ -167,7 +183,7 @@ import ChatMessage from './ChatMessage.vue'
 import SessionSummaryCard from './SessionSummaryCard.vue'
 import FilterBar from './chat/FilterBar.vue'
 import SubagentDetailView from './chat/SubagentDetailView.vue'
-import { getSessionMessages } from '../api/sessions'
+import { getSessionMessages, searchSessionMessages } from '../api/sessions'
 import { getTrashMessages } from '../api/trash'
 import { adaptMessages } from '../utils/messageAdapter'
 
@@ -201,6 +217,14 @@ const props = defineProps({
 const emit = defineEmits(['update:show', 'error'])
 
 const { drawerWidth } = useResponsiveDrawer(900, 800)
+
+const channelTagType = computed(() => {
+  const channel = (props.channel || '').toLowerCase()
+  if (channel.includes('claude')) return 'success'
+  if (channel.includes('codex')) return 'info'
+  if (channel.includes('gemini')) return 'warning'
+  return 'default'
+})
 
 const realtimeWatchActive = ref(false)
 const hadRealtimeConnected = ref(false)
@@ -252,6 +276,10 @@ const summaryCardRef = ref(null)
 const activeFilters = ref(['user', 'assistant', 'tool', 'thinking', 'subagent'])
 const allFilters = ['user', 'assistant', 'tool', 'thinking', 'subagent']
 const isFiltering = computed(() => activeFilters.value.length < allFilters.length)
+const searchKeyword = ref('')
+const searchMatches = ref([])
+const currentSearchIndex = ref(0)
+const loadingSearch = ref(false)
 const messageCounts = ref({
   user: 0,
   assistant: 0,
@@ -270,6 +298,36 @@ const subagentStack = ref([])
 const BOTTOM_AUTO_SCROLL_THRESHOLD = 100
 
 const adaptedMessages = computed(() => adaptMessages(messages.value, props.channel))
+
+// Add originalIndex to adapted messages for search scrolling
+// originalIndex represents the message's position in the full JSONL file
+// One raw message can produce multiple adapted items (e.g., thinking + response)
+// All items from the same raw message should share the same originalIndex
+const adaptedWithIndex = computed(() => {
+  const total = totalMessages.value
+  const loaded = messages.value.length
+  // In desc mode (default), we load most recent N messages, reverse them
+  // So messages[0] corresponds to JSONL index (total - loaded)
+  const offset = hasMore.value ? total - loaded : 0
+
+  const result = []
+  // Process each raw message and track which adapted items came from it
+  messages.value.forEach((rawMsg, rawIndex) => {
+    // Adapt this single raw message to see how many items it produces
+    const singleAdapted = adaptMessages([rawMsg], props.channel)
+    const originalIndex = offset + rawIndex
+    // All items from this raw message get the same originalIndex
+    singleAdapted.forEach((item) => {
+      result.push({
+        ...item,
+        originalIndex
+      })
+    })
+  })
+
+  return result
+})
+
 const currentSubagent = computed(() => subagentStack.value[subagentStack.value.length - 1] || null)
 const showRealtimeDisconnectedHint = computed(() => {
   return !props.trashId
@@ -332,7 +390,7 @@ function extractResponseCounts(response) {
 
 const filteredMessages = computed(() => {
   const active = new Set(activeFilters.value)
-  return adaptedMessages.value.filter((item) => active.has(getFilterRole(item)))
+  return adaptedWithIndex.value.filter((item) => active.has(getFilterRole(item)))
 })
 
 const showLoadMore = computed(() => hasMore.value && !isFiltering.value)
@@ -540,8 +598,15 @@ function scrollToBottomImmediate(smooth = true) {
   nextTick(() => {
     const list = virtualListRef.value
     if (list?.scrollTo && virtualItems.value.length > 0) {
+      const lastIndex = virtualItems.value.length - 1
       setProgrammaticScroll(() => {
-        list.scrollTo({ position: 'bottom', behavior: smooth ? 'smooth' : 'auto' })
+        list.scrollTo({ index: lastIndex, behavior: smooth ? 'smooth' : 'auto' })
+        // 增加一个短延迟兜底，防止高度测量延迟导致的置底不完全
+        setTimeout(() => {
+          if (virtualListRef.value) {
+            virtualListRef.value.scrollTo({ index: lastIndex, behavior: smooth ? 'smooth' : 'auto' })
+          }
+        }, 64)
       })
       return
     }
@@ -651,6 +716,148 @@ function setProgrammaticScroll(action) {
   })
 }
 
+// Search functions
+async function onSearch() {
+  const keyword = searchKeyword.value.trim()
+  if (!keyword) {
+    onClearSearch()
+    return
+  }
+
+  loadingSearch.value = true
+  try {
+    const response = await searchSessionMessages(
+      props.projectName,
+      props.sessionId,
+      keyword,
+      20,
+      props.channel
+    )
+    searchMatches.value = response.matches || []
+    currentSearchIndex.value = 0
+
+    if (searchMatches.value.length > 0) {
+      scrollToMatch(0)
+    }
+  } catch (err) {
+    console.error('Search failed:', err)
+    emit('error', '搜索失败: ' + (err.response?.data?.error || err.message))
+    searchMatches.value = []
+  } finally {
+    loadingSearch.value = false
+  }
+}
+
+function onNextMatch() {
+  if (searchMatches.value.length === 0) return
+  const nextIndex = (currentSearchIndex.value + 1) % searchMatches.value.length
+  currentSearchIndex.value = nextIndex
+  scrollToMatch(nextIndex)
+}
+
+function onPrevMatch() {
+  if (searchMatches.value.length === 0) return
+  const prevIndex = currentSearchIndex.value === 0
+    ? searchMatches.value.length - 1
+    : currentSearchIndex.value - 1
+  currentSearchIndex.value = prevIndex
+  scrollToMatch(prevIndex)
+}
+
+function onClearSearch() {
+  searchKeyword.value = ''
+  searchMatches.value = []
+  currentSearchIndex.value = 0
+}
+
+function scrollToMatch(matchIndex) {
+  const match = searchMatches.value[matchIndex]
+  if (!match) return
+  currentSearchIndex.value = matchIndex
+
+  const messageIndex = match.messageIndex
+  const matchRole = match.role
+  if (messageIndex === undefined || messageIndex === null) return
+
+  // Find items with matching originalIndex
+  // originalIndex is the backend's position in the JSONL file
+  const keyword = searchKeyword.value.toLowerCase()
+
+  // First, collect all items with the matching originalIndex
+  const matchingItems = []
+  virtualItems.value.forEach((item, idx) => {
+    if (item.__type === 'load-more') return
+    if (item.originalIndex === messageIndex) {
+      matchingItems.push({ item, virtualIndex: idx })
+    }
+  })
+
+  if (matchingItems.length === 0) return
+
+  // Strategy: find the best matching item
+  // 1. First try to find an item containing the keyword text
+  // 2. If no keyword match, try role matching
+  // 3. If no role match, use the first item with this originalIndex
+
+  let bestMatch = null
+
+  // Try keyword content match first
+  if (keyword) {
+    bestMatch = matchingItems.find(({ item }) => {
+      const content = getItemTextContent(item)
+      return content && content.toLowerCase().includes(keyword)
+    })
+  }
+
+  // Fall back to role matching
+  if (!bestMatch) {
+    bestMatch = matchingItems.find(({ item }) => {
+      return item.role === matchRole || getFilterRole(item) === matchRole
+    })
+  }
+
+  // Fall back to first item with matching originalIndex
+  if (!bestMatch) {
+    bestMatch = matchingItems[0]
+  }
+
+  if (bestMatch && virtualListRef.value?.scrollTo) {
+    setProgrammaticScroll(() => {
+      virtualListRef.value.scrollTo({ index: bestMatch.virtualIndex, behavior: 'smooth', debounce: false })
+    })
+  }
+}
+
+// Helper function to extract text content from an adapted message item
+function getItemTextContent(item) {
+  if (!item) return ''
+  // Handle string content
+  if (typeof item.content === 'string') return item.content
+  // Handle array content (e.g., structured content blocks)
+  if (Array.isArray(item.content)) {
+    return item.content
+      .map(block => {
+        if (typeof block === 'string') return block
+        if (block?.text) return block.text
+        return ''
+      })
+      .join(' ')
+  }
+  // Handle tool calls with output
+  if (item.toolCalls && Array.isArray(item.toolCalls)) {
+    return item.toolCalls
+      .map(call => {
+        const parts = []
+        if (call?.name) parts.push(call.name)
+        if (call?.input) parts.push(JSON.stringify(call.input))
+        if (call?.output) parts.push(JSON.stringify(call.output))
+        return parts.join(' ')
+      })
+      .join(' ')
+  }
+  return ''
+}
+
 // Expose open method for parent to call
 function open() {
   messages.value = []
@@ -675,6 +882,11 @@ function open() {
     subagent: 0
   }
   activeFilters.value = ['user', 'assistant', 'tool', 'thinking', 'subagent']
+  // Reset search state
+  searchKeyword.value = ''
+  searchMatches.value = []
+  currentSearchIndex.value = 0
+  loadingSearch.value = false
   closeSubagentDrawer()
   
   // 开启实时监听 (仅非回收站 session)

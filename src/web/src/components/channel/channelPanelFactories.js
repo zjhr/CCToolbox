@@ -247,7 +247,7 @@ const channelPanelFactories = {
           {
             key: "apiKey",
             label: "接口密钥",
-            type: "password",
+            type: "text",
             required: true,
             placeholder: "sk-...",
           },
@@ -555,7 +555,7 @@ const channelPanelFactories = {
           {
             key: "apiKey",
             label: "API Key",
-            type: "password",
+            type: "text",
             required: true,
             placeholder: "sk-...",
           },
@@ -740,7 +740,7 @@ const channelPanelFactories = {
           {
             key: "apiKey",
             label: "API Key",
-            type: "password",
+            type: "text",
             required: true,
             placeholder: "AIza...",
           },

@@ -413,10 +413,6 @@ function deleteChannel(channelId) {
   }
 
   const deletedChannel = data.channels[index];
-  data.channels.splice(index, 1);
-  saveChannels(data);
-
-  // 从 shell 配置文件移除该渠道的环境变量
   const envKeysToRemove = new Set(
     [
       buildEnvKeyFromProvider(deletedChannel.providerKey),
@@ -424,7 +420,14 @@ function deleteChannel(channelId) {
       normalizeEnvKey(deletedChannel.envKey),
     ].filter(Boolean),
   );
+  data.channels.splice(index, 1);
+  saveChannels(data);
+  writeCodexConfigForMultiChannel(data.channels, undefined, {
+    removeProviderKeys: [deletedChannel.providerKey],
+    removeEnvKeys: Array.from(envKeysToRemove),
+  });
 
+  // 从 shell 配置文件移除该渠道的环境变量
   for (const envKey of envKeysToRemove) {
     const removeResult = removeEnvFromShell(envKey);
     if (removeResult.success) {
@@ -435,8 +438,6 @@ function deleteChannel(channelId) {
       );
     }
   }
-
-  // 删除渠道时保持配置同步由调用方决定
 
   return { success: true };
 }
@@ -449,7 +450,23 @@ function deleteChannel(channelId) {
  * 2. 如果已启用动态切换（cc-proxy），不覆盖 model_provider
  * 3. 使用 TOML 序列化而不是字符串拼接，确保配置完整性
  */
-function writeCodexConfigForMultiChannel(allChannels, reasoningEffort) {
+function writeCodexConfigForMultiChannel(
+  allChannels,
+  reasoningEffort,
+  cleanupOptions = {},
+) {
+  const providerKeysToRemove = new Set(
+    Array.isArray(cleanupOptions.removeProviderKeys)
+      ? cleanupOptions.removeProviderKeys.filter(Boolean)
+      : [],
+  );
+  const envKeysToRemove = new Set(
+    Array.isArray(cleanupOptions.removeEnvKeys)
+      ? cleanupOptions.removeEnvKeys
+          .map((envKey) => normalizeEnvKey(envKey) || envKey)
+          .filter(Boolean)
+      : [],
+  );
   const codexDir = getCodexDir();
 
   if (!fs.existsSync(codexDir)) {
@@ -550,7 +567,10 @@ function writeCodexConfigForMultiChannel(allChannels, reasoningEffort) {
     }
   }
 
+  const activeProviderKeys = new Set();
+  const activeEnvKeys = new Set();
   for (const channel of allChannels) {
+    activeProviderKeys.add(channel.providerKey);
     const providerConfig = {
       name: channel.name,
       base_url: channel.baseUrl,
@@ -562,6 +582,7 @@ function writeCodexConfigForMultiChannel(allChannels, reasoningEffort) {
       buildEnvKeyFromProvider(channel.providerKey) ||
       normalizeEnvKey(channel.envKey);
     if (envKey) {
+      activeEnvKeys.add(envKey);
       providerConfig.env_key = envKey;
     }
 
@@ -571,6 +592,17 @@ function writeCodexConfigForMultiChannel(allChannels, reasoningEffort) {
     }
 
     config.model_providers[channel.providerKey] = providerConfig;
+  }
+
+  // 清理被删除渠道的 provider，避免 deleteChannel 后残留历史配置
+  for (const providerKey of providerKeysToRemove) {
+    if (
+      providerKey !== "cc-proxy" &&
+      !activeProviderKeys.has(providerKey) &&
+      config.model_providers?.[providerKey]
+    ) {
+      delete config.model_providers[providerKey];
+    }
   }
 
   // 使用 TOML 序列化写入配置（保留注释和格式）
@@ -611,6 +643,16 @@ ${tomlContent}`;
       normalizeEnvKey(channel.envKey);
     if (channel.apiKey && envKey) {
       auth[envKey] = channel.apiKey;
+    }
+  }
+
+  // 清理被删除渠道的 API Key，避免 auth.json 残留
+  for (const envKey of envKeysToRemove) {
+    if (activeEnvKeys.has(envKey)) {
+      continue;
+    }
+    if (Object.prototype.hasOwnProperty.call(auth, envKey)) {
+      delete auth[envKey];
     }
   }
 

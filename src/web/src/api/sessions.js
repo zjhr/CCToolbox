@@ -62,6 +62,15 @@ export async function searchSessionsGlobally(keyword, contextLength = 35, channe
   return response.data
 }
 
+export async function searchSessionMessages(projectName, sessionId, keyword, contextLength = 20, channel = 'claude') {
+  const prefix = getChannelPrefix(channel)
+  const encodedProjectName = encodePathSegment(projectName)
+  const response = await client.get(`${prefix}/sessions/${encodedProjectName}/${sessionId}/search`, {
+    params: { keyword, context: contextLength }
+  })
+  return response.data
+}
+
 export async function launchTerminal(projectName, sessionId, channel = 'claude', options = {}) {
   const prefix = getChannelPrefix(channel)
   const encodedProjectName = encodePathSegment(projectName)

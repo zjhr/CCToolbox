@@ -3,6 +3,7 @@ const childProcess = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const toml = require('toml');
 
 function removeDir(dirPath) {
   if (fs.existsSync(dirPath)) {
@@ -206,6 +207,104 @@ async function runCodexChannelTests() {
             configurable: true,
             value: originalPlatform
           });
+        }
+      });
+    },
+    failures
+  );
+
+  await runTestCase(
+    'deleteChannel should remove deleted provider from config.toml and key from auth.json',
+    async () => {
+      await withTempHome(async (tempRoot) => {
+        const originalExecFileSync = childProcess.execFileSync;
+        childProcess.execFileSync = (file) => {
+          if (file === '/usr/bin/dscl') {
+            return 'UserShell: /bin/zsh\n';
+          }
+          return Buffer.from('');
+        };
+
+        try {
+          const {
+            createChannel,
+            deleteChannel
+          } = loadCodexChannelsService();
+
+          const channelA = createChannel(
+            'Channel A',
+            'provider-delete-a',
+            'https://example-a.com/v1',
+            'sk-delete-a'
+          );
+          const channelB = createChannel(
+            'Channel B',
+            'provider-delete-b',
+            'https://example-b.com/v1',
+            'sk-delete-b'
+          );
+
+          deleteChannel(channelA.id);
+
+          const configPath = path.join(tempRoot, '.codex', 'config.toml');
+          const authPath = path.join(tempRoot, '.codex', 'auth.json');
+          const config = toml.parse(fs.readFileSync(configPath, 'utf8'));
+          const auth = JSON.parse(fs.readFileSync(authPath, 'utf8'));
+
+          assert.ok(config.model_providers);
+          assert.ok(!config.model_providers[channelA.providerKey]);
+          assert.ok(config.model_providers[channelB.providerKey]);
+
+          assert.strictEqual(auth[channelA.envKey], undefined);
+          assert.strictEqual(auth[channelB.envKey], 'sk-delete-b');
+        } finally {
+          childProcess.execFileSync = originalExecFileSync;
+        }
+      });
+    },
+    failures
+  );
+
+  await runTestCase(
+    'deleteChannel should remove deleted channel api key from auth.json while keeping other channels',
+    async () => {
+      await withTempHome(async (tempRoot) => {
+        const originalExecFileSync = childProcess.execFileSync;
+        childProcess.execFileSync = (file) => {
+          if (file === '/usr/bin/dscl') {
+            return 'UserShell: /bin/zsh\n';
+          }
+          return Buffer.from('');
+        };
+
+        try {
+          const {
+            createChannel,
+            deleteChannel
+          } = loadCodexChannelsService();
+
+          const channelA = createChannel(
+            'Channel A',
+            'provider-auth-delete-a',
+            'https://example-a.com/v1',
+            'sk-auth-delete-a'
+          );
+          const channelB = createChannel(
+            'Channel B',
+            'provider-auth-delete-b',
+            'https://example-b.com/v1',
+            'sk-auth-delete-b'
+          );
+
+          deleteChannel(channelA.id);
+
+          const authPath = path.join(tempRoot, '.codex', 'auth.json');
+          const auth = JSON.parse(fs.readFileSync(authPath, 'utf8'));
+
+          assert.strictEqual(auth[channelA.envKey], undefined);
+          assert.strictEqual(auth[channelB.envKey], 'sk-auth-delete-b');
+        } finally {
+          childProcess.execFileSync = originalExecFileSync;
         }
       });
     },

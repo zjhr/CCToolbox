@@ -4,6 +4,13 @@ const { getCodexDir } = require('./codex-config');
 const { parseSession, parseSessionMeta, extractSessionMeta, readJSONL } = require('./codex-parser');
 const { getAllMetadata } = require('./session-metadata');
 
+function resolveAbsoluteFilePath(filePath) {
+  if (typeof filePath !== 'string' || !filePath.trim()) {
+    return '';
+  }
+  return path.resolve(filePath);
+}
+
 class MinHeap {
   constructor(compareFn) {
     this.compareFn = compareFn;
@@ -124,7 +131,7 @@ function scanSessionFiles() {
     if (!match) return null;
 
     return {
-      filePath,
+      filePath: resolveAbsoluteFilePath(filePath),
       timestamp: match[1],
       sessionId: match[2],
       date: match[1].split('T')[0]
@@ -155,7 +162,7 @@ async function scanDirectoryRecursiveAsync(dir) {
       }
 
       results.push({
-        filePath: fullPath,
+        filePath: resolveAbsoluteFilePath(fullPath),
         timestamp: match[1],
         sessionId: match[2],
         date: match[1].split('T')[0]
@@ -245,7 +252,7 @@ function normalizeSession(codexSession) {
     sessionId,
     mtime,
     size,
-    filePath: filePath || '',
+    filePath: resolveAbsoluteFilePath(filePath),
     gitBranch: meta.git?.branch || null,
     firstMessage: preview || null,
     forkedFrom: null, // Codex 不支持 fork
@@ -407,7 +414,7 @@ function getSessionById(sessionId) {
   return {
     ...normalizeSession(session),
     messages: session.messages, // 包含完整消息
-    filePath: file.filePath
+    filePath: resolveAbsoluteFilePath(file.filePath)
   };
 }
 
@@ -688,7 +695,7 @@ async function getRecentSessionsOptimized(limit = 5) {
       sessionId: candidate.sessionId,
       mtime: candidate.mtime,
       size: candidate.size,
-      filePath: candidate.filePath,
+      filePath: resolveAbsoluteFilePath(candidate.filePath),
       gitBranch: meta.git?.branch || null,
       firstMessage: parsed?.preview || null,
       forkedFrom: forkRelations[candidate.sessionId] || null,

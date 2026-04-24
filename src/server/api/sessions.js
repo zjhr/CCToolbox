@@ -11,6 +11,7 @@ const {
   saveSessionOrder,
   parseRealProjectPath,
   searchSessions,
+  searchSessionMessages,
   searchSessionsAcrossProjects,
   hasActualMessages,
   getSubagentMessages,
@@ -186,6 +187,32 @@ module.exports = (config) => {
       });
     } catch (error) {
       console.error('Error searching sessions:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // GET /api/sessions/:projectName/:sessionId/search - Search messages in a single session
+  router.get('/:projectName/:sessionId/search', (req, res) => {
+    try {
+      const { projectName, sessionId } = req.params;
+      const { keyword, context } = req.query;
+
+      if (!keyword || !String(keyword).trim()) {
+        return res.status(400).json({ error: 'Keyword is required' });
+      }
+
+      const parsedContextLength = Number.parseInt(context, 10);
+      const contextLength = Number.isFinite(parsedContextLength) && parsedContextLength >= 0
+        ? parsedContextLength
+        : 20;
+
+      const result = searchSessionMessages(config, projectName, sessionId, String(keyword), contextLength);
+      res.json(result);
+    } catch (error) {
+      if (error?.code === 'SESSION_NOT_FOUND') {
+        return res.status(404).json({ error: error.message });
+      }
+      console.error('Error searching session messages:', error);
       res.status(500).json({ error: error.message });
     }
   });

@@ -12,7 +12,11 @@ const {
   saveSessionOrder,
   getProjects
 } = require('../services/codex-sessions');
-const { getSessionListCache, getSessionListCacheKey } = require('../services/sessions');
+const {
+  getSessionListCache,
+  getSessionListCacheKey,
+  searchSessionMessages
+} = require('../services/sessions');
 const { startSessionCacheWatcher } = require('../services/cache-watcher');
 const { isCodexInstalled } = require('../services/codex-config');
 const { loadAliases } = require('../services/alias');
@@ -218,6 +222,39 @@ module.exports = (config) => {
       });
     } catch (err) {
       console.error('[Codex API] Failed to search project sessions:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  /**
+   * GET /api/codex/sessions/:projectName/:sessionId/search
+   * 搜索单个会话内的消息（复用 Claude 渠道搜索服务函数）
+   */
+  router.get('/:projectName/:sessionId/search', (req, res) => {
+    try {
+      if (!isCodexInstalled()) {
+        return res.status(404).json({ error: 'Codex CLI not installed' });
+      }
+
+      const { projectName, sessionId } = req.params;
+      const { keyword, context } = req.query;
+
+      if (!keyword || !String(keyword).trim()) {
+        return res.status(400).json({ error: 'Keyword is required' });
+      }
+
+      const parsedContextLength = Number.parseInt(context, 10);
+      const contextLength = Number.isFinite(parsedContextLength) && parsedContextLength >= 0
+        ? parsedContextLength
+        : 20;
+
+      const result = searchSessionMessages(config, projectName, sessionId, String(keyword), contextLength);
+      res.json(result);
+    } catch (err) {
+      if (err?.code === 'SESSION_NOT_FOUND') {
+        return res.status(404).json({ error: err.message });
+      }
+      console.error('[Codex API] Failed to search session messages:', err);
       res.status(500).json({ error: err.message });
     }
   });
