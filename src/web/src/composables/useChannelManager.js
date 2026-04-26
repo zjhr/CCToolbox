@@ -260,14 +260,13 @@ export default function useChannelManager(config) {
 
   /**
    * 检测 apiKey 是否为掩码值
-   * 掩码格式：前4位字符 + 连续星号填充
+   * 掩码格式：前缀字符 + 连续星号填充，兼容短密钥掩码
    * @param {string} apiKey - API 密钥
    * @returns {boolean} - 是否为掩码值
    */
   function isMaskedApiKey(apiKey) {
     if (!apiKey || typeof apiKey !== 'string') return false
-    // 掩码特征：包含4个以上连续星号
-    return /\*{4,}/.test(apiKey)
+    return /\*{2,}/.test(apiKey)
   }
 
   async function handleSave() {

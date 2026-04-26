@@ -163,6 +163,7 @@
                   :is="resolveFieldComponent(field)"
                   :value="getFieldValue(field)"
                   v-bind="buildFieldProps(field)"
+                  @click.capture="(event) => handleSensitiveFieldClick(field, event)"
                   @update:value="(val) => setNestedValue(state.formData, field.key, val)"
                 />
                 <FieldHint
@@ -212,6 +213,7 @@ import { updateReasoningEffort, getReasoningEffort } from '../../api/channels'
 import useChannelManager from '../../composables/useChannelManager'
 import { useChannelScheduler } from '../../composables/useChannelScheduler'
 import useFieldHint from '../../composables/useFieldHint'
+import useSensitiveFieldVisibility from '../../composables/useSensitiveFieldVisibility'
 import message from '../../utils/message'
 
 const props = defineProps({
@@ -423,6 +425,16 @@ const { getFieldHint: getOriginalFieldHint } = useFieldHint({
   shouldShow: () => shouldShowOriginalValueHints.value,
   getSource: () => state.editingChannel
 })
+const {
+  getDisplayValue: getSensitiveDisplayValue,
+  toggleByEyeClick: toggleSensitiveFieldByEyeClick
+} = useSensitiveFieldVisibility({
+  resolveRawValue: (field) => {
+    if (field?.key !== 'apiKey') return undefined
+    const source = state.editingChannel || {}
+    return source.rawApiKey || source.raw_api_key || source.apiKey || source.api_key
+  }
+})
 
 const saveReasoningEffort = useDebounceFn(async (value) => {
   if (!showReasoningEffort.value) return
@@ -501,7 +513,11 @@ function getNestedValue(obj, path) {
 }
 
 function getFieldValue(field) {
-  return getNestedValue(state.formData, field.key)
+  return getSensitiveDisplayValue(field, getNestedValue(state.formData, field.key))
+}
+
+function handleSensitiveFieldClick(field, event) {
+  toggleSensitiveFieldByEyeClick(field, event)
 }
 
 // 设置嵌套值
@@ -573,6 +589,10 @@ function resolveFieldComponent(field) {
 
 function buildFieldProps(field) {
   const base = { placeholder: field.placeholder }
+  if (field.type === 'password') {
+    base.type = 'password'
+    base.showPasswordOn = 'click'
+  }
   if (field.type === 'number') {
     base.min = field.min ?? 1
     base.max = field.max ?? 100

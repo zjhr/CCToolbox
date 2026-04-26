@@ -100,4 +100,41 @@ describe('channelPanelFactories', () => {
       expect(nextEditForm.websiteUrl).toBe(preset.websiteUrl)
     })
   })
+
+  it('编辑渠道时 API Key 表单值应优先使用 rawApiKey 原文', () => {
+    const maskedApiKey = 'sk-l****************'
+    const rawApiKey = 'sk-live-raw-123456'
+
+    const claudeForm = channelPanelFactories.claude().mapChannelToForm({
+      id: 'claude-1',
+      name: 'Claude',
+      baseUrl: 'https://api.anthropic.com',
+      apiKey: maskedApiKey,
+      rawApiKey,
+      enabled: true
+    })
+    expect(claudeForm.apiKey).toBe(rawApiKey)
+
+    const codexForm = channelPanelFactories.codex().mapChannelToForm({
+      id: 'codex-1',
+      name: 'Codex',
+      providerKey: 'openai',
+      baseUrl: 'https://api.openai.com/v1',
+      apiKey: maskedApiKey,
+      rawApiKey,
+      enabled: true
+    })
+    expect(codexForm.apiKey).toBe(rawApiKey)
+
+    const geminiForm = channelPanelFactories.gemini().mapChannelToForm({
+      id: 'gemini-1',
+      name: 'Gemini',
+      model: 'gemini-2.5-pro',
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+      apiKey: maskedApiKey,
+      rawApiKey,
+      enabled: true
+    })
+    expect(geminiForm.apiKey).toBe(rawApiKey)
+  })
 })

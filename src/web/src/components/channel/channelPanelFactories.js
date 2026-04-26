@@ -128,6 +128,16 @@ function validateHttpUrl(label, value, { required } = {}) {
   return "";
 }
 
+function resolveChannelApiKey(channel) {
+  return (
+    channel.rawApiKey ||
+    channel.raw_api_key ||
+    channel.apiKey ||
+    channel.api_key ||
+    ""
+  );
+}
+
 function validateProviderKey(value) {
   if (!value) {
     return "Provider Key 不能为空";
@@ -247,7 +257,7 @@ const channelPanelFactories = {
           {
             key: "apiKey",
             label: "接口密钥",
-            type: "text",
+            type: "password",
             required: true,
             placeholder: "sk-...",
           },
@@ -379,7 +389,7 @@ const channelPanelFactories = {
         presetId,
         name: channel.name || "",
         baseUrl: channel.baseUrl || channel.baseURL || "",
-        apiKey: channel.apiKey || channel.api_key || "",
+        apiKey: resolveChannelApiKey(channel),
         websiteUrl: channel.websiteUrl || "",
         modelConfig: {
           model: normalizedModelConfig.model || channel.model || "",
@@ -555,7 +565,7 @@ const channelPanelFactories = {
           {
             key: "apiKey",
             label: "API Key",
-            type: "text",
+            type: "password",
             required: true,
             placeholder: "sk-...",
           },
@@ -604,7 +614,7 @@ const channelPanelFactories = {
       name: channel.name || "",
       providerKey: channel.providerKey || "",
       baseUrl: channel.baseUrl || "",
-      apiKey: channel.apiKey || "",
+      apiKey: resolveChannelApiKey(channel),
       websiteUrl: channel.websiteUrl || "",
       modelName: channel.modelName || "gpt-5.4",
       maxConcurrency: channel.maxConcurrency ?? null,
@@ -740,7 +750,7 @@ const channelPanelFactories = {
           {
             key: "apiKey",
             label: "API Key",
-            type: "text",
+            type: "password",
             required: true,
             placeholder: "AIza...",
           },
@@ -773,7 +783,7 @@ const channelPanelFactories = {
       name: channel.name || "",
       model: channel.model || "",
       baseUrl: channel.baseUrl || "",
-      apiKey: channel.apiKey || "",
+      apiKey: resolveChannelApiKey(channel),
       websiteUrl: channel.websiteUrl || "",
       maxConcurrency: channel.maxConcurrency ?? null,
       weight: channel.weight || 1,
