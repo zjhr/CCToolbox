@@ -65,7 +65,22 @@ export async function searchSessionsGlobally(keyword, contextLength = 35, channe
 export async function searchSessionMessages(projectName, sessionId, keyword, contextLength = 20, channel = 'claude') {
   const prefix = getChannelPrefix(channel)
   const encodedProjectName = encodePathSegment(projectName)
-  const response = await client.get(`${prefix}/sessions/${encodedProjectName}/${sessionId}/search`, {
+  const normalizedSessionId = String(sessionId ?? '')
+  const encodedSessionId = encodePathSegment(normalizedSessionId)
+
+  // Codex/Gemini 单会话搜索目前会复用 Claude 的 jsonl 文件定位逻辑，这里改为项目搜索后按 sessionId 过滤，避免误报 Session file not found。
+  if (channel === 'codex' || channel === 'gemini') {
+    const projectSearchResponse = await client.get(`${prefix}/sessions/${encodedProjectName}/search`, {
+      params: { keyword, context: contextLength }
+    })
+    const sessions = Array.isArray(projectSearchResponse.data?.sessions) ? projectSearchResponse.data.sessions : []
+    const matchedSession = sessions.find((item) => String(item?.sessionId ?? '') === normalizedSessionId)
+    return {
+      matches: Array.isArray(matchedSession?.matches) ? matchedSession.matches : []
+    }
+  }
+
+  const response = await client.get(`${prefix}/sessions/${encodedProjectName}/${encodedSessionId}/search`, {
     params: { keyword, context: contextLength }
   })
   return response.data

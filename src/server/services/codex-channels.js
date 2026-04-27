@@ -75,7 +75,7 @@ function loadChannels() {
         enabled: ch.enabled !== false, // 默认启用
         weight: ch.weight || 1,
         maxConcurrency: ch.maxConcurrency || null,
-        modelName: ch.modelName || "gpt-5.4",
+        modelName: ch.modelName || "gpt-5.5",
         customModels: normalizeCustomModels(ch.customModels),
       }));
     }
@@ -143,7 +143,7 @@ function initializeFromConfig() {
           requiresOpenaiAuth: providerConfig.requires_openai_auth !== false,
           queryParams: providerConfig.query_params || null,
           enabled: config.model_provider === providerKey, // 当前激活的渠道启用
-          modelName: config.model || "gpt-5.4",
+          modelName: config.model || "gpt-5.5",
           customModels: [],
           weight: 1,
           maxConcurrency: null,
@@ -191,6 +191,21 @@ function normalizeReasoningEffort(effort) {
   return normalized;
 }
 
+function normalizeAutoCompactRate(rate) {
+  const value = Number(rate);
+  if (!Number.isFinite(value)) {
+    return 90;
+  }
+  const rounded = Math.round(value);
+  if (rounded < 50) {
+    return 50;
+  }
+  if (rounded > 99) {
+    return 99;
+  }
+  return rounded;
+}
+
 // 获取所有渠道
 function getChannels() {
   const data = loadChannels();
@@ -232,7 +247,7 @@ function createChannel(
     enabled: extraConfig.enabled !== false, // 默认启用
     weight: extraConfig.weight || 1,
     maxConcurrency: extraConfig.maxConcurrency || null,
-    modelName: extraConfig.modelName || "gpt-5.4",
+    modelName: extraConfig.modelName || "gpt-5.5",
     customModels: normalizeCustomModels(extraConfig.customModels),
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -255,7 +270,13 @@ function createChannel(
     }
   }
 
-  writeCodexConfigForMultiChannel(data.channels);
+  writeCodexConfigForMultiChannel(
+    data.channels,
+    undefined,
+    {},
+    extraConfig.enable1M,
+    extraConfig.autoCompactRate,
+  );
 
   return newChannel;
 }
@@ -333,7 +354,13 @@ function updateChannel(channelId, updates) {
     }
   }
 
-  writeCodexConfigForMultiChannel(data.channels);
+  writeCodexConfigForMultiChannel(
+    data.channels,
+    undefined,
+    {},
+    newChannel.enable1M,
+    newChannel.autoCompactRate,
+  );
 
   return data.channels[index];
 }
@@ -454,6 +481,8 @@ function writeCodexConfigForMultiChannel(
   allChannels,
   reasoningEffort,
   cleanupOptions = {},
+  enable1M,
+  autoCompactRate,
 ) {
   const providerKeysToRemove = new Set(
     Array.isArray(cleanupOptions.removeProviderKeys)
@@ -603,6 +632,15 @@ function writeCodexConfigForMultiChannel(
     ) {
       delete config.model_providers[providerKey];
     }
+  }
+
+  if (enable1M === true) {
+    const compactRate = normalizeAutoCompactRate(autoCompactRate);
+    config.model_context_window = 1000000;
+    config.model_auto_compact_token_limit = compactRate * 10000;
+  } else if (enable1M === false) {
+    delete config.model_context_window;
+    delete config.model_auto_compact_token_limit;
   }
 
   // 使用 TOML 序列化写入配置（保留注释和格式）
@@ -803,7 +841,7 @@ function applyChannelToSettings(channelId) {
 
   // 设置当前渠道为 model_provider
   config.model_provider = channel.providerKey;
-  config.model = channel.modelName || config.model || "gpt-5.4";
+  config.model = channel.modelName || config.model || "gpt-5.5";
 
   // 确保 model_providers 对象存在
   if (!config.model_providers) {

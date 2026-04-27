@@ -24,6 +24,22 @@
               </template>
               {{ metadata.gitBranch }}
             </n-tag>
+            <n-tooltip trigger="hover">
+              <template #trigger>
+                <n-button
+                  text
+                  size="small"
+                  class="copy-path-btn"
+                  :class="{ 'is-copied': copySuccess }"
+                  @click="handleCopyFilePath"
+                >
+                  <template #icon>
+                    <n-icon :component="ClipboardOutlineIcon" />
+                  </template>
+                </n-button>
+              </template>
+              {{ copyTooltipText }}
+            </n-tooltip>
             <span class="spacer"></span>
             <n-icon
               :size="20"
@@ -104,7 +120,7 @@
                     加载更早的消息
                   </n-button>
                 </div>
-                <div v-else class="message-item">
+                <div v-else class="message-item" :data-message-id="item.id">
                   <ChatMessage
                     :key="item.id"
                     :message="item"
@@ -174,11 +190,11 @@
   </div>
 </template>
 <script setup>
-import { ref, computed, nextTick, watch } from 'vue'
-import { NDrawer, NIcon, NTag, NSpin, NEmpty, NButton, NVirtualList } from 'naive-ui'
+import { ref, computed, nextTick, watch, onBeforeUnmount } from 'vue'
+import { NDrawer, NIcon, NTag, NSpin, NEmpty, NButton, NVirtualList, NTooltip } from 'naive-ui'
 import { useResponsiveDrawer } from '../composables/useResponsiveDrawer'
 import { useSessionRealtime } from '../composables/useSessionRealtime'
-import { Chatbubbles as ChatbubblesIcon, GitBranch as GitBranchIcon, ChevronUp as ChevronUpIcon, ArrowDown as ArrowDownIcon, ArrowUpOutline, Close as CloseIcon, ArrowBackOutline } from '@vicons/ionicons5'
+import { Chatbubbles as ChatbubblesIcon, GitBranch as GitBranchIcon, ChevronUp as ChevronUpIcon, ArrowDown as ArrowDownIcon, ArrowUpOutline, Close as CloseIcon, ArrowBackOutline, ClipboardOutline as ClipboardOutlineIcon } from '@vicons/ionicons5'
 import ChatMessage from './ChatMessage.vue'
 import SessionSummaryCard from './SessionSummaryCard.vue'
 import FilterBar from './chat/FilterBar.vue'
@@ -186,6 +202,7 @@ import SubagentDetailView from './chat/SubagentDetailView.vue'
 import { getSessionMessages, searchSessionMessages } from '../api/sessions'
 import { getTrashMessages } from '../api/trash'
 import { adaptMessages } from '../utils/messageAdapter'
+import message from '../utils/message'
 
 const props = defineProps({
   show: {
@@ -201,6 +218,10 @@ const props = defineProps({
     required: true
   },
   sessionAlias: {
+    type: String,
+    default: ''
+  },
+  filePath: {
     type: String,
     default: ''
   },
@@ -252,6 +273,46 @@ const visible = computed({
   get: () => props.show,
   set: (val) => emit('update:show', val)
 })
+const copySuccess = ref(false)
+const copyTooltipText = computed(() => (copySuccess.value ? '已复制' : '复制文件路径'))
+const filePathToCopy = computed(() => {
+  const value = (props.filePath || '').trim()
+  return value || props.sessionId || ''
+})
+
+let copySuccessTimer = null
+
+function resetCopyState() {
+  copySuccess.value = false
+  if (copySuccessTimer) {
+    clearTimeout(copySuccessTimer)
+    copySuccessTimer = null
+  }
+}
+
+async function handleCopyFilePath() {
+  const textToCopy = filePathToCopy.value
+  if (!textToCopy) {
+    message.warning('未找到可复制内容')
+    return
+  }
+
+  try {
+    if (!navigator?.clipboard?.writeText) {
+      throw new Error('当前环境不支持剪贴板写入')
+    }
+    await navigator.clipboard.writeText(textToCopy)
+    copySuccess.value = true
+    message.success('已复制')
+    if (copySuccessTimer) clearTimeout(copySuccessTimer)
+    copySuccessTimer = setTimeout(() => {
+      copySuccess.value = false
+      copySuccessTimer = null
+    }, 1500)
+  } catch (err) {
+    message.error('复制失败: ' + (err?.message || '未知错误'))
+  }
+}
 
 // State
 const loading = ref(false)
@@ -280,6 +341,7 @@ const searchKeyword = ref('')
 const searchMatches = ref([])
 const currentSearchIndex = ref(0)
 const loadingSearch = ref(false)
+const activeSearchMessageId = ref('')
 const messageCounts = ref({
   user: 0,
   assistant: 0,
@@ -292,6 +354,10 @@ const isAutoFilling = ref(false)
 const filterNoMatchStreak = ref(0)
 const FILTER_FILL_TARGET = 20
 const FILTER_MAX_PAGES = 5
+const SEARCH_SCROLL_MAX_RETRIES = 5
+const SEARCH_SCROLL_RETRY_DELAY_MS = 100
+const SEARCH_ALIGN_MAX_RETRIES = 6
+const SEARCH_ALIGN_RETRY_DELAY_MS = 32
 const MAX_SUBAGENT_STACK = 10
 const subagentVisible = ref(false)
 const subagentStack = ref([])
@@ -696,6 +762,11 @@ function handleScroll(e) {
 
 function handleItemResize() {
   nextTick(() => {
+    // 搜索定位后，展开/收起导致高度变化时优先重对齐命中项
+    if (activeSearchMessageId.value) {
+      alignRenderedMatchItem(activeSearchMessageId.value)
+      return
+    }
     if (isAtBottom.value && lastScrollDirection.value !== 'up') {
       scrollToBottomImmediate(false)
     }
@@ -714,6 +785,51 @@ function setProgrammaticScroll(action) {
   requestAnimationFrame(() => {
     isProgrammaticScroll.value = false
   })
+}
+
+function alignRenderedMatchItem(messageId, retryCount = 0) {
+  if (!messageId) return
+  const container = getScrollElement()
+  if (!container || typeof container.querySelectorAll !== 'function') return
+
+  const candidates = container.querySelectorAll('.message-item[data-message-id]')
+  let targetElement = null
+  for (const candidate of candidates) {
+    if (candidate.dataset.messageId === String(messageId)) {
+      targetElement = candidate
+      break
+    }
+  }
+
+  if (!targetElement) {
+    if (retryCount < SEARCH_ALIGN_MAX_RETRIES) {
+      setTimeout(() => {
+        alignRenderedMatchItem(messageId, retryCount + 1)
+      }, SEARCH_ALIGN_RETRY_DELAY_MS)
+    }
+    return
+  }
+
+  const containerRect = container.getBoundingClientRect?.()
+  const targetRect = targetElement.getBoundingClientRect?.()
+  if (!containerRect || !targetRect) return
+
+  const topOffset = targetRect.top - containerRect.top - 12
+  if (Math.abs(topOffset) <= 2) return
+
+  setProgrammaticScroll(() => {
+    container.scrollTo({
+      top: Math.max(0, container.scrollTop + topOffset),
+      behavior: 'auto'
+    })
+  })
+
+  // 虚拟列表高度在展开/收起后可能二次变化，继续纠偏直到稳定
+  if (retryCount < SEARCH_ALIGN_MAX_RETRIES) {
+    setTimeout(() => {
+      alignRenderedMatchItem(messageId, retryCount + 1)
+    }, SEARCH_ALIGN_RETRY_DELAY_MS)
+  }
 }
 
 // Search functions
@@ -738,11 +854,14 @@ async function onSearch() {
 
     if (searchMatches.value.length > 0) {
       scrollToMatch(0)
+    } else {
+      activeSearchMessageId.value = ''
     }
   } catch (err) {
     console.error('Search failed:', err)
     emit('error', '搜索失败: ' + (err.response?.data?.error || err.message))
     searchMatches.value = []
+    activeSearchMessageId.value = ''
   } finally {
     loadingSearch.value = false
   }
@@ -768,31 +887,53 @@ function onClearSearch() {
   searchKeyword.value = ''
   searchMatches.value = []
   currentSearchIndex.value = 0
+  activeSearchMessageId.value = ''
 }
 
-function scrollToMatch(matchIndex) {
+function scrollToMatch(matchIndex, retryCount = 0) {
   const match = searchMatches.value[matchIndex]
-  if (!match) return
+  if (!match) {
+    activeSearchMessageId.value = ''
+    return
+  }
   currentSearchIndex.value = matchIndex
 
-  const messageIndex = match.messageIndex
+  const messageIndex = Number(match.messageIndex)
   const matchRole = match.role
-  if (messageIndex === undefined || messageIndex === null) return
+  if (!Number.isFinite(messageIndex)) return
 
   // Find items with matching originalIndex
   // originalIndex is the backend's position in the JSONL file
   const keyword = searchKeyword.value.toLowerCase()
 
   // First, collect all items with the matching originalIndex
+  const virtualIndexMap = new Map()
+  virtualItems.value.forEach((item, index) => {
+    if (item?.id) {
+      virtualIndexMap.set(String(item.id), index)
+    }
+  })
   const matchingItems = []
-  virtualItems.value.forEach((item, idx) => {
-    if (item.__type === 'load-more') return
+  filteredMessages.value.forEach((item) => {
     if (item.originalIndex === messageIndex) {
-      matchingItems.push({ item, virtualIndex: idx })
+      const virtualIndex = virtualIndexMap.get(String(item.id))
+      if (Number.isFinite(virtualIndex)) {
+        matchingItems.push({ item, virtualIndex })
+      }
     }
   })
 
-  if (matchingItems.length === 0) return
+  if (matchingItems.length === 0) {
+    activeSearchMessageId.value = ''
+    // 虚拟列表尚未渲染到目标消息时，尝试加载更早消息后重试定位
+    if (hasMore.value && retryCount < SEARCH_SCROLL_MAX_RETRIES) {
+      loadMore()
+      setTimeout(() => {
+        scrollToMatch(matchIndex, retryCount + 1)
+      }, SEARCH_SCROLL_RETRY_DELAY_MS)
+    }
+    return
+  }
 
   // Strategy: find the best matching item
   // 1. First try to find an item containing the keyword text
@@ -822,9 +963,15 @@ function scrollToMatch(matchIndex) {
   }
 
   if (bestMatch && virtualListRef.value?.scrollTo) {
+    activeSearchMessageId.value = String(bestMatch.item?.id || '')
     setProgrammaticScroll(() => {
-      virtualListRef.value.scrollTo({ index: bestMatch.virtualIndex, behavior: 'smooth', debounce: false })
+      virtualListRef.value.scrollTo({ index: bestMatch.virtualIndex, behavior: 'auto', debounce: false })
     })
+    requestAnimationFrame(() => {
+      alignRenderedMatchItem(bestMatch.item?.id)
+    })
+  } else {
+    activeSearchMessageId.value = ''
   }
 }
 
@@ -860,6 +1007,7 @@ function getItemTextContent(item) {
 
 // Expose open method for parent to call
 function open() {
+  resetCopyState()
   messages.value = []
   metadata.value = {}
   progressEntries.value = []
@@ -887,6 +1035,7 @@ function open() {
   searchMatches.value = []
   currentSearchIndex.value = 0
   loadingSearch.value = false
+  activeSearchMessageId.value = ''
   closeSubagentDrawer()
   
   // 开启实时监听 (仅非回收站 session)
@@ -922,6 +1071,7 @@ watch(
 watch(
   () => props.sessionId,
   (newId) => {
+    resetCopyState()
     if (visible.value && newId && !props.trashId) {
       realtimeWatchActive.value = true
       hadRealtimeConnected.value = false
@@ -934,6 +1084,10 @@ watch(realtimeConnected, (value) => {
   if (value) {
     hadRealtimeConnected.value = true
   }
+})
+
+onBeforeUnmount(() => {
+  resetCopyState()
 })
 
 defineExpose({
@@ -975,6 +1129,19 @@ defineExpose({
   display: inline-flex;
   align-items: center;
   color: var(--n-text-color);
+}
+
+.copy-path-btn {
+  color: var(--n-text-color-3);
+  transition: color 0.2s ease;
+}
+
+.copy-path-btn:hover {
+  color: var(--n-text-color);
+}
+
+.copy-path-btn.is-copied {
+  color: var(--n-success-color);
 }
 
 .spacer {

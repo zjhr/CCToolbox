@@ -1,11 +1,6 @@
 <template>
-  <n-card
-    class="session-summary-card"
-    :segmented="{ content: true }"
-    size="small"
-    :title="null"
-  >
-    <div class="card-header" @click="expanded = !expanded">
+  <div class="session-summary-card" :class="{ 'is-expanded': expanded, 'is-collapsed': !expanded }">
+    <div class="card-header" :class="{ 'is-collapsed': !expanded }" @click="expanded = !expanded">
       <div class="header-left">
         <n-icon :size="18" :component="SummaryIcon" class="summary-icon" />
         <span class="title">会话总结</span>
@@ -66,13 +61,13 @@
         </n-spin>
       </div>
     </n-collapse-transition>
-  </n-card>
+  </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import {
-  NCard, NButton, NIcon, NSpin, NEmpty, NTag, NCollapseTransition
+  NButton, NIcon, NSpin, NEmpty, NTag, NCollapseTransition
 } from 'naive-ui'
 import {
   DocumentTextOutline as SummaryIcon,
@@ -228,10 +223,18 @@ watch(() => props.sessionId, () => {
 <style scoped>
 .session-summary-card {
   margin-bottom: 12px;
+}
+
+.session-summary-card.is-expanded {
   border: 1px solid var(--n-border-color);
   background: var(--n-color-embedded);
   border-radius: 8px;
   overflow: hidden;
+}
+
+.session-summary-card.is-collapsed {
+  border-top: 1px solid var(--n-border-color);
+  border-bottom: 1px solid var(--n-border-color);
 }
 
 .card-header {
@@ -247,10 +250,17 @@ watch(() => props.sessionId, () => {
   background: rgba(0, 0, 0, 0.02);
 }
 
+.card-header.is-collapsed {
+  height: 28px;
+  padding: 0 8px;
+}
+
 .header-left {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
 }
 
 .summary-icon {
@@ -271,6 +281,11 @@ watch(() => props.sessionId, () => {
   display: flex;
   align-items: center;
   gap: 12px;
+  white-space: nowrap;
+}
+
+.card-header.is-collapsed .header-right {
+  gap: 8px;
 }
 
 .time {

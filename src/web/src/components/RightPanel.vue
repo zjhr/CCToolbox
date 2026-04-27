@@ -68,18 +68,46 @@
             </div>
             <n-text v-else depth="3" class="no-active-channel">无活跃渠道</n-text>
             <div v-if="showReasoningEffort" class="reasoning-effort">
-              <n-tooltip trigger="hover">
+              <n-popover
+                trigger="click"
+                placement="bottom-start"
+                :disabled="!activeChannel"
+                :show="modelSelectorVisible"
+                @update:show="handleModelSelectorVisibleChange"
+              >
                 <template #trigger>
+                  <n-tag
+                    size="small"
+                    type="success"
+                    :bordered="false"
+                    class="model-selector-tag"
+                    :class="{ disabled: !activeChannel }"
+                  >
+                    {{ modelSelectorTagText }}
+                  </n-tag>
+                </template>
+                <div class="model-selector-popover">
+                  <n-text depth="3" class="selector-label">模型选择</n-text>
                   <n-select
                     size="small"
-                    :value="reasoningEffort"
-                    :options="reasoningEffortOptions"
-                    :loading="reasoningEffortSaving"
-                    @update:value="handleReasoningEffortChange"
+                    filterable
+                    tag
+                    :value="draftModelName"
+                    :options="modelPresetOptions"
+                    :loading="hierarchicalSaving"
+                    placeholder="请选择或输入模型"
+                    @update:value="handleModelNameSelectChange"
                   />
-                </template>
-                推理强度
-              </n-tooltip>
+                  <n-text depth="3" class="selector-label">推理强度</n-text>
+                  <n-select
+                    size="small"
+                    :value="draftReasoningEffort"
+                    :options="reasoningEffortOptions"
+                    :loading="hierarchicalSaving"
+                    @update:value="handleReasoningEffortSelectChange"
+                  />
+                </div>
+              </n-popover>
             </div>
           </div>
         </div>
@@ -163,7 +191,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import {
-  NButton, NIcon, NText, NSwitch, NTooltip, NTag, NSelect
+  NButton, NIcon, NText, NSwitch, NTooltip, NTag, NSelect, NPopover
 } from 'naive-ui'
 import { AddOutline, ChatbubblesOutline, ChevronDownOutline, CreateOutline } from '@vicons/ionicons5'
 import ClaudeChannelPanel from './channel/ClaudeChannelPanel.vue'
@@ -172,6 +200,8 @@ import GeminiChannelPanel from './channel/GeminiChannelPanel.vue'
 import ProxyLogs from './ProxyLogs.vue'
 import { useGlobalStore } from '../stores/global'
 import { getSkills } from '../api/skills'
+import { updateCodexChannel, updateReasoningEffort, writeCodexConfig } from '../api/channels'
+import message from '../utils/message'
 
 const route = useRoute()
 const globalStore = useGlobalStore()
@@ -246,14 +276,29 @@ const currentPanelRef = computed(() => channelRefs[currentChannel.value]?.value 
 const activeChannel = computed(() => currentPanelRef.value?.getActiveChannel?.() || null)
 const canOpenActiveWebsite = computed(() => Boolean(activeChannel.value?.websiteUrl))
 const showReasoningEffort = computed(() => currentChannel.value === 'codex')
-const reasoningEffort = computed(() => currentPanelRef.value?.getReasoningEffort?.() || 'high')
+const currentModelName = computed(() => activeChannel.value?.modelName || 'gpt-5.5')
+const panelReasoningEffort = computed(() => currentPanelRef.value?.getReasoningEffort?.() || 'high')
 const reasoningEffortOptions = computed(() => currentPanelRef.value?.getReasoningEffortOptions?.() || [
   { label: 'xhigh', value: 'xhigh' },
   { label: 'high', value: 'high' },
   { label: 'medium', value: 'medium' },
   { label: 'low', value: 'low' }
 ])
-const reasoningEffortSaving = computed(() => currentPanelRef.value?.isReasoningEffortSaving?.() || false)
+const modelPresetOptions = [
+  { label: 'gpt-5.3', value: 'gpt-5.3' },
+  { label: 'gpt-5.3-codex', value: 'gpt-5.3-codex' },
+  { label: 'gpt-5.4', value: 'gpt-5.4' },
+  { label: 'gpt-5.5', value: 'gpt-5.5' }
+]
+const modelSelectorVisible = ref(false)
+const draftModelName = ref('gpt-5.5')
+const draftReasoningEffort = ref('high')
+const currentReasoningEffort = ref('high')
+const modelSelectionTouched = ref(false)
+const reasoningSelectionTouched = ref(false)
+const hierarchicalSaving = ref(false)
+const isHierarchicalDirty = computed(() => modelSelectionTouched.value || reasoningSelectionTouched.value)
+const modelSelectorTagText = computed(() => `${currentModelName.value}/${currentReasoningEffort.value}`)
 
 function openWebsite(url) {
   window.open(url, '_blank')
@@ -268,8 +313,83 @@ function handleEditActiveChannel() {
   currentPanelRef.value?.editActiveChannel?.()
 }
 
-function handleReasoningEffortChange(value) {
-  currentPanelRef.value?.setReasoningEffort?.(value)
+function syncModelSelectorDraft(resetTouched = false) {
+  draftModelName.value = currentModelName.value
+  draftReasoningEffort.value = currentReasoningEffort.value
+  if (resetTouched) {
+    modelSelectionTouched.value = false
+    reasoningSelectionTouched.value = false
+  }
+}
+
+async function persistHierarchicalSelection() {
+  if (!showReasoningEffort.value || !activeChannel.value?.id || hierarchicalSaving.value) return
+
+  const activeChannelId = activeChannel.value.id
+  const modelName = draftModelName.value.trim()
+  const effort = draftReasoningEffort.value
+  if (!modelName || !effort) return
+
+  const modelChanged = modelName !== currentModelName.value
+  const effortChanged = effort !== currentReasoningEffort.value
+  if (!modelChanged && !effortChanged) {
+    modelSelectionTouched.value = false
+    reasoningSelectionTouched.value = false
+    return
+  }
+
+  hierarchicalSaving.value = true
+  try {
+    if (modelChanged) {
+      await updateCodexChannel(activeChannelId, { modelName })
+      await currentPanelRef.value?.refresh?.()
+    }
+    if (effortChanged) {
+      await updateReasoningEffort(effort)
+      currentReasoningEffort.value = effort
+    }
+    if (modelChanged) {
+      await writeCodexConfig(activeChannelId)
+    }
+    modelSelectionTouched.value = false
+    reasoningSelectionTouched.value = false
+    message.success('模型和推理强度已更新')
+  } catch (err) {
+    message.error(`模型或推理强度保存失败：${err?.message || '未知错误'}`)
+    syncModelSelectorDraft(true)
+  } finally {
+    hierarchicalSaving.value = false
+  }
+}
+
+function handleModelSelectorVisibleChange(show) {
+  modelSelectorVisible.value = show
+  if (show) {
+    syncModelSelectorDraft(true)
+    return
+  }
+  if (isHierarchicalDirty.value) {
+    persistHierarchicalSelection()
+  }
+}
+
+function handleModelNameSelectChange(value) {
+  const normalizedValue = (typeof value === 'string' ? value : String(value || '')).trim()
+  if (!normalizedValue) return
+  draftModelName.value = normalizedValue
+  modelSelectionTouched.value = true
+  if (reasoningSelectionTouched.value) {
+    persistHierarchicalSelection()
+  }
+}
+
+function handleReasoningEffortSelectChange(value) {
+  if (!value) return
+  draftReasoningEffort.value = value
+  reasoningSelectionTouched.value = true
+  if (modelSelectionTouched.value) {
+    persistHierarchicalSelection()
+  }
 }
 
 function handleAddClick() {
@@ -315,6 +435,36 @@ watch(() => currentChannel.value, (value) => {
     geminiCanClearConfig.value = false
   }
 })
+watch(
+  () => currentChannel.value,
+  () => {
+    if (!showReasoningEffort.value) return
+    if (modelSelectorVisible.value || hierarchicalSaving.value || isHierarchicalDirty.value) return
+    currentReasoningEffort.value = panelReasoningEffort.value
+    syncModelSelectorDraft(true)
+  },
+  { immediate: true }
+)
+
+watch(
+  () => currentModelName.value,
+  () => {
+    if (!showReasoningEffort.value) return
+    if (modelSelectorVisible.value || hierarchicalSaving.value || isHierarchicalDirty.value) return
+    draftModelName.value = currentModelName.value
+  }
+)
+
+watch(
+  () => panelReasoningEffort.value,
+  (value) => {
+    if (!showReasoningEffort.value) return
+    if (modelSelectorVisible.value || hierarchicalSaving.value || isHierarchicalDirty.value) return
+    currentReasoningEffort.value = value
+    draftReasoningEffort.value = value
+  },
+  { immediate: true }
+)
 </script>
 
 <style scoped>
@@ -481,8 +631,30 @@ watch(() => currentChannel.value, (value) => {
   gap: 6px;
 }
 
-.reasoning-effort :deep(.n-select) {
-  width: 96px;
+.model-selector-tag {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.model-selector-tag.disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.model-selector-popover {
+  width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.selector-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.model-selector-popover :deep(.n-select) {
+  width: 100%;
 }
 
 .no-active-channel {

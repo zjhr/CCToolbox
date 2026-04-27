@@ -130,13 +130,17 @@ function onKeywordUpdate(val) {
   border-bottom: 1px solid var(--n-border-color);
   background: var(--n-color);
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
 }
 
 .filter-scroll {
   overflow-x: auto;
   scrollbar-width: none;
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 .filter-scroll::-webkit-scrollbar {
@@ -199,11 +203,13 @@ function onKeywordUpdate(val) {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding-top: 4px;
+  flex: 1 1 260px;
+  min-width: 220px;
 }
 
 .search-input-wrapper {
-  flex: 1;
+  flex: 1 1 180px;
+  min-width: 0;
 }
 
 .search-input {

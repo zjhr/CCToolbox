@@ -107,6 +107,12 @@ function normalizeWeight(value) {
   return Math.min(100, Math.round(num));
 }
 
+function normalizeAutoCompactRate(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return 90;
+  return Math.min(99, Math.max(50, Math.round(num)));
+}
+
 function validateRequired(label, value) {
   if (value === null || value === undefined || value === "") {
     return `${label}不能为空`;
@@ -593,6 +599,42 @@ const channelPanelFactories = {
         ],
       },
       {
+        title: "高级配置",
+        collapsible: true,
+        showWhen(form) {
+          const autoCompactRateField = this.fields?.find(
+            (field) => field.key === "autoCompactRate"
+          );
+          if (autoCompactRateField) {
+            autoCompactRateField.disabledOnEdit = form.enable1M !== true;
+          }
+          return true;
+        },
+        fields: [
+          {
+            key: "enable1M",
+            label: "1M 上下文",
+            type: "switch",
+            checkedText: "开启",
+            uncheckedText: "关闭",
+          },
+          {
+            key: "autoCompactRate",
+            label: "自动压缩率(%)",
+            type: "number",
+            min: 50,
+            max: 99,
+            step: 1,
+            validate: (value) => {
+              const num = Number(value);
+              if (!Number.isFinite(num)) return "自动压缩率需为数字";
+              if (num < 50 || num > 99) return "自动压缩率范围为 50-99";
+              return "";
+            },
+          },
+        ],
+      },
+      {
         title: "调度配置",
         fields: baseSections.schedule,
       },
@@ -605,7 +647,9 @@ const channelPanelFactories = {
       baseUrl: "",
       apiKey: "",
       websiteUrl: "",
-      modelName: "gpt-5.4",
+      modelName: "gpt-5.5",
+      enable1M: false,
+      autoCompactRate: 90,
       maxConcurrency: null,
       weight: 1,
       enabled: true,
@@ -616,7 +660,9 @@ const channelPanelFactories = {
       baseUrl: channel.baseUrl || "",
       apiKey: resolveChannelApiKey(channel),
       websiteUrl: channel.websiteUrl || "",
-      modelName: channel.modelName || "gpt-5.4",
+      modelName: channel.modelName || "gpt-5.5",
+      enable1M: channel.enable1M === true,
+      autoCompactRate: normalizeAutoCompactRate(channel.autoCompactRate),
       maxConcurrency: channel.maxConcurrency ?? null,
       weight: channel.weight || 1,
       enabled: channel.enabled !== false,
@@ -642,6 +688,11 @@ const channelPanelFactories = {
             weight: normalizeWeight(form.weight),
             enabled: form.enabled,
             modelName: form.modelName,
+            enable1M: form.enable1M === true,
+            autoCompactRate:
+              form.enable1M === true
+                ? normalizeAutoCompactRate(form.autoCompactRate)
+                : undefined,
           },
         );
       },
@@ -655,6 +706,11 @@ const channelPanelFactories = {
           weight: normalizeWeight(form.weight),
           enabled: form.enabled,
           modelName: form.modelName,
+          enable1M: form.enable1M === true,
+          autoCompactRate:
+            form.enable1M === true
+              ? normalizeAutoCompactRate(form.autoCompactRate)
+              : undefined,
         });
       },
       toggle: async (channel, enabled) =>
