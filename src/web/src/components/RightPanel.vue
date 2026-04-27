@@ -326,6 +326,7 @@ async function persistHierarchicalSelection() {
   if (!showReasoningEffort.value || !activeChannel.value?.id || hierarchicalSaving.value) return
 
   const activeChannelId = activeChannel.value.id
+  const panelRef = currentPanelRef.value
   const modelName = draftModelName.value.trim()
   const effort = draftReasoningEffort.value
   if (!modelName || !effort) return
@@ -342,7 +343,6 @@ async function persistHierarchicalSelection() {
   try {
     if (modelChanged) {
       await updateCodexChannel(activeChannelId, { modelName })
-      await currentPanelRef.value?.refresh?.()
     }
     if (effortChanged) {
       await updateReasoningEffort(effort)
@@ -350,6 +350,12 @@ async function persistHierarchicalSelection() {
     }
     if (modelChanged) {
       await writeCodexConfig(activeChannelId)
+    }
+    // 先保证配置落盘，再刷新面板，避免刷新过程干扰写配置链路
+    try {
+      await panelRef?.refresh?.()
+    } catch (refreshErr) {
+      console.warn('刷新渠道面板失败，但配置已保存：', refreshErr)
     }
     modelSelectionTouched.value = false
     reasoningSelectionTouched.value = false
