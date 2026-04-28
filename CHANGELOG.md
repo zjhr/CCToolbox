@@ -6,6 +6,26 @@
 
 ## [Unreleased]
 
+## [3.6.4] - 2026-04-28
+
+### Added
+
+- 🆕 **渠道面板刷新机制** - `BaseChannelPanel` 新增 `refresh` 方法，打开模型选择器前自动刷新渠道数据与推理强度配置
+- 🧰 **预设 ID 智能识别** - `channelPanelFactories` 新增 `resolveClaudePresetId` 函数，基于 baseUrl 自动识别 DeepSeek 等渠道预设类型
+- ✅ **推理强度同步测试** - 新增 Codex 推理强度同步测试用例
+
+### Changed
+
+- 🔄 **DeepSeek 默认模型升级** - DeepSeek 预设模型升级为 deepseek-v4-pro，Haiku 模型升级为 deepseek-v4-flash
+- 🔄 **智谱 Opus 模型升级** - 智谱 Opus 模型升级为 glm-5.1
+- 🔄 **Kimi 默认模型升级** - Kimi 默认模型升级为 kimi-2.6
+- 🔄 **MiniMax 默认模型升级** - MiniMax 默认模型升级为 minimax-m2.7
+- 🔄 **通义千问默认模型升级** - 通义千问默认模型升级为 qwen3.6-plus
+
+### Fixed
+
+- 🐛 **渠道面板刷新时序** - 修复打开模型选择器时面板刷新与配置保存的时序问题
+
 ## [3.6.3] - 2026-04-27
 
 ### Added

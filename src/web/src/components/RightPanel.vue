@@ -368,9 +368,15 @@ async function persistHierarchicalSelection() {
   }
 }
 
-function handleModelSelectorVisibleChange(show) {
+async function handleModelSelectorVisibleChange(show) {
   modelSelectorVisible.value = show
   if (show) {
+    try {
+      await currentPanelRef.value?.refresh?.()
+    } catch (err) {
+      console.warn('打开模型选择器前刷新渠道面板失败：', err)
+    }
+    currentReasoningEffort.value = panelReasoningEffort.value
     syncModelSelectorDraft(true)
     return
   }

@@ -1,8 +1,9 @@
 import { reactive, nextTick } from 'vue'
-import { mount } from '@vue/test-utils'
+import { mount, flushPromises } from '@vue/test-utils'
 import { describe, it, expect, vi } from 'vitest'
 import { NSelect } from 'naive-ui'
 import BaseChannelPanel from './BaseChannelPanel.vue'
+import * as channelApi from '../../api/channels'
 
 const FULL_API_KEY = 'sk-live-1234567890abcdef'
 const MASKED_API_KEY = 'sk-liv***************'
@@ -205,6 +206,44 @@ describe('BaseChannelPanel 字段组件解析（Red）', () => {
       const fieldComponent = setupState.resolveFieldComponent('text')
 
       expect(fieldComponent).not.toBe(NSelect)
+    } finally {
+      wrapper.unmount()
+    }
+  })
+})
+
+describe('BaseChannelPanel Codex 推理强度同步（Red）', () => {
+  it('refresh 应重新读取 config.toml 对应的推理强度', async () => {
+    vi.mocked(channelApi.getReasoningEffort)
+      .mockResolvedValueOnce({ effort: 'medium' })
+      .mockResolvedValueOnce({ effort: 'low' })
+
+    const wrapper = mount(BaseChannelPanel, {
+      props: { type: 'codex' },
+      attachTo: document.body,
+      global: {
+        stubs: {
+          teleport: true
+        }
+      }
+    })
+
+    try {
+      await flushPromises()
+
+      const exposed = wrapper.vm.$.exposed as {
+        refresh: () => Promise<void>
+        getReasoningEffort: () => string
+      }
+
+      expect(exposed.getReasoningEffort()).toBe('medium')
+
+      await exposed.refresh()
+      await flushPromises()
+
+      expect(mockedActions.loadChannels).toHaveBeenCalled()
+      expect(vi.mocked(channelApi.getReasoningEffort)).toHaveBeenCalledTimes(2)
+      expect(exposed.getReasoningEffort()).toBe('low')
     } finally {
       wrapper.unmount()
     }

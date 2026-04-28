@@ -36,7 +36,9 @@ export const claudePresets = [
     category: "cn_official",
     websiteUrl: "https://platform.deepseek.com",
     baseUrl: "https://api.deepseek.com/anthropic",
-    env: createAnthropicEnv("DeepSeek-V3.2-Exp"),
+    env: createAnthropicEnv("deepseek-v4-pro", {
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: "deepseek-v4-flash",
+    }),
   },
   {
     id: "zhipu",
@@ -46,6 +48,7 @@ export const claudePresets = [
     baseUrl: "https://open.bigmodel.cn/api/anthropic",
     env: createAnthropicEnv("glm-5", {
       ANTHROPIC_DEFAULT_HAIKU_MODEL: "glm-4.7",
+      ANTHROPIC_DEFAULT_OPUS_MODEL: "glm-5.1",
     }),
   },
   {
@@ -54,7 +57,7 @@ export const claudePresets = [
     category: "cn_official",
     websiteUrl: "https://platform.moonshot.cn",
     baseUrl: "https://api.moonshot.cn/anthropic",
-    env: createAnthropicEnv("kimi-k2.5"),
+    env: createAnthropicEnv("kimi-2.6"),
   },
   {
     id: "minimax",
@@ -62,7 +65,7 @@ export const claudePresets = [
     category: "cn_official",
     websiteUrl: "https://platform.minimaxi.com",
     baseUrl: "https://api.minimaxi.com/anthropic",
-    env: createAnthropicEnv("MiniMax-M2.5"),
+    env: createAnthropicEnv("minimax-m2.7"),
   },
   {
     id: "qwen",
@@ -70,7 +73,7 @@ export const claudePresets = [
     category: "cn_official",
     websiteUrl: "https://bailian.console.aliyun.com",
     baseUrl: "https://dashscope.aliyuncs.com/api/v2/apps/claude-code-proxy",
-    env: createAnthropicEnv("qwen3.5-plus"),
+    env: createAnthropicEnv("qwen3.6-plus"),
   },
   {
     id: "doubao",

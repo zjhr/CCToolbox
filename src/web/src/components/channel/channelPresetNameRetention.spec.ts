@@ -58,5 +58,29 @@ describe('channelPanelFactories - 切换预设不覆盖渠道名称（Red）', (
     expect(nextForm.websiteUrl).toBe('https://open.bigmodel.cn')
     expect(nextForm.modelConfig.model).toBe('glm-5')
     expect(nextForm.modelConfig.haikuModel).toBe('glm-4.7')
+    expect(nextForm.modelConfig.opusModel).toBe('glm-5.1')
+  })
+
+  it('旧版 DeepSeek 渠道进入编辑弹窗时应自动识别为 DeepSeek 预设', () => {
+    const factory = channelPanelFactories.claude()
+
+    const editingForm = factory.mapChannelToForm({
+      id: 'claude-legacy-deepseek',
+      name: 'Legacy DeepSeek',
+      baseUrl: 'https://api.deepseek.com/anthropic',
+      apiKey: 'sk-live-deepseek',
+      websiteUrl: 'https://platform.deepseek.com',
+      modelConfig: {
+        model: 'deepseek-v4-pro',
+        haikuModel: 'deepseek-v4-flash',
+        sonnetModel: 'deepseek-v4-pro',
+        opusModel: 'deepseek-v4-pro'
+      },
+      enabled: true
+    })
+
+    expect(editingForm.presetId).toBe('deepseek')
+    expect(editingForm.modelConfig.model).toBe('deepseek-v4-pro')
+    expect(editingForm.modelConfig.haikuModel).toBe('deepseek-v4-flash')
   })
 })

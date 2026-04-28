@@ -353,6 +353,11 @@ onMounted(() => {
   loadReasoningEffort()
 })
 
+async function refreshPanel() {
+  await actions.loadChannels()
+  await loadReasoningEffort()
+}
+
 function handleSearchInput(value) {
   const normalizedValue = typeof value === 'string' ? value : ''
   searchInput.value = normalizedValue
@@ -612,7 +617,7 @@ function buildFieldProps(field) {
 
 defineExpose({
   openAddDialog: actions.openAddDialog,
-  refresh: actions.loadChannels,
+  refresh: refreshPanel,
   toggleAllCollapse: actions.toggleAllCollapse,
   clearConfig: actions.handleClearConfig,
   canClearConfig: () => canClearConfig.value,

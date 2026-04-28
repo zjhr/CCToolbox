@@ -144,6 +144,31 @@ function resolveChannelApiKey(channel) {
   );
 }
 
+function normalizePresetBaseUrl(url) {
+  if (typeof url !== "string") return "";
+  return url.trim().replace(/\/+$/, "");
+}
+
+function resolveClaudePresetId(channel, hasLegacyModel, hasModelConfig) {
+  if (channel.presetId) {
+    return channel.presetId;
+  }
+
+  const channelBaseUrl = normalizePresetBaseUrl(
+    channel.baseUrl || channel.baseURL || ""
+  );
+  if (channelBaseUrl) {
+    const matchedPreset = claudePresets.find(
+      (preset) => normalizePresetBaseUrl(preset.baseUrl) === channelBaseUrl
+    );
+    if (matchedPreset) {
+      return matchedPreset.id;
+    }
+  }
+
+  return hasLegacyModel || hasModelConfig ? "custom" : "official";
+}
+
 function validateProviderKey(value) {
   if (!value) {
     return "Provider Key 不能为空";
@@ -386,9 +411,11 @@ const channelPanelFactories = {
           normalizedModelConfig.sonnetModel ||
           normalizedModelConfig.opusModel
       );
-      const presetId = (channel.presetId || hasLegacyModel || hasModelConfig)
-        ? channel.presetId || "custom"
-        : "official";
+      const presetId = resolveClaudePresetId(
+        channel,
+        hasLegacyModel,
+        hasModelConfig
+      );
 
       return {
         channelId: channel.id || "",

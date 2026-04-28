@@ -38,4 +38,6 @@ temp/
 CLAUDE.md
 .omc
 .omx
-.omx/
+.mcp.json
+specs
+seed.spec.ts
