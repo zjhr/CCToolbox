@@ -166,6 +166,37 @@ describe('useDeleteProgress', () => {
     wrapper.unmount()
   })
 
+  it('收到任务不存在的终态事件后会停止重连并标记失败', () => {
+    const wrapper = mountHarness()
+    const composable = wrapper.vm as any
+    composable.start('task-missing')
+
+    expect(MockEventSource.instances.length).toBe(1)
+    const connection = MockEventSource.instances[0]
+    connection.emitOpen()
+    connection.emitEvent('complete', {
+      taskId: 'task-missing',
+      completed: 0,
+      total: 0,
+      percentage: 100,
+      status: 'failed',
+      errors: [{
+        sessionId: '',
+        error: '删除任务不存在或已过期，请刷新列表'
+      }],
+      reason: 'task_not_found'
+    }, '9')
+
+    expect(composable.status).toBe('failed')
+    expect(composable.lastEventId).toBe('9')
+    expect(connection.closed).toBe(true)
+
+    vi.advanceTimersByTime(8000)
+
+    expect(MockEventSource.instances.length).toBe(1)
+    wrapper.unmount()
+  })
+
   it('组件卸载时会自动关闭连接', () => {
     const wrapper = mountHarness()
     const composable = wrapper.vm as any

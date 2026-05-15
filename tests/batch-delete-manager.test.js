@@ -214,13 +214,14 @@ function collectSseEvents(port, taskId, headers = {}) {
         ...headers
       }
     }, (res) => {
+      const statusCode = res.statusCode;
       res.setEncoding('utf8');
       res.on('data', (chunk) => {
         buffer = consumeSseBuffer(buffer + chunk, (event) => {
           events.push(event);
           if (event.event === 'complete' && !settled) {
             settled = true;
-            resolve(events);
+            resolve({ statusCode, events });
             req.destroy();
           }
         });
@@ -228,7 +229,7 @@ function collectSseEvents(port, taskId, headers = {}) {
       res.on('end', () => {
         if (!settled) {
           settled = true;
-          resolve(events);
+          resolve({ statusCode, events });
         }
       });
     });
@@ -386,9 +387,46 @@ async function runTests() {
         { 'Last-Event-ID': String(firstProgressEvent.id) }
       );
 
-      assert.ok(eventsAfterReconnect.length > 0);
-      assert.ok(eventsAfterReconnect.every(event => event.id > firstProgressEvent.id));
-      assert.ok(eventsAfterReconnect.some(event => event.event === 'complete'));
+      assert.strictEqual(eventsAfterReconnect.statusCode, 200);
+      assert.ok(eventsAfterReconnect.events.length > 0);
+      assert.ok(eventsAfterReconnect.events.every(event => event.id > firstProgressEvent.id));
+      assert.ok(eventsAfterReconnect.events.some(event => event.event === 'complete'));
+    } finally {
+      await new Promise(resolve => server.close(resolve));
+    }
+  });
+
+  // 4) 查不到任务时不应返回 404，而应返回可消费的终态 SSE
+  await withTempDir(async (tempRoot) => {
+    process.env.CCTOOLBOX_HOME = tempRoot;
+    clearTrashModules();
+    const trashRouterFactory = require('../src/server/api/trash');
+
+    const app = express();
+    app.use(express.json());
+    app.use('/api/trash', trashRouterFactory({ projectsDir: path.join(tempRoot, 'projects') }));
+
+    const server = await new Promise((resolve) => {
+      const s = app.listen(0, () => resolve(s));
+    });
+    const port = server.address().port;
+
+    try {
+      const response = await collectSseEvents(
+        port,
+        'delete-missing-task',
+        { 'Last-Event-ID': '8' }
+      );
+
+      assert.strictEqual(response.statusCode, 200);
+      assert.strictEqual(response.events.length, 1);
+      assert.strictEqual(response.events[0].id, 9);
+      assert.strictEqual(response.events[0].event, 'complete');
+      assert.strictEqual(response.events[0].data.taskId, 'delete-missing-task');
+      assert.strictEqual(response.events[0].data.status, 'failed');
+      assert.strictEqual(response.events[0].data.reason, 'task_not_found');
+      assert.ok(Array.isArray(response.events[0].data.errors));
+      assert.ok(response.events[0].data.errors.some(item => /不存在|过期/.test(item.error)));
     } finally {
       await new Promise(resolve => server.close(resolve));
     }

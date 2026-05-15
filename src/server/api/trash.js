@@ -69,10 +69,8 @@ module.exports = (config) => {
       return res.status(400).json({ error: 'taskId is required' });
     }
 
+    const lastEventId = req.get('Last-Event-ID') || req.query.lastEventId || null;
     const task = batchDeleteManager.getTask(taskId);
-    if (!task) {
-      return res.status(404).json({ error: 'Task not found' });
-    }
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -89,7 +87,28 @@ module.exports = (config) => {
       res.write(`data: ${JSON.stringify(eventRecord.data)}\n\n`);
     };
 
-    const lastEventId = req.get('Last-Event-ID') || req.query.lastEventId || null;
+    if (!task) {
+      const lastEventNumber = Number.parseInt(lastEventId, 10);
+      // 任务丢失时返回终态 SSE，避免前端把 404 误判成可重连的链路错误
+      sendEvent({
+        id: Number.isFinite(lastEventNumber) ? lastEventNumber + 1 : 1,
+        event: 'complete',
+        data: {
+          taskId,
+          completed: 0,
+          total: 0,
+          percentage: 100,
+          status: 'failed',
+          errors: [{
+            sessionId: '',
+            error: '删除任务不存在或已过期，请刷新列表'
+          }],
+          reason: 'task_not_found'
+        }
+      });
+      return res.end();
+    }
+
     const history = batchDeleteManager.getTaskEventsSince(taskId, lastEventId);
     history.forEach(sendEvent);
 
