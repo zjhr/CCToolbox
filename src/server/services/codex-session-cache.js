@@ -67,6 +67,61 @@ function getCachedSessions(projectName) {
 }
 
 /**
+ * 获取所有缓存的会话（聚合所有项目）
+ * @returns {Array} 所有会话数组
+ */
+function getAllCachedSessions() {
+  // 先刷新项目列表，确保所有项目都被加载
+  getCachedProjects();
+
+  const allSessions = [];
+  for (const [projectName, sessions] of sessionsByProjectCache) {
+    allSessions.push(...sessions);
+  }
+
+  // 如果缓存为空，可能还没有加载，尝试扫描所有文件
+  if (allSessions.length === 0) {
+    const sessionsDir = getSessionsDir();
+    const files = scanDirectoryRecursive(sessionsDir);
+
+    files.forEach(file => {
+      const session = parseSessionMeta(file.filePath);
+      if (!session || !session.meta) return;
+
+      const cwd = session.meta.cwd || '';
+      const projectName = path.basename(cwd) || 'unknown';
+
+      let size = 0;
+      let mtime = session.meta.timestamp;
+      try {
+        if (fs.existsSync(file.filePath)) {
+          const stats = fs.statSync(file.filePath);
+          size = stats.size;
+          mtime = stats.mtime.toISOString();
+        }
+      } catch (err) {
+        // 忽略错误
+      }
+
+      allSessions.push({
+        sessionId: file.sessionId,
+        filePath: file.filePath,
+        mtime,
+        size,
+        gitBranch: session.meta.git?.branch || null,
+        firstMessage: session.preview || null,
+        projectName,
+        source: 'codex',
+        meta: session.meta,
+        preview: session.preview
+      });
+    });
+  }
+
+  return allSessions;
+}
+
+/**
  * 清除所有缓存
  */
 function clearAllCache() {
@@ -143,7 +198,9 @@ function onSessionCreated(session) {
     gitBranch: session.meta?.git?.branch || null,
     firstMessage: session.preview || null,
     projectName,
-    source: 'codex'
+    source: 'codex',
+    meta: session.meta,
+    preview: session.preview
   };
 
   sessions.unshift(newSessionEntry);  // 新会话放在最前面
@@ -274,7 +331,9 @@ function refreshSessionsCache(projectName) {
         gitBranch: session.meta.git?.branch || null,
         firstMessage: session.preview || null,
         projectName: sessionProjectName,
-        source: 'codex'
+        source: 'codex',
+        meta: session.meta,
+        preview: session.preview
       });
     }
   });
@@ -457,6 +516,7 @@ function getSessionsDir() {
 module.exports = {
   getCachedProjects,
   getCachedSessions,
+  getAllCachedSessions,
   clearAllCache,
   setCacheTTL,
   onSessionDeleted,

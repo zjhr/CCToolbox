@@ -9,9 +9,9 @@ const { getAIServiceManager } = require("../services/ai-service");
 const { normalizeAIError } = require("../services/ai-errors");
 const { parseRealProjectPath } = require("../services/sessions");
 const {
-  getAllSessions: getAllCodexSessions,
   resolveProjectMeta: resolveCodexProjectMeta
 } = require("../services/codex-sessions");
+const { getAllCachedSessions: getAllCachedCodexSessions } = require("../services/codex-session-cache");
 const { getAllSessions: getAllGeminiSessions } = require("../services/gemini-sessions");
 const { readJSONL, extractMessages } = require("../services/codex-parser");
 const { getMetadata, setMetadata } = require("../services/session-metadata");
@@ -62,12 +62,21 @@ function resolveCodexProjectName(meta) {
 
 function resolveCodexSessionFile(projectName, sessionId) {
   try {
-    const sessions = getAllCodexSessions();
+    const sessions = getAllCachedCodexSessions();
     const session = sessions.find((item) => item.sessionId === sessionId);
     if (!session?.filePath) return null;
+
+    // 获取两种项目名称：Git 仓库名和目录名
     const codexProjectName = resolveCodexProjectName(session.meta);
-    if (projectName && codexProjectName && codexProjectName !== projectName) {
-      return null;
+    const dirProjectName = session.projectName; // 从缓存获取的目录名
+
+    // 验证项目名称：允许匹配 Git 仓库名或目录名
+    if (projectName && codexProjectName && dirProjectName) {
+      const matchesGitRepo = codexProjectName === projectName;
+      const matchesDirName = dirProjectName === projectName;
+      if (!matchesGitRepo && !matchesDirName) {
+        return null;
+      }
     }
     return session.filePath;
   } catch (err) {
