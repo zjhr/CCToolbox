@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const { getProjects, saveProjectOrder, deleteProject } = require('../services/codex-sessions');
+const { saveProjectOrder, deleteProject } = require('../services/codex-sessions');
 const { isCodexInstalled } = require('../services/codex-config');
+const { getCachedProjects } = require('../services/codex-session-cache');
 
 module.exports = (config) => {
   /**
@@ -19,7 +20,7 @@ module.exports = (config) => {
         });
       }
 
-      const projects = getProjects();
+      const projects = getCachedProjects();
 
       res.json({
         projects,

@@ -21,10 +21,21 @@ const { startSessionCacheWatcher } = require('../services/cache-watcher');
 const { isCodexInstalled } = require('../services/codex-config');
 const { loadAliases } = require('../services/alias');
 const { buildMessageCounts } = require('../services/message-counts');
+const {
+  getCachedProjects,
+  getCachedSessions,
+  setupCodexFileWatcher,
+  stopCodexFileWatcher,
+  onSessionDeleted,
+  onSessionCreated
+} = require('../services/codex-session-cache');
 
 module.exports = (config) => {
   const sessionListCache = getSessionListCache();
   startSessionCacheWatcher(config, sessionListCache);
+
+  // 启动 Codex 文件监听
+  setupCodexFileWatcher();
 
   // ============================================
   // 静态路由必须放在参数路由之前
@@ -133,7 +144,7 @@ module.exports = (config) => {
       }
 
       const { projectName } = req.params;
-      const sessions = getSessionsByProject(projectName);
+      const sessions = getCachedSessions(projectName);
 
       // 计算总大小
       const totalSize = sessions.reduce((sum, session) => {
@@ -143,7 +154,7 @@ module.exports = (config) => {
       // 获取别名
       const aliases = loadAliases();
 
-      const projects = getProjects();
+      const projects = getCachedProjects();
       const projectMeta = projects.find(project => project.name === projectName);
       const fullPath = projectMeta?.fullPath || projectName;
       const hasOpenSpec = projectMeta?.fullPath && path.isAbsolute(projectMeta.fullPath)
@@ -397,6 +408,9 @@ module.exports = (config) => {
 
       const { sessionId } = req.params;
       const result = deleteSession(sessionId);
+
+      // 更新缓存
+      onSessionDeleted(sessionId);
 
       res.json(result);
     } catch (err) {
