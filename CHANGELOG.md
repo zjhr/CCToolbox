@@ -6,6 +6,17 @@
 
 ## [Unreleased]
 
+## [3.6.5] - 2026-05-28
+
+### Changed
+
+- 🔄 **Codex 会话查询迁移至缓存层** - `trash.js` 中 Codex 会话查询从 `codex-sessions` 迁移到 `codex-session-cache`，提升查询性能
+
+### Fixed
+
+- 🐛 **Codex 会话删除后缓存未同步** - 删除 Codex 会话时调用 `onSessionDeleted` 清除缓存，修复删除后列表仍显示已删会话的问题
+- 🐛 **Codex 会话恢复后缓存未更新** - 恢复 Codex 会话时调用 `onSessionCreated` 写入缓存，修复恢复后会话列表未刷新的问题
+
 ## [3.6.4] - 2026-04-28
 
 ### Added

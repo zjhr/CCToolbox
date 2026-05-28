@@ -289,6 +289,72 @@ async function runTrashTests() {
   });
 
   await withTempDir(async (tempRoot) => {
+    const originalHome = process.env.HOME;
+    const originalUserProfile = process.env.USERPROFILE;
+    process.env.HOME = tempRoot;
+    process.env.USERPROFILE = tempRoot;
+    process.env.CCTOOLBOX_HOME = tempRoot;
+
+    const {
+      moveToTrash,
+      restoreFromTrash,
+      listTrash
+    } = require('../src/server/services/trash');
+    const { getCachedSessions, clearAllCache } = require('../src/server/services/codex-session-cache');
+
+    const config = {
+      projectsDir: path.join(tempRoot, 'projects')
+    };
+
+    const codexDir = path.join(tempRoot, '.codex', 'sessions', '2025', '01', '01');
+    ensureDir(codexDir);
+
+    const sessionIds = ['codex-cache-1', 'codex-cache-2'];
+    sessionIds.forEach((sessionId, index) => {
+      const filePath = path.join(codexDir, `rollout-2025-01-01T00-00-0${index}-${sessionId}.jsonl`);
+      const meta = {
+        type: 'session_meta',
+        payload: {
+          id: sessionId,
+          timestamp: '2025-01-01T00:00:00Z',
+          cwd: '/tmp/cache-demo'
+        }
+      };
+      const msg = {
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [{ text: `hello-${index}` }]
+        }
+      };
+      writeFile(filePath, `${JSON.stringify(meta)}\n${JSON.stringify(msg)}\n`);
+    });
+
+    clearAllCache();
+    let cachedSessions = getCachedSessions('cache-demo');
+    assert.strictEqual(cachedSessions.length, 2);
+
+    const moveResult = await moveToTrash(config, 'cache-demo', sessionIds[0], 'codex');
+    assert.strictEqual(moveResult.success, true);
+
+    cachedSessions = getCachedSessions('cache-demo');
+    assert.strictEqual(cachedSessions.length, 1);
+    assert.strictEqual(cachedSessions.some(session => session.sessionId === sessionIds[0]), false);
+
+    const trashData = await listTrash('cache-demo', 'codex');
+    const restoreResult = await restoreFromTrash(config, 'cache-demo', [trashData.items[0].trashId], 'codex');
+    assert.strictEqual(restoreResult.restored, 1);
+
+    cachedSessions = getCachedSessions('cache-demo');
+    assert.strictEqual(cachedSessions.length, 2);
+    assert.strictEqual(cachedSessions.some(session => session.sessionId === sessionIds[0]), true);
+
+    process.env.HOME = originalHome;
+    process.env.USERPROFILE = originalUserProfile;
+  });
+
+  await withTempDir(async (tempRoot) => {
     process.env.CCTOOLBOX_HOME = tempRoot;
     const { moveToTrash, listTrash, getTrashMessages } = require('../src/server/services/trash');
     const config = {

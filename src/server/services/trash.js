@@ -16,7 +16,7 @@ const {
 } = require('./sessions');
 const { loadAliases, setAlias, deleteAlias, getAlias } = require('./alias');
 const { parseSessionMeta, readJSONL, extractMessages } = require('./codex-parser');
-const { getSessionsByProject: getCodexSessionsByProject } = require('./codex-sessions');
+const { getCachedSessions: getCachedCodexSessions, onSessionDeleted, onSessionCreated } = require('./codex-session-cache');
 const { getProjectSessions: getGeminiSessionsByProject, cleanupGeminiForkRelations } = require('./gemini-sessions');
 const { buildMessageCounts } = require('./message-counts');
 
@@ -468,7 +468,7 @@ function getClaudeSessionFile(config, projectName, sessionId) {
 }
 
 function getCodexSessionFile(projectName, sessionId) {
-  const sessions = getCodexSessionsByProject(projectName);
+  const sessions = getCachedCodexSessions(projectName);
   return sessions.find(session => session.sessionId === sessionId);
 }
 
@@ -688,6 +688,10 @@ async function moveToTrash(config, projectName, sessionId, channel) {
   const trashId = generateTrashId(sessionId);
 
   await moveFile(sessionFilePath, trashFilePath);
+
+  if (channel === 'codex') {
+    onSessionDeleted(sessionId);
+  }
 
   if (channel === 'gemini') {
     cleanupGeminiForkRelations(sessionId);
@@ -937,7 +941,7 @@ async function restoreFromTrash(config, projectName, trashIds, channel, options 
   const forkRelations = getForkRelations();
   let forkRelationsModified = false;
   const existingCodexSessionIds = channel === 'codex'
-    ? new Set(getCodexSessionsByProject(projectName).map(session => session.sessionId))
+    ? new Set(getCachedCodexSessions(projectName).map(session => session.sessionId))
     : null;
 
   const restored = [];
@@ -1064,6 +1068,18 @@ async function restoreFromTrash(config, projectName, trashIds, channel, options 
         }
         failed.push({ trashId: item.trashId, reason: err.message });
         continue;
+      }
+    }
+
+    if (channel === 'codex') {
+      const restoredSession = parseSessionMeta(targetPath);
+      if (restoredSession?.meta) {
+        onSessionCreated({
+          sessionId: restoredSessionId,
+          filePath: targetPath,
+          meta: restoredSession.meta,
+          preview: restoredSession.preview
+        });
       }
     }
 
