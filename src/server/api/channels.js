@@ -94,6 +94,8 @@ router.post('/', (req, res) => {
       modelConfig,
       proxyUrl,
       enable1M,
+      enableToolSearch,
+      extraEnvJson,
       customModels
     } = req.body;
 
@@ -112,6 +114,8 @@ router.post('/', (req, res) => {
       modelConfig,
       proxyUrl,
       enable1M,
+      enableToolSearch,
+      extraEnvJson,
       customModels
     });
     res.json({ channel: maskApiKey(channel) });

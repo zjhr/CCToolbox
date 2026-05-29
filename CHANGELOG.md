@@ -6,6 +6,22 @@
 
 ## [Unreleased]
 
+## [3.7.0] - 2026-05-29
+
+### Added
+
+- 🆕 **渠道额外环境变量** - 渠道支持配置 `extraEnvJson`，切换渠道时自动写入 `settings.json` 的 `env`，切走时自动还原
+- 🧰 **JSON 编辑器组件** - 新增 `JsonEditorField` 组件，基于 vue-codemirror 提供语法高亮的 JSON 编辑体验
+- 🎨 **全宽字段卡片布局** - `BaseChannelPanel` 支持 `fullWidth` 字段类型，以卡片形式展示带标题和描述的复杂字段
+- 📦 **textarea 字段类型** - 面板字段新增 `textarea` 类型支持，自动调整高度
+- ✅ **额外环境变量测试** - 新增 extraEnvJson 后端集成测试（写入/还原/非法输入拒绝）及前端组件测试
+
+### Changed
+
+- 🔄 **渠道状态持久化重构** - `saveActiveChannelId` → `saveActiveChannelState`，持久化 `extraEnvKeys` 以支持环境变量还原
+- 🔄 **渠道设置更新重构** - `updateClaudeSettings` 拆分出 `updateClaudeSettingsForChannel`，统一渠道级设置更新逻辑
+- 📦 **前端依赖更新** - 新增 vue-codemirror、@codemirror/lang-json、@codemirror/theme-one-dark、@codemirror/view
+
 ## [3.6.5] - 2026-05-28
 
 ### Changed

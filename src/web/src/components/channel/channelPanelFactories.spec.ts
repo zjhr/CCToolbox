@@ -137,4 +137,29 @@ describe('channelPanelFactories', () => {
     })
     expect(geminiForm.apiKey).toBe(rawApiKey)
   })
+
+  it('claude 配置应该支持额外 env JSON 字段并透传保存', async () => {
+    const factory = channelPanelFactories.claude()
+
+    const extraSection = factory.formSections.find(s => s.title === '额外环境变量')
+    expect(extraSection).toBeDefined()
+    const extraField = extraSection?.fields.find(f => f.key === 'extraEnvJson')
+    expect(extraField).toBeDefined()
+    expect(extraField?.type).toBe('json-editor')
+    expect(extraField?.validate?.('{"CUSTOM_FLAG": true}')).toBe('')
+    expect(extraField?.validate?.('[]')).toContain('必须是 JSON 对象')
+
+    const initialForm = factory.getInitialForm()
+    expect(initialForm.extraEnvJson).toBe('')
+
+    const mappedForm = factory.mapChannelToForm({
+      id: 'claude-extra',
+      name: 'Claude Extra',
+      baseUrl: 'https://api.anthropic.com',
+      apiKey: 'sk-extra',
+      extraEnvJson: '{"CUSTOM_FLAG":"1"}',
+      enabled: true
+    })
+    expect(mappedForm.extraEnvJson).toBe('{"CUSTOM_FLAG":"1"}')
+  })
 })

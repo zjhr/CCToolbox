@@ -3,6 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { describe, it, expect, vi } from 'vitest'
 import { NSelect } from 'naive-ui'
 import BaseChannelPanel from './BaseChannelPanel.vue'
+import JsonEditorField from '../base/JsonEditorField.vue'
 import * as channelApi from '../../api/channels'
 
 const FULL_API_KEY = 'sk-live-1234567890abcdef'
@@ -206,6 +207,22 @@ describe('BaseChannelPanel 字段组件解析（Red）', () => {
       const fieldComponent = setupState.resolveFieldComponent('text')
 
       expect(fieldComponent).not.toBe(NSelect)
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('GIVEN type=json-editor WHEN 调用 resolveFieldComponent THEN 返回 JsonEditorField', async () => {
+    const wrapper = mountPanel()
+    try {
+      await nextTick()
+
+      const setupState = wrapper.vm.$.setupState as {
+        resolveFieldComponent: (type: string) => unknown
+      }
+      const fieldComponent = setupState.resolveFieldComponent('json-editor')
+
+      expect(fieldComponent).toBe(JsonEditorField)
     } finally {
       wrapper.unmount()
     }

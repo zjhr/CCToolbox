@@ -172,11 +172,11 @@ router.post('/stop', async (req, res) => {
       }
     } else {
       // 没有备份，选择权重最高的启用渠道
-      const { getBestChannelForRestore, updateClaudeSettings } = require('../services/channels');
+      const { getBestChannelForRestore, updateClaudeSettingsForChannel } = require('../services/channels');
       restoredChannel = getBestChannelForRestore();
 
       if (restoredChannel) {
-        updateClaudeSettings(restoredChannel.baseUrl, restoredChannel.apiKey);
+        updateClaudeSettingsForChannel(restoredChannel);
         console.log(`✅ Restored settings to best channel: ${restoredChannel.name}`);
       }
     }

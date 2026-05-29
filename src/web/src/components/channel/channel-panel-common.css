@@ -341,6 +341,42 @@
   align-items: flex-start;
 }
 
+.channel-form :deep(.n-form-item.form-item-full-width .n-form-item-label) {
+  display: none;
+}
+
+.channel-form :deep(.n-form-item.form-item-full-width .n-form-item-blank) {
+  display: block;
+  width: 100%;
+}
+
+.field-card {
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.02), rgba(15, 23, 42, 0.01));
+  padding: 12px;
+}
+
+.field-card-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.field-card-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--n-text-color);
+}
+
+.field-card-desc {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--n-text-color-3);
+}
+
 .original-value-hint {
   display: block;
   margin-top: 6px;

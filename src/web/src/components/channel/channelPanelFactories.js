@@ -134,6 +134,22 @@ function validateHttpUrl(label, value, { required } = {}) {
   return "";
 }
 
+function validateJsonObject(label, value) {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (!text) return "";
+
+  try {
+    const parsed = JSON.parse(text);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return `${label}必须是 JSON 对象`;
+    }
+  } catch (error) {
+    return `${label}格式错误：${error.message}`;
+  }
+
+  return "";
+}
+
 function resolveChannelApiKey(channel) {
   return (
     channel.rawApiKey ||
@@ -362,6 +378,22 @@ const channelPanelFactories = {
         ],
       },
       {
+        title: "额外环境变量",
+        description: "写入 settings.json 的 env，会随渠道切换自动还原",
+        collapsible: true,
+        fields: [
+          {
+            key: "extraEnvJson",
+            label: "额外 JSON",
+            type: "json-editor",
+            placeholder:
+              '{\n  "ANTHROPIC_SMALL_FAST_MODEL": "claude-3-5-haiku-latest"\n}',
+            autosize: { minRows: 5, maxRows: 10 },
+            validate: (value) => validateJsonObject("额外 JSON", value),
+          },
+        ],
+      },
+      {
         title: "调度配置",
         fields: baseSections.schedule,
       },
@@ -393,6 +425,7 @@ const channelPanelFactories = {
         opusModel: "",
       },
       proxyUrl: "",
+      extraEnvJson: "",
       maxConcurrency: null,
       weight: 1,
       enabled: true,
@@ -431,6 +464,7 @@ const channelPanelFactories = {
           opusModel: normalizedModelConfig.opusModel || "",
         },
         proxyUrl: channel.proxyUrl || "",
+        extraEnvJson: channel.extraEnvJson || "",
         maxConcurrency: channel.maxConcurrency ?? null,
         weight: channel.weight || 1,
         enabled: channel.enabled !== false,
@@ -484,6 +518,7 @@ const channelPanelFactories = {
             presetId: form.presetId,
             modelConfig: form.modelConfig,
             proxyUrl: form.proxyUrl || "",
+            extraEnvJson: form.extraEnvJson || "",
           },
         );
       },
@@ -501,6 +536,7 @@ const channelPanelFactories = {
           presetId: form.presetId,
           modelConfig: form.modelConfig,
           proxyUrl: form.proxyUrl || "",
+          extraEnvJson: form.extraEnvJson || "",
         });
       },
       toggle: async (channel, enabled) => {

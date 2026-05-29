@@ -292,7 +292,7 @@ export default function useChannelManager(config) {
           state.editingChannel.id === state.currentChannelId
         if (shouldApply) {
           try {
-            await config.api.applyToSettings(state.editingChannel)
+            await config.api.applyToSettings({ ...state.editingChannel, ...payload })
             applied = true
           } catch (error) {
             applyFailed = true

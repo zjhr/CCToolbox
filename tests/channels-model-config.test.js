@@ -88,6 +88,11 @@ function readClaudeSettings(tempRoot) {
   return JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
 }
 
+function readActiveChannelState(tempRoot) {
+  const activePath = path.join(tempRoot, '.claude', 'cctoolbox', 'active-channel.json');
+  return JSON.parse(fs.readFileSync(activePath, 'utf8'));
+}
+
 async function withTempHome(run) {
   const tempRoot = fs.mkdtempSync(
     path.join(os.tmpdir(), 'cctoolbox-channel-model-config-test-')
@@ -376,6 +381,98 @@ async function runTests() {
         service.applyChannelToSettings(channel.id);
         const settings = readClaudeSettings(tempRoot);
         assert.strictEqual(settings.env.ENABLE_TOOL_SEARCH, '0');
+      });
+    },
+    failures
+  );
+
+  await runTestCase(
+    'Claude 渠道额外 env JSON 应写入 settings.json 并在切换渠道时还原',
+    async () => {
+      await withTempHome(async (tempRoot) => {
+        ensureDir(path.join(tempRoot, '.claude'));
+        const service = loadClaudeChannelsService();
+        const originalNow = Date.now;
+        let now = 3000;
+        let channelWithExtra;
+        let channelWithoutExtra;
+
+        try {
+          Date.now = () => {
+            now += 1;
+            return now;
+          };
+
+          channelWithExtra = service.createChannel(
+            'Extra Env',
+            'https://api.anthropic.com',
+            'sk-extra',
+            '',
+            {
+              extraEnvJson: JSON.stringify({
+                CUSTOM_ENV: 'enabled',
+                NUMERIC_ENV: 12,
+                BOOLEAN_ENV: true
+              })
+            }
+          );
+          channelWithoutExtra = service.createChannel(
+            'Plain Env',
+            'https://api.anthropic.com',
+            'sk-plain'
+          );
+        } finally {
+          Date.now = originalNow;
+        }
+
+        service.applyChannelToSettings(channelWithExtra.id);
+        let settings = readClaudeSettings(tempRoot);
+        assert.strictEqual(settings.env.CUSTOM_ENV, 'enabled');
+        assert.strictEqual(settings.env.NUMERIC_ENV, '12');
+        assert.strictEqual(settings.env.BOOLEAN_ENV, 'true');
+        assert.deepStrictEqual(
+          readActiveChannelState(tempRoot).extraEnvKeys,
+          ['CUSTOM_ENV', 'NUMERIC_ENV', 'BOOLEAN_ENV']
+        );
+
+        service.applyChannelToSettings(channelWithoutExtra.id);
+        settings = readClaudeSettings(tempRoot);
+        assert.strictEqual(
+          Object.prototype.hasOwnProperty.call(settings.env, 'CUSTOM_ENV'),
+          false
+        );
+        assert.strictEqual(
+          Object.prototype.hasOwnProperty.call(settings.env, 'NUMERIC_ENV'),
+          false
+        );
+        assert.strictEqual(
+          Object.prototype.hasOwnProperty.call(settings.env, 'BOOLEAN_ENV'),
+          false
+        );
+        assert.deepStrictEqual(readActiveChannelState(tempRoot).extraEnvKeys, []);
+      });
+    },
+    failures
+  );
+
+  await runTestCase(
+    'Claude 渠道额外 env JSON 非对象时应拒绝写入 settings.json',
+    async () => {
+      await withTempHome(async (tempRoot) => {
+        ensureDir(path.join(tempRoot, '.claude'));
+        const service = loadClaudeChannelsService();
+        const channel = service.createChannel(
+          'Invalid Extra Env',
+          'https://api.anthropic.com',
+          'sk-invalid',
+          '',
+          { extraEnvJson: '[]' }
+        );
+
+        assert.throws(
+          () => service.applyChannelToSettings(channel.id),
+          /额外 env JSON 必须是对象格式/
+        );
       });
     },
     failures

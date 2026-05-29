@@ -27,23 +27,39 @@ function getClaudeSettingsPath() {
   return path.join(os.homedir(), '.claude', 'settings.json');
 }
 
-function saveActiveChannelId(channelId) {
+function saveActiveChannelState(channelId, extraEnvKeys = []) {
   const filePath = getActiveChannelIdPath();
-  fs.writeFileSync(filePath, JSON.stringify({ activeChannelId: channelId }, null, 2), 'utf8');
+  fs.writeFileSync(
+    filePath,
+    JSON.stringify({ activeChannelId: channelId, extraEnvKeys }, null, 2),
+    'utf8'
+  );
 }
 
-function loadActiveChannelId() {
+function loadActiveChannelState() {
   const filePath = getActiveChannelIdPath();
   try {
     if (fs.existsSync(filePath)) {
       const content = fs.readFileSync(filePath, 'utf8');
-      const data = JSON.parse(content);
-      return data.activeChannelId || null;
+      return JSON.parse(content);
     }
   } catch (error) {
     console.error('Error loading active channel ID:', error);
   }
-  return null;
+  return {};
+}
+
+function loadActiveChannelId() {
+  const data = loadActiveChannelState();
+  return data.activeChannelId || null;
+}
+
+function loadActiveExtraEnvKeys() {
+  const data = loadActiveChannelState();
+  if (!Array.isArray(data.extraEnvKeys)) {
+    return [];
+  }
+  return data.extraEnvKeys.filter((key) => typeof key === 'string' && key);
 }
 
 let channelsCache = null;
@@ -93,6 +109,19 @@ function normalizeEnable1M(value) {
   return undefined;
 }
 
+function normalizeExtraEnvJson(value) {
+  if (value === undefined || value === null) {
+    return '';
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    return JSON.stringify(value, null, 2);
+  }
+  return '';
+}
+
 function applyChannelDefaults(channel) {
   const normalized = normalizeLegacyChannel(channel);
   if (normalized.enabled === undefined) {
@@ -112,6 +141,7 @@ function applyChannelDefaults(channel) {
   }
 
   normalized.customModels = normalizeCustomModels(normalized.customModels);
+  normalized.extraEnvJson = normalizeExtraEnvJson(normalized.extraEnvJson);
 
   const normalizedEnable1M = normalizeEnable1M(normalized.enable1M);
   if (normalizedEnable1M === undefined) {
@@ -121,6 +151,62 @@ function applyChannelDefaults(channel) {
   }
 
   return normalized;
+}
+
+function parseExtraEnvJson(extraEnvJson) {
+  const normalized = normalizeExtraEnvJson(extraEnvJson).trim();
+  if (!normalized) {
+    return {};
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(normalized);
+  } catch (error) {
+    throw new Error('额外 env JSON 格式错误: ' + error.message);
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('额外 env JSON 必须是对象格式');
+  }
+
+  const env = {};
+  Object.entries(parsed).forEach(([key, value]) => {
+    if (!key || typeof key !== 'string') {
+      throw new Error('额外 env JSON 的键名必须是非空字符串');
+    }
+    if (key.includes('\0') || key.includes('\n') || key.includes('\r')) {
+      throw new Error(`额外 env JSON 包含非法键名: ${key}`);
+    }
+    if (value === undefined || value === null || value === '') {
+      return;
+    }
+    if (typeof value === 'object') {
+      throw new Error(`额外 env JSON 的 ${key} 只能是字符串、数字或布尔值`);
+    }
+    env[key] = String(value);
+  });
+
+  return env;
+}
+
+function clearManagedExtraEnv(settings, keys = loadActiveExtraEnvKeys()) {
+  if (!settings.env) {
+    settings.env = {};
+  }
+
+  keys.forEach((key) => {
+    delete settings.env[key];
+  });
+}
+
+function applyExtraEnv(settings, extraEnvJson) {
+  const extraEnv = parseExtraEnvJson(extraEnvJson);
+  const keys = Object.keys(extraEnv);
+  keys.forEach((key) => {
+    settings.env[key] = extraEnv[key];
+  });
+  return keys;
 }
 
 function normalizeLegacyChannel(channel) {
@@ -264,6 +350,7 @@ function createChannel(name, baseUrl, apiKey, websiteUrl, extraConfig = {}) {
     modelConfig: extraConfig.modelConfig || null,
     proxyUrl: extraConfig.proxyUrl || '',
     customModels: normalizeCustomModels(extraConfig.customModels),
+    extraEnvJson: normalizeExtraEnvJson(extraConfig.extraEnvJson),
     enable1M: normalizeEnable1M(extraConfig.enable1M),
     enableToolSearch: extraConfig.enableToolSearch
   });
@@ -291,6 +378,7 @@ function updateChannel(id, updates) {
     modelConfig: merged.modelConfig,
     proxyUrl: merged.proxyUrl,
     customModels: merged.customModels,
+    extraEnvJson: merged.extraEnvJson,
     enable1M: merged.enable1M,
     enableToolSearch: merged.enableToolSearch
   });
@@ -375,11 +463,11 @@ function applyChannelToSettings(id) {
   }
 
   // Write settings FIRST, then update business state (avoid state drift on failure)
-  updateClaudeSettingsWithModelConfig(channel);
+  const extraEnvKeys = updateClaudeSettingsWithModelConfig(channel);
 
   channel.enabled = true;
   saveChannels(data);
-  saveActiveChannelId(channel.id);
+  saveActiveChannelState(channel.id, extraEnvKeys);
 
   return channel;
 }
@@ -454,7 +542,9 @@ function updateClaudeSettingsWithModelConfig(channel) {
     settings.env = {};
   }
 
-  const { baseUrl, apiKey, modelConfig, proxyUrl, enable1M, enableToolSearch } = channel;
+  clearManagedExtraEnv(settings);
+
+  const { baseUrl, apiKey, modelConfig, proxyUrl, enable1M, enableToolSearch, extraEnvJson } = channel;
 
   const useAuthToken = settings.env.ANTHROPIC_AUTH_TOKEN !== undefined;
   const useApiKey = settings.env.ANTHROPIC_API_KEY !== undefined;
@@ -503,13 +593,24 @@ function updateClaudeSettingsWithModelConfig(channel) {
     delete settings.env.NO_PROXY;
   }
 
+  const extraEnvKeys = applyExtraEnv(settings, extraEnvJson);
+
   settings.apiKeyHelper = `echo '${escapeSingleQuote(apiKey)}'`;
 
   atomicWriteSettings(settings);
+  return extraEnvKeys;
 }
 
 function updateClaudeSettings(baseUrl, apiKey) {
   const settingsPath = getClaudeSettingsPath();
+  const channels = getAllChannels();
+  const channel = channels.find(ch => ch.baseUrl === baseUrl && ch.apiKey === apiKey);
+
+  if (channel) {
+    const extraEnvKeys = updateClaudeSettingsWithModelConfig(channel);
+    saveActiveChannelState(channel.id, extraEnvKeys);
+    return;
+  }
 
   let settings = {};
   if (fs.existsSync(settingsPath)) {
@@ -532,9 +633,16 @@ function updateClaudeSettings(baseUrl, apiKey) {
     settings.env.ANTHROPIC_API_KEY = apiKey;
   }
 
+  clearManagedExtraEnv(settings);
   settings.apiKeyHelper = `echo '${escapeSingleQuote(apiKey)}'`;
 
   atomicWriteSettings(settings);
+}
+
+function updateClaudeSettingsForChannel(channel) {
+  validateChannelData(channel);
+  const extraEnvKeys = updateClaudeSettingsWithModelConfig(channel);
+  saveActiveChannelState(channel.id, extraEnvKeys);
 }
 
 function updateCustomModels(id, customModels, channelType = 'claude') {
@@ -563,6 +671,7 @@ module.exports = {
   getBestChannelForRestore,
   getCurrentChannel,
   updateClaudeSettings,
+  updateClaudeSettingsForChannel,
   validateChannelData,
   updateCustomModels
 };

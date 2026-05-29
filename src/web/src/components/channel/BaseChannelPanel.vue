@@ -144,11 +144,14 @@
             <n-form-item
               v-for="field in section.fields"
               :key="field.key"
-              :label="field.label"
+              :label="field.fullWidth ? '' : field.label"
               :required="field.required"
               :validation-status="getValidationStatus(field.key)"
               :feedback="getValidationMessage(field.key)"
-              :class="{ 'form-item-switch': field.type === 'switch' }"
+              :class="{
+                'form-item-switch': field.type === 'switch',
+                'form-item-full-width': field.fullWidth
+              }"
             >
               <!-- 预设选择器 -->
               <n-select
@@ -158,6 +161,29 @@
                 :placeholder="field.placeholder"
                 @update:value="handlePresetChange"
               />
+              <div v-else-if="field.fullWidth" class="field-card">
+                <div class="field-card-header">
+                  <div class="field-card-title">
+                    {{ field.cardTitle || field.label }}
+                  </div>
+                  <div v-if="field.cardDescription" class="field-card-desc">
+                    {{ field.cardDescription }}
+                  </div>
+                </div>
+                <div class="field-with-hint">
+                  <component
+                    :is="resolveFieldComponent(field)"
+                    :value="getFieldValue(field)"
+                    v-bind="buildFieldProps(field)"
+                    @click.capture="(event) => handleSensitiveFieldClick(field, event)"
+                    @update:value="(val) => setNestedValue(state.formData, field.key, val)"
+                  />
+                  <FieldHint
+                    :text="getOriginalFieldHint(field.key)"
+                    class="original-value-hint"
+                  />
+                </div>
+              </div>
               <div v-else class="field-with-hint">
                 <component
                   :is="resolveFieldComponent(field)"
@@ -208,6 +234,7 @@ import { AddOutline, SearchOutline } from '@vicons/ionicons5'
 import draggable from 'vuedraggable'
 import ChannelCard from './ChannelCard.vue'
 import FieldHint from './FieldHint.vue'
+import JsonEditorField from '../base/JsonEditorField.vue'
 import channelPanelFactories from './channelPanelFactories'
 import { updateReasoningEffort, getReasoningEffort } from '../../api/channels'
 import useChannelManager from '../../composables/useChannelManager'
@@ -581,6 +608,10 @@ function resolveFieldComponent(field) {
   switch (fieldType) {
     case 'text':
       return NInput
+    case 'textarea':
+      return NInput
+    case 'json-editor':
+      return JsonEditorField
     case 'number':
       return NInputNumber
     case 'switch':
@@ -597,6 +628,19 @@ function buildFieldProps(field) {
   if (field.type === 'password') {
     base.type = 'password'
     base.showPasswordOn = 'click'
+  }
+  if (field.type === 'textarea') {
+    base.type = 'textarea'
+    base.autosize = field.autosize || { minRows: 4, maxRows: 8 }
+    base.clearable = field.clearable !== false
+    base.inputProps = {
+      spellcheck: 'false',
+      ...(field.inputProps || {})
+    }
+  }
+  if (field.type === 'json-editor') {
+    base.autosize = field.autosize
+    base.inputProps = field.inputProps
   }
   if (field.type === 'number') {
     base.min = field.min ?? 1
