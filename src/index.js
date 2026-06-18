@@ -22,6 +22,7 @@ const {
   handleAddChannel,
   handleChannelStatus,
 } = require("./commands/channels");
+const { handleChannelCommand } = require("./commands/channel");
 const { handleToggleProxy } = require("./commands/toggle-proxy");
 const { handlePortConfig } = require("./commands/port-config");
 const { handleSwitchCliType } = require("./commands/cli-type");
@@ -83,6 +84,14 @@ function showHelp() {
   console.log("  ct codex start          启动 Codex 代理");
   console.log("  ct gemini start         启动 Gemini 代理");
   console.log(chalk.gray("  (codex/gemini 命令与 claude 类似)\n"));
+
+  console.log(chalk.yellow("🔀 渠道管理:"));
+  console.log("  ct channel list         查看当前 CLI 类型的渠道");
+  console.log("  ct channel list codex   查看 Codex 渠道");
+  console.log("  ct channel switch       交互式选择 CLI 类型和渠道");
+  console.log("  ct channel switch codex 交互式切换 Codex 渠道");
+  console.log("  ct channel switch codex <id|name>");
+  console.log(chalk.gray("  (switch 会写入配置，并只启用目标渠道)\n"));
 
   console.log(chalk.yellow("📋 日志管理:"));
   console.log("  ct logs                 查看所有日志");
@@ -249,6 +258,12 @@ async function main() {
       // 默认前台运行
       await handleUI();
     }
+    return;
+  }
+
+  // channel 命令 - 渠道查看与切换
+  if (args[0] === "channel" || args[0] === "channels") {
+    await handleChannelCommand(args.slice(1));
     return;
   }
 

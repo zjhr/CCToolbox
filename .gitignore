@@ -36,8 +36,6 @@ temp/
 *.tmp
 .ace-tool/
 CLAUDE.md
-.omc
-.omx
 .mcp.json
 specs
 seed.spec.ts

@@ -123,6 +123,19 @@ ct
 | `ct proxy stop`   | 停止代理服务                 |
 | `ct proxy status` | 查看代理运行状态             |
 
+### 渠道管理
+
+| 命令                             | 描述                                  |
+| -------------------------------- | ------------------------------------- |
+| `ct channel list`                | 查看当前 CLI 类型的渠道               |
+| `ct channel list codex`          | 查看指定类型渠道                      |
+| `ct channel switch`              | 交互式选择 CLI 类型和渠道             |
+| `ct channel switch codex`        | 交互式切换 Codex 渠道                 |
+| `ct channel switch codex <id>`   | 直接切换到指定 Codex 渠道             |
+| `ct channel use gemini <name>`   | 直接切换到指定 Gemini 渠道            |
+
+`switch/use` 会写入目标渠道配置，并只启用同类型目标渠道。
+
 ### 后台运行（基于 PM2）
 
 | 命令                | 描述                       |

@@ -6,6 +6,22 @@
 
 ## [Unreleased]
 
+## [3.7.1] - 2026-06-18
+
+### Added
+
+- 🆕 **渠道 CLI 命令** - 新增 `ct channel` 子命令系统（list/switch/use），支持交互式和直接模式查看与切换渠道
+- ✅ **渠道 CLI 测试** - 新增 channel 命令行测试套件
+
+### Changed
+
+- 🔄 **命令注册重构** - 在 `src/index.js` 中注册 `channel` 命令路由
+- 📝 **文档更新** - README 添加渠道管理命令章节
+
+### Fixed
+
+- 🔧 **gitignore 清理** - 移除不再需要的 `.omc` / `.omx` 忽略规则
+
 ## [3.7.0] - 2026-05-29
 
 ### Added
