@@ -9,13 +9,17 @@ function getChannelServices(cliType) {
   if (cliType === 'claude') {
     const {
       getAllChannels,
+      createChannel,
       updateChannel,
+      deleteChannel,
       applyChannelToSettings,
       getCurrentChannel
     } = require('../server/services/channels');
     return {
       getAllChannels,
+      createChannel,
       updateChannel,
+      deleteChannel,
       applyChannelToSettings,
       getCurrentChannel: () => {
         const result = getCurrentChannel();
@@ -27,7 +31,9 @@ function getChannelServices(cliType) {
   if (cliType === 'codex') {
     const {
       getChannels,
+      createChannel,
       updateChannel,
+      deleteChannel,
       applyChannelToSettings,
       getCurrentChannel
     } = require('../server/services/codex-channels');
@@ -36,7 +42,9 @@ function getChannelServices(cliType) {
         const result = getChannels();
         return Array.isArray(result?.channels) ? result.channels : [];
       },
+      createChannel,
       updateChannel,
+      deleteChannel,
       applyChannelToSettings,
       getCurrentChannel
     };
@@ -45,7 +53,9 @@ function getChannelServices(cliType) {
   if (cliType === 'gemini') {
     const {
       getChannels,
+      createChannel,
       updateChannel,
+      deleteChannel,
       writeGeminiConfigForSingleChannel,
       getCurrentChannel
     } = require('../server/services/gemini-channels');
@@ -54,7 +64,9 @@ function getChannelServices(cliType) {
         const result = getChannels();
         return Array.isArray(result?.channels) ? result.channels : [];
       },
+      createChannel,
       updateChannel,
+      deleteChannel,
       applyChannelToSettings: writeGeminiConfigForSingleChannel,
       getCurrentChannel
     };
@@ -107,10 +119,14 @@ function showChannelHelp() {
   console.log(chalk.cyan.bold('\n渠道命令用法\n'));
   console.log('  ct channel list [claude|codex|gemini]');
   console.log('  ct channel status [claude|codex|gemini]');
+  console.log('  ct channel add [claude|codex|gemini]');
   console.log('  ct channel switch [claude|codex|gemini] [渠道ID或名称]');
   console.log('  ct channel use [claude|codex|gemini] [渠道ID或名称]\n');
+  console.log('  ct channel delete [claude|codex|gemini] [渠道ID或名称]');
+  console.log('  ct channel remove [claude|codex|gemini] [渠道ID或名称]\n');
   console.log(chalk.gray('说明: switch/use 会写入目标渠道配置，并只启用该渠道。'));
-  console.log(chalk.gray('      switch/use 不传类型和渠道时，会先选择 claude/codex/gemini。\n'));
+  console.log(chalk.gray('      add/delete/switch/use 不传类型时，会先选择 claude/codex/gemini。'));
+  console.log(chalk.gray('      delete/remove 会二次确认后再删除渠道。\n'));
 }
 
 async function handleChannelCommand(args = []) {
@@ -121,14 +137,18 @@ async function handleChannelCommand(args = []) {
     return;
   }
 
-  if (!['list', 'status', 'switch', 'use'].includes(action)) {
+  const normalizedAction = action === 'remove' || action === 'rm'
+    ? 'delete'
+    : action;
+
+  if (!['list', 'status', 'add', 'switch', 'use', 'delete'].includes(normalizedAction)) {
     console.log(chalk.red(`\n❌ 未知渠道命令: ${action}\n`));
     showChannelHelp();
     return;
   }
 
   const hasExplicitType = CHANNEL_TYPES.includes(args[1]);
-  const shouldPromptCliType = (action === 'switch' || action === 'use') &&
+  const shouldPromptCliType = ['add', 'delete', 'switch', 'use'].includes(normalizedAction) &&
     !hasExplicitType &&
     !args[1];
   const cliType = shouldPromptCliType
@@ -142,8 +162,23 @@ async function handleChannelCommand(args = []) {
     return;
   }
 
-  if (action === 'list' || action === 'status') {
+  if (normalizedAction === 'list' || normalizedAction === 'status') {
     await listChannels(cliType, services);
+    return;
+  }
+
+  if (normalizedAction === 'add') {
+    if (args[1] && !hasExplicitType) {
+      console.log(chalk.red(`\n❌ 不支持的 CLI 类型: ${args[1]}\n`));
+      showChannelHelp();
+      return;
+    }
+    await addChannel(cliType, services);
+    return;
+  }
+
+  if (normalizedAction === 'delete') {
+    await deleteChannel(cliType, services, selector);
     return;
   }
 
@@ -184,6 +219,96 @@ async function listChannels(cliType, services) {
   console.log('');
 }
 
+async function addChannel(cliType, services) {
+  if (typeof services.createChannel !== 'function') {
+    console.log(chalk.red(`\n❌ ${cliType} 暂不支持添加渠道\n`));
+    return;
+  }
+
+  const answers = await promptChannelFields(cliType);
+  let channel;
+
+  if (cliType === 'claude') {
+    channel = services.createChannel(
+      answers.name.trim(),
+      answers.baseUrl.trim(),
+      answers.apiKey.trim(),
+      answers.websiteUrl.trim() || undefined
+    );
+  } else if (cliType === 'codex') {
+    channel = services.createChannel(
+      answers.name.trim(),
+      answers.providerKey.trim() || generateProviderKey(answers.name),
+      answers.baseUrl.trim(),
+      answers.apiKey.trim(),
+      answers.wireApi.trim() || 'responses',
+      { websiteUrl: answers.websiteUrl.trim() || undefined }
+    );
+  } else if (cliType === 'gemini') {
+    channel = services.createChannel(
+      answers.name.trim(),
+      answers.baseUrl.trim(),
+      answers.apiKey.trim(),
+      answers.model.trim() || 'gemini-2.5-pro',
+      { websiteUrl: answers.websiteUrl.trim() || undefined }
+    );
+  }
+
+  broadcastSchedulerSnapshot(cliType);
+
+  console.log(chalk.green(`\n✅ 已添加 ${cliType} 渠道: ${channel.name}\n`));
+  console.log(chalk.gray(`   渠道 ID: ${channel.id}`));
+  console.log(chalk.gray('   可使用 ct channel switch 选择并写入该渠道。\n'));
+}
+
+async function deleteChannel(cliType, services, selector) {
+  if (typeof services.deleteChannel !== 'function') {
+    console.log(chalk.red(`\n❌ ${cliType} 暂不支持删除渠道\n`));
+    return;
+  }
+
+  const channels = services.getAllChannels();
+  if (!channels.length) {
+    console.log(chalk.yellow(`\n暂无 ${cliType} 渠道可删除。\n`));
+    return;
+  }
+
+  const target = selector
+    ? findChannel(channels, selector)
+    : await promptSelectChannel(cliType, channels, services.getCurrentChannel(), '删除');
+
+  if (!target) {
+    console.log(chalk.red(`\n❌ 未找到 ${cliType} 渠道: ${selector}\n`));
+    if (channels.length) {
+      console.log(chalk.gray('可用渠道:'));
+      channels.forEach((channel) => {
+        console.log(chalk.gray(`  ${channel.name}  ${channel.id}`));
+      });
+      console.log('');
+    }
+    return;
+  }
+
+  const { confirmed } = await inquirer.prompt([
+    {
+      type: 'confirm',
+      name: 'confirmed',
+      message: `确认删除 ${cliType} 渠道「${target.name}」吗？`,
+      default: false
+    }
+  ]);
+
+  if (!confirmed) {
+    console.log(chalk.gray('\n已取消删除。\n'));
+    return;
+  }
+
+  await services.deleteChannel(target.id);
+  broadcastSchedulerSnapshot(cliType);
+
+  console.log(chalk.green(`\n✅ 已删除 ${cliType} 渠道: ${target.name}\n`));
+}
+
 async function switchChannel(cliType, services, selector) {
   const channels = services.getAllChannels();
 
@@ -194,7 +319,7 @@ async function switchChannel(cliType, services, selector) {
 
   const target = selector
     ? findChannel(channels, selector)
-    : await promptSelectChannel(cliType, channels, services.getCurrentChannel());
+    : await promptSelectChannel(cliType, channels, services.getCurrentChannel(), '切换');
 
   if (!target) {
     console.log(chalk.red(`\n❌ 未找到 ${cliType} 渠道: ${selector}\n`));
@@ -225,7 +350,7 @@ async function switchChannel(cliType, services, selector) {
   console.log(chalk.gray('   已写入配置，并停用同类型其他渠道。\n'));
 }
 
-async function promptSelectChannel(cliType, channels, currentChannel) {
+async function promptSelectChannel(cliType, channels, currentChannel, actionLabel = '切换') {
   const choices = channels.map((channel) => {
     const detailParts = [];
     if (channel.enabled === false) {
@@ -254,13 +379,97 @@ async function promptSelectChannel(cliType, channels, currentChannel) {
     {
       type: 'list',
       name: 'channelId',
-      message: `请选择要切换的 ${cliType} 渠道:`,
+      message: `请选择要${actionLabel}的 ${cliType} 渠道:`,
       pageSize: 15,
       choices
     }
   ]);
 
   return channels.find((channel) => channel.id === channelId) || null;
+}
+
+async function promptChannelFields(cliType) {
+  const questions = [
+    {
+      type: 'input',
+      name: 'name',
+      message: '渠道名称:',
+      validate: (input) => input.trim() ? true : '渠道名称不能为空'
+    }
+  ];
+
+  if (cliType === 'codex') {
+    questions.push({
+      type: 'input',
+      name: 'providerKey',
+      message: 'Provider Key（直接回车按名称生成）:',
+      default: (answers) => generateProviderKey(answers.name)
+    });
+  }
+
+  questions.push(
+    {
+      type: 'input',
+      name: 'baseUrl',
+      message: 'Base URL:',
+      validate: validateHttpUrl
+    },
+    {
+      type: 'input',
+      name: 'apiKey',
+      message: 'API Key:',
+      validate: (input) => input.trim() ? true : 'API Key 不能为空'
+    }
+  );
+
+  if (cliType === 'codex') {
+    questions.push({
+      type: 'input',
+      name: 'wireApi',
+      message: 'Wire API:',
+      default: 'responses',
+      validate: (input) => input.trim() ? true : 'Wire API 不能为空'
+    });
+  }
+
+  if (cliType === 'gemini') {
+    questions.push({
+      type: 'input',
+      name: 'model',
+      message: '模型名称:',
+      default: 'gemini-2.5-pro',
+      validate: (input) => input.trim() ? true : '模型名称不能为空'
+    });
+  }
+
+  questions.push({
+    type: 'input',
+    name: 'websiteUrl',
+    message: '网站地址（可选，直接回车跳过）:',
+    default: ''
+  });
+
+  return inquirer.prompt(questions);
+}
+
+function validateHttpUrl(input) {
+  const value = input.trim();
+  if (!value) {
+    return 'Base URL 不能为空';
+  }
+  if (!value.startsWith('http://') && !value.startsWith('https://')) {
+    return 'Base URL 必须以 http:// 或 https:// 开头';
+  }
+  return true;
+}
+
+function generateProviderKey(name) {
+  return String(name || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9_-]/g, '')
+    || `provider-${Date.now()}`;
 }
 
 function broadcastSchedulerSnapshot(source = 'claude') {
@@ -277,7 +486,10 @@ module.exports = {
   handleChannelCommand,
   getChannelServices,
   findChannel,
+  addChannel,
+  deleteChannel,
   switchChannel,
   promptSelectCliType,
-  promptSelectChannel
+  promptSelectChannel,
+  promptChannelFields
 };

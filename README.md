@@ -129,12 +129,18 @@ ct
 | -------------------------------- | ------------------------------------- |
 | `ct channel list`                | 查看当前 CLI 类型的渠道               |
 | `ct channel list codex`          | 查看指定类型渠道                      |
+| `ct channel add`                 | 交互式选择 CLI 类型并添加渠道         |
+| `ct channel add codex`           | 添加指定类型渠道                      |
 | `ct channel switch`              | 交互式选择 CLI 类型和渠道             |
 | `ct channel switch codex`        | 交互式切换 Codex 渠道                 |
 | `ct channel switch codex <id>`   | 直接切换到指定 Codex 渠道             |
 | `ct channel use gemini <name>`   | 直接切换到指定 Gemini 渠道            |
+| `ct channel delete`              | 交互式选择 CLI 类型并删除渠道         |
+| `ct channel delete codex <id>`   | 删除指定 Codex 渠道                   |
+| `ct channel remove gemini <name>` | 删除指定 Gemini 渠道                  |
 
 `switch/use` 会写入目标渠道配置，并只启用同类型目标渠道。
+`delete/remove/rm` 会二次确认后再删除渠道。
 
 ### 后台运行（基于 PM2）
 

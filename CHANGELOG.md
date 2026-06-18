@@ -6,6 +6,20 @@
 
 ## [Unreleased]
 
+## [3.7.2] - 2026-06-18
+
+### Added
+
+- 🆕 **渠道添加命令** - 新增 `ct channel add` 命令，支持交互式和直接模式添加 Claude/Codex/Gemini 渠道
+- 🆕 **渠道删除命令** - 新增 `ct channel delete/remove/rm` 命令，支持交互式选择渠道并二次确认后删除
+- ✅ **渠道增删测试** - 新增 channel add/delete 命令行测试用例
+
+### Changed
+
+- 🔄 **命令路由扩展** - `handleChannelCommand` 支持 `add`/`delete` 动作，`remove`/`rm` 别名自动归一化为 `delete`
+- 🔄 **服务层集成** - 渠道服务获取逻辑新增 `createChannel`/`deleteChannel` 接口
+- 📝 **帮助文档更新** - `showChannelHelp` 和 `showHelp` 添加 add/delete 命令说明
+
 ## [3.7.1] - 2026-06-18
 
 ### Added

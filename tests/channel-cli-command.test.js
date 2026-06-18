@@ -99,6 +99,146 @@ async function runChannelCliCommandTests() {
   const failures = [];
 
   await runTestCase(
+    'ct channel add should prompt CLI type and create selected channel type',
+    async () => {
+      await withTempHome(async (tempRoot) => {
+        clearModuleCache();
+
+        const inquirer = require('inquirer');
+        const originalPrompt = inquirer.prompt;
+
+        try {
+          const promptNames = [];
+          inquirer.prompt = async (questions) => {
+            promptNames.push(questions[0].name);
+            if (questions[0].name === 'cliType') {
+              return { cliType: 'gemini' };
+            }
+            assert.deepStrictEqual(
+              questions.map((question) => question.name),
+              ['name', 'baseUrl', 'apiKey', 'model', 'websiteUrl']
+            );
+            return {
+              name: 'Gemini Added',
+              baseUrl: 'https://added.gemini.example.com',
+              apiKey: 'gemini-added-key',
+              model: 'gemini-2.5-flash',
+              websiteUrl: 'https://added.example.com'
+            };
+          };
+
+          const { handleChannelCommand } = require('../src/commands/channel');
+          await handleChannelCommand(['add']);
+
+          const service = require('../src/server/services/gemini-channels');
+          const channels = service.getChannels().channels;
+
+          assert.deepStrictEqual(promptNames, ['cliType', 'name']);
+          assert.strictEqual(channels.length, 1);
+          assert.strictEqual(channels[0].name, 'Gemini Added');
+          assert.strictEqual(channels[0].baseUrl, 'https://added.gemini.example.com');
+          assert.strictEqual(channels[0].apiKey, 'gemini-added-key');
+          assert.strictEqual(channels[0].model, 'gemini-2.5-flash');
+        } finally {
+          inquirer.prompt = originalPrompt;
+        }
+      });
+    },
+    failures
+  );
+
+  await runTestCase(
+    'ct channel delete should prompt CLI type, prompt channel, and require confirmation',
+    async () => {
+      await withTempHome(async () => {
+        clearModuleCache();
+
+        const service = require('../src/server/services/gemini-channels');
+        const inquirer = require('inquirer');
+        const originalPrompt = inquirer.prompt;
+
+        try {
+          const first = service.createChannel(
+            'Gemini Delete First',
+            'https://delete-first.gemini.example.com',
+            'gemini-delete-first-key',
+            'gemini-2.5-pro'
+          );
+          const second = service.createChannel(
+            'Gemini Delete Second',
+            'https://delete-second.gemini.example.com',
+            'gemini-delete-second-key',
+            'gemini-2.5-flash'
+          );
+
+          const promptNames = [];
+          inquirer.prompt = async (questions) => {
+            promptNames.push(questions[0].name);
+            if (questions[0].name === 'cliType') {
+              return { cliType: 'gemini' };
+            }
+            if (questions[0].name === 'channelId') {
+              return { channelId: second.id };
+            }
+            if (questions[0].name === 'confirmed') {
+              return { confirmed: true };
+            }
+            throw new Error(`Unexpected prompt: ${questions[0].name}`);
+          };
+
+          const { handleChannelCommand } = require('../src/commands/channel');
+          await handleChannelCommand(['delete']);
+
+          const channels = service.getChannels().channels;
+
+          assert.deepStrictEqual(promptNames, ['cliType', 'channelId', 'confirmed']);
+          assert.ok(channels.some((channel) => channel.id === first.id));
+          assert.ok(!channels.some((channel) => channel.id === second.id));
+        } finally {
+          inquirer.prompt = originalPrompt;
+        }
+      });
+    },
+    failures
+  );
+
+  await runTestCase(
+    'ct channel delete <type> <name> should cancel when confirmation is rejected',
+    async () => {
+      await withTempHome(async () => {
+        clearModuleCache();
+
+        const service = require('../src/server/services/gemini-channels');
+        const inquirer = require('inquirer');
+        const originalPrompt = inquirer.prompt;
+
+        try {
+          const channel = service.createChannel(
+            'Gemini Keep',
+            'https://keep.gemini.example.com',
+            'gemini-keep-key',
+            'gemini-2.5-pro'
+          );
+
+          inquirer.prompt = async (questions) => {
+            assert.strictEqual(questions[0].name, 'confirmed');
+            return { confirmed: false };
+          };
+
+          const { handleChannelCommand } = require('../src/commands/channel');
+          await handleChannelCommand(['delete', 'gemini', channel.name]);
+
+          const channels = service.getChannels().channels;
+          assert.ok(channels.some((item) => item.id === channel.id));
+        } finally {
+          inquirer.prompt = originalPrompt;
+        }
+      });
+    },
+    failures
+  );
+
+  await runTestCase(
     'ct channel switch should prompt CLI type before prompting channel',
     async () => {
       await withTempHome(async (tempRoot) => {

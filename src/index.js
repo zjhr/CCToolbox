@@ -88,9 +88,13 @@ function showHelp() {
   console.log(chalk.yellow("🔀 渠道管理:"));
   console.log("  ct channel list         查看当前 CLI 类型的渠道");
   console.log("  ct channel list codex   查看 Codex 渠道");
+  console.log("  ct channel add          交互式选择 CLI 类型并添加渠道");
+  console.log("  ct channel add codex    添加 Codex 渠道");
   console.log("  ct channel switch       交互式选择 CLI 类型和渠道");
   console.log("  ct channel switch codex 交互式切换 Codex 渠道");
   console.log("  ct channel switch codex <id|name>");
+  console.log("  ct channel delete       交互式选择 CLI 类型并删除渠道");
+  console.log("  ct channel delete codex <id|name>");
   console.log(chalk.gray("  (switch 会写入配置，并只启用目标渠道)\n"));
 
   console.log(chalk.yellow("📋 日志管理:"));
