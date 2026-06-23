@@ -6,6 +6,16 @@
 
 ## [Unreleased]
 
+## [3.7.3] - 2026-06-23
+
+### Added
+
+- 🧰 **Claude 渠道自动压缩阈值** - 新增 `autoCompactWindow` 配置字段，支持自定义上下文压缩触发窗口，提升长时间会话稳定性
+- 🔄 **enable1M 与压缩阈值联动** - 开关 enable1M 时自动切换默认压缩阈值（870000/190000），减少手动配置负担
+- 🐛 **修复数字字段 max 默认值** - 移除 BaseChannelPanel 中 `buildFieldProps` 对数字字段默认 `max: 100` 的限制，仅在有明确 `field.max` 时设置上限
+- 🔄 **onFormValueChange 钩子** - BaseChannelPanel 新增表单值变更回调支持，允许字段联动逻辑无需侵入面板组件
+- 🗑️ **旧版 autoCompactWindow=100 兼容** - 自动将旧版 UI 误写入的 `autoCompactWindow=100` 恢复为对应 enable1M 状态的默认值
+
 ## [3.7.2] - 2026-06-18
 
 ### Added

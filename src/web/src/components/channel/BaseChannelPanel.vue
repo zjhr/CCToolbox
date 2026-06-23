@@ -176,7 +176,7 @@
                     :value="getFieldValue(field)"
                     v-bind="buildFieldProps(field)"
                     @click.capture="(event) => handleSensitiveFieldClick(field, event)"
-                    @update:value="(val) => setNestedValue(state.formData, field.key, val)"
+                    @update:value="(val) => handleFieldValueChange(field, val)"
                   />
                   <FieldHint
                     :text="getOriginalFieldHint(field.key)"
@@ -190,7 +190,7 @@
                   :value="getFieldValue(field)"
                   v-bind="buildFieldProps(field)"
                   @click.capture="(event) => handleSensitiveFieldClick(field, event)"
-                  @update:value="(val) => setNestedValue(state.formData, field.key, val)"
+                  @update:value="(val) => handleFieldValueChange(field, val)"
                 />
                 <FieldHint
                   :text="getOriginalFieldHint(field.key)"
@@ -567,6 +567,17 @@ function setNestedValue(obj, path, value) {
   target[keys[keys.length - 1]] = value
 }
 
+function handleFieldValueChange(field, value) {
+  if (typeof config.onFormValueChange === 'function') {
+    const nextFormData = config.onFormValueChange(state.formData, field.key, value)
+    if (nextFormData) {
+      state.formData = nextFormData
+      return
+    }
+  }
+  setNestedValue(state.formData, field.key, value)
+}
+
 // 获取验证状态（支持嵌套路径）
 function getValidationStatus(key) {
   const flatKey = key.replace(/\./g, '_')
@@ -644,10 +655,12 @@ function buildFieldProps(field) {
   }
   if (field.type === 'number') {
     base.min = field.min ?? 1
-    base.max = field.max ?? 100
     base.step = field.step ?? 1
     base.clearable = field.clearable
     base.style = 'width: 100%;'
+    if (field.max !== undefined) {
+      base.max = field.max
+    }
   }
   if (field.type === 'select') {
     base.options = field.options || []

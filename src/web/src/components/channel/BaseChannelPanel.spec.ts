@@ -196,6 +196,39 @@ describe('BaseChannelPanel 字段组件解析（Red）', () => {
     }
   })
 
+  it('GIVEN 数字字段未声明 max WHEN 调用 buildFieldProps THEN 不应默认限制为 100', async () => {
+    const wrapper = mountPanel()
+    try {
+      await nextTick()
+
+      const setupState = wrapper.vm.$.setupState as {
+        buildFieldProps: (field: {
+          type: string
+          min?: number
+          max?: number
+          step?: number
+        }) => Record<string, unknown>
+      }
+
+      const unlimitedProps = setupState.buildFieldProps({
+        type: 'number',
+        min: 1,
+        step: 1000
+      })
+      expect(unlimitedProps.max).toBeUndefined()
+
+      const boundedProps = setupState.buildFieldProps({
+        type: 'number',
+        min: 1,
+        max: 100,
+        step: 1
+      })
+      expect(boundedProps.max).toBe(100)
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
   it('GIVEN type 非 select WHEN 调用 resolveFieldComponent THEN 返回非 NSelect', async () => {
     const wrapper = mountPanel()
     try {

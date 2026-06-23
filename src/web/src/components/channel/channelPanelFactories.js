@@ -113,6 +113,18 @@ function normalizeAutoCompactRate(value) {
   return Math.min(99, Math.max(50, Math.round(num)));
 }
 
+function getDefaultClaudeAutoCompactWindow(enable1M) {
+  return enable1M === true ? 870000 : 190000;
+}
+
+function normalizeClaudeAutoCompactWindow(value, enable1M) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 100) {
+    return getDefaultClaudeAutoCompactWindow(enable1M);
+  }
+  return Math.round(num);
+}
+
 function validateRequired(label, value) {
   if (value === null || value === undefined || value === "") {
     return `${label}不能为空`;
@@ -324,6 +336,19 @@ const channelPanelFactories = {
             uncheckedText: "关闭",
           },
           {
+            key: "autoCompactWindow",
+            label: "压缩阈值",
+            type: "number",
+            min: 1,
+            step: 1000,
+            validate: (value) => {
+              const num = Number(value);
+              if (!Number.isFinite(num)) return "压缩阈值需为数字";
+              if (num <= 0) return "压缩阈值必须大于 0";
+              return "";
+            },
+          },
+          {
             key: "enableToolSearch",
             label: "ToolSearch",
             type: "select",
@@ -430,6 +455,7 @@ const channelPanelFactories = {
       weight: 1,
       enabled: true,
       enable1M: false,
+      autoCompactWindow: 190000,
       enableToolSearch: "auto",
     }),
     mapChannelToForm: (channel) => {
@@ -469,6 +495,10 @@ const channelPanelFactories = {
         weight: channel.weight || 1,
         enabled: channel.enabled !== false,
         enable1M: channel.enable1M === true,
+        autoCompactWindow: normalizeClaudeAutoCompactWindow(
+          channel.autoCompactWindow,
+          channel.enable1M === true
+        ),
         enableToolSearch:
           channel.enableToolSearch === "1" ||
           channel.enableToolSearch === "0" ||
@@ -494,6 +524,26 @@ const channelPanelFactories = {
 
       return newForm;
     },
+    onFormValueChange: (form, key, value) => {
+      if (key !== "enable1M") {
+        return null;
+      }
+
+      const nextForm = { ...form, [key]: value };
+
+      const previousDefault = getDefaultClaudeAutoCompactWindow(form.enable1M === true);
+      const currentValue = Number(form.autoCompactWindow);
+      const shouldApplyDefault =
+        !Number.isFinite(currentValue) ||
+        currentValue <= 100 ||
+        Math.round(currentValue) === previousDefault;
+
+      if (shouldApplyDefault) {
+        nextForm.autoCompactWindow = getDefaultClaudeAutoCompactWindow(value === true);
+      }
+
+      return nextForm;
+    },
     testFn: testClaudeChannelSpeed,
     api: {
       fetch: async () => {
@@ -514,6 +564,10 @@ const channelPanelFactories = {
             weight: normalizeWeight(form.weight),
             enabled: form.enabled,
             enable1M: form.enable1M,
+            autoCompactWindow: normalizeClaudeAutoCompactWindow(
+              form.autoCompactWindow,
+              form.enable1M === true
+            ),
             enableToolSearch: form.enableToolSearch,
             presetId: form.presetId,
             modelConfig: form.modelConfig,
@@ -532,6 +586,10 @@ const channelPanelFactories = {
           weight: normalizeWeight(form.weight),
           enabled: form.enabled,
           enable1M: form.enable1M,
+          autoCompactWindow: normalizeClaudeAutoCompactWindow(
+            form.autoCompactWindow,
+            form.enable1M === true
+          ),
           enableToolSearch: form.enableToolSearch,
           presetId: form.presetId,
           modelConfig: form.modelConfig,

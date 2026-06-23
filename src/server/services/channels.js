@@ -109,6 +109,18 @@ function normalizeEnable1M(value) {
   return undefined;
 }
 
+function getDefaultAutoCompactWindow(enable1M) {
+  return enable1M === true ? 870000 : 190000;
+}
+
+function normalizeAutoCompactWindow(value, enable1M) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 100) {
+    return getDefaultAutoCompactWindow(enable1M);
+  }
+  return Math.round(num);
+}
+
 function normalizeExtraEnvJson(value) {
   if (value === undefined || value === null) {
     return '';
@@ -149,6 +161,11 @@ function applyChannelDefaults(channel) {
   } else {
     normalized.enable1M = normalizedEnable1M;
   }
+
+  normalized.autoCompactWindow = normalizeAutoCompactWindow(
+    normalized.autoCompactWindow,
+    normalized.enable1M === true
+  );
 
   return normalized;
 }
@@ -352,6 +369,7 @@ function createChannel(name, baseUrl, apiKey, websiteUrl, extraConfig = {}) {
     customModels: normalizeCustomModels(extraConfig.customModels),
     extraEnvJson: normalizeExtraEnvJson(extraConfig.extraEnvJson),
     enable1M: normalizeEnable1M(extraConfig.enable1M),
+    autoCompactWindow: extraConfig.autoCompactWindow,
     enableToolSearch: extraConfig.enableToolSearch
   });
 
@@ -380,6 +398,7 @@ function updateChannel(id, updates) {
     customModels: merged.customModels,
     extraEnvJson: merged.extraEnvJson,
     enable1M: merged.enable1M,
+    autoCompactWindow: merged.autoCompactWindow,
     enableToolSearch: merged.enableToolSearch
   });
 
@@ -545,6 +564,7 @@ function updateClaudeSettingsWithModelConfig(channel) {
   clearManagedExtraEnv(settings);
 
   const { baseUrl, apiKey, modelConfig, proxyUrl, enable1M, enableToolSearch, extraEnvJson } = channel;
+  const autoCompactWindow = normalizeAutoCompactWindow(channel.autoCompactWindow, enable1M === true);
 
   const useAuthToken = settings.env.ANTHROPIC_AUTH_TOKEN !== undefined;
   const useApiKey = settings.env.ANTHROPIC_API_KEY !== undefined;
@@ -577,6 +597,8 @@ function updateClaudeSettingsWithModelConfig(channel) {
     disable1MContext = '1';
   }
   setEnvValue(settings, 'CLAUDE_CODE_DISABLE_1M_CONTEXT', disable1MContext);
+  setEnvValue(settings, 'CLAUDE_CODE_AUTO_COMPACT_WINDOW', String(autoCompactWindow));
+  settings.autoCompactWindow = autoCompactWindow;
 
   let toolSearchValue;
   if (enableToolSearch === '1' || enableToolSearch === '0' || enableToolSearch === 'auto') {

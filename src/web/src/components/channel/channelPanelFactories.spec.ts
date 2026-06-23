@@ -9,24 +9,58 @@ describe('channelPanelFactories', () => {
     const basicSection = factory.formSections.find(s => s.title === '基本信息')
     expect(basicSection).toBeDefined()
     const enable1MField = basicSection?.fields.find(f => f.key === 'enable1M')
+    const autoCompactWindowField = basicSection?.fields.find(f => f.key === 'autoCompactWindow')
     expect(enable1MField).toBeDefined()
     expect(enable1MField?.type).toBe('switch')
     expect(enable1MField?.label).toBe('1M 上下文')
+    expect(autoCompactWindowField).toBeDefined()
+    expect(autoCompactWindowField?.type).toBe('number')
+    expect(autoCompactWindowField?.label).toBe('压缩阈值')
 
     // 2. 验证初始值
     const initialForm = factory.getInitialForm()
     expect(initialForm.enable1M).toBe(false)
+    expect(initialForm.autoCompactWindow).toBe(190000)
 
     // 3. 验证从渠道数据映射到表单
     const channelWith1M = { id: 'test-1', enable1M: true, enabled: true }
     const form1 = factory.mapChannelToForm(channelWith1M)
     expect(form1.enable1M).toBe(true)
+    expect(form1.autoCompactWindow).toBe(870000)
     expect(form1.channelId).toBe('test-1')
 
     const channelWithout1M = { id: 'test-2', enabled: true }
     const form2 = factory.mapChannelToForm(channelWithout1M)
     expect(form2.enable1M).toBe(false)
+    expect(form2.autoCompactWindow).toBe(190000)
     expect(form2.channelId).toBe('test-2')
+
+    const channelWithCustomWindow = {
+      id: 'test-3',
+      enable1M: true,
+      autoCompactWindow: 765432,
+      enabled: true
+    }
+    const form3 = factory.mapChannelToForm(channelWithCustomWindow)
+    expect(form3.autoCompactWindow).toBe(765432)
+
+    const channelWithLegacyClampedWindow = {
+      id: 'test-4',
+      enable1M: true,
+      autoCompactWindow: 100,
+      enabled: true
+    }
+    const form4 = factory.mapChannelToForm(channelWithLegacyClampedWindow)
+    expect(form4.autoCompactWindow).toBe(870000)
+  })
+
+  it('claude 压缩阈值应随 1M 默认联动', () => {
+    const factory = channelPanelFactories.claude()
+    const form = factory.getInitialForm()
+
+    expect(form.autoCompactWindow).toBe(190000)
+    expect(factory.onFormValueChange?.(form, 'enable1M', true).autoCompactWindow).toBe(870000)
+    expect(factory.onFormValueChange?.(form, 'enable1M', false).autoCompactWindow).toBe(190000)
   })
 
   it('新建渠道切换预设时应应用预设名称、baseUrl 和官网地址', () => {

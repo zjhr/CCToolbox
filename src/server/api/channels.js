@@ -94,6 +94,7 @@ router.post('/', (req, res) => {
       modelConfig,
       proxyUrl,
       enable1M,
+      autoCompactWindow,
       enableToolSearch,
       extraEnvJson,
       customModels
@@ -114,6 +115,7 @@ router.post('/', (req, res) => {
       modelConfig,
       proxyUrl,
       enable1M,
+      autoCompactWindow,
       enableToolSearch,
       extraEnvJson,
       customModels

@@ -274,6 +274,113 @@ async function runTests() {
   );
 
   await runTestCase(
+    'Claude 渠道压缩阈值应保存并写入 settings 的 env 与同级字段',
+    async () => {
+      await withTempHome(async (tempRoot) => {
+        ensureDir(path.join(tempRoot, '.claude'));
+        const service = loadClaudeChannelsService();
+        const originalNow = Date.now;
+        let now = 5000;
+        let channelWith1M;
+        let channelWithout1M;
+        try {
+          Date.now = () => {
+            now += 1;
+            return now;
+          };
+
+          channelWith1M = service.createChannel(
+            'Auto Compact 1M',
+            'https://api.anthropic.com',
+            'sk-window-1m',
+            '',
+            { enable1M: true }
+          );
+          channelWithout1M = service.createChannel(
+            'Auto Compact Normal',
+            'https://api.anthropic.com',
+            'sk-window-normal',
+            '',
+            { enable1M: false }
+          );
+        } finally {
+          Date.now = originalNow;
+        }
+
+        assert.strictEqual(channelWith1M.autoCompactWindow, 870000);
+        assert.strictEqual(channelWithout1M.autoCompactWindow, 190000);
+
+        const updated = service.updateChannel(channelWithout1M.id, {
+          autoCompactWindow: 345678
+        });
+        assert.strictEqual(updated.autoCompactWindow, 345678);
+
+        service.applyChannelToSettings(channelWith1M.id);
+        let settings = readClaudeSettings(tempRoot);
+        assert.strictEqual(settings.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '870000');
+        assert.strictEqual(settings.autoCompactWindow, 870000);
+
+        service.applyChannelToSettings(channelWithout1M.id);
+        settings = readClaudeSettings(tempRoot);
+        assert.strictEqual(settings.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '345678');
+        assert.strictEqual(settings.autoCompactWindow, 345678);
+      });
+    },
+    failures
+  );
+
+  await runTestCase(
+    '旧版 UI 误写入 autoCompactWindow=100 时应恢复为默认压缩阈值',
+    async () => {
+      await withTempHome(async (tempRoot) => {
+        ensureDir(path.join(tempRoot, '.claude'));
+        const appDir = path.join(tempRoot, '.claude', 'cctoolbox');
+        ensureDir(appDir);
+        fs.writeFileSync(
+          path.join(appDir, 'channels.json'),
+          JSON.stringify({
+            channels: [
+              {
+                id: 'legacy-clamped-1m',
+                name: 'Legacy Clamped 1M',
+                baseUrl: 'https://api.anthropic.com',
+                apiKey: 'sk-legacy-1m',
+                enable1M: true,
+                autoCompactWindow: 100
+              },
+              {
+                id: 'legacy-clamped-normal',
+                name: 'Legacy Clamped Normal',
+                baseUrl: 'https://api.anthropic.com',
+                apiKey: 'sk-legacy-normal',
+                enable1M: false,
+                autoCompactWindow: 100
+              }
+            ]
+          }, null, 2),
+          'utf8'
+        );
+
+        const service = loadClaudeChannelsService();
+        const channels = service.getAllChannels();
+        assert.strictEqual(channels[0].autoCompactWindow, 870000);
+        assert.strictEqual(channels[1].autoCompactWindow, 190000);
+
+        service.applyChannelToSettings('legacy-clamped-1m');
+        let settings = readClaudeSettings(tempRoot);
+        assert.strictEqual(settings.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '870000');
+        assert.strictEqual(settings.autoCompactWindow, 870000);
+
+        service.applyChannelToSettings('legacy-clamped-normal');
+        settings = readClaudeSettings(tempRoot);
+        assert.strictEqual(settings.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '190000');
+        assert.strictEqual(settings.autoCompactWindow, 190000);
+      });
+    },
+    failures
+  );
+
+  await runTestCase(
     'applyChannelToSettings 应写入 ENABLE_TOOL_SEARCH=1',
     async () => {
       await withTempHome(async (tempRoot) => {
