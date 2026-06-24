@@ -451,7 +451,7 @@ ct logs --clear      # 清空日志
 
 直接复制以下目录即可备份所有配置和数据：
 
-- 配置：`~/.claude/cctoolbox/`
+- 配置：`~/.cctoolbox/`
 - 日志：`~/.claude/logs/`
 
 </details>

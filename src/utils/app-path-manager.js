@@ -5,6 +5,7 @@ const os = require('os');
 const APP_DIR_NAME = 'cctoolbox';
 const LEGACY_DIR_NAME = 'cc-tool';
 const CLAUDE_DIR_NAME = '.claude';
+const CCTOOLBOX_DIR_NAME = '.cctoolbox';
 const GEMINI_DIR_NAME = '.gemini';
 const CODEX_DIR_NAME = '.codex';
 const MIGRATION_COMPLETE_FLAG = '.migration-complete';
@@ -27,8 +28,24 @@ function getLegacyAppDir() {
   return path.join(getClaudeDir(), LEGACY_DIR_NAME);
 }
 
-function getNewAppDir() {
+function getClaudeAppDir() {
   return path.join(getClaudeDir(), APP_DIR_NAME);
+}
+
+function getNewAppDir() {
+  return path.join(getHomeDir(), CCTOOLBOX_DIR_NAME);
+}
+
+function getMigrationSourceDir() {
+  const claudeAppDir = getClaudeAppDir();
+  if (fs.existsSync(claudeAppDir)) {
+    return claudeAppDir;
+  }
+  return getLegacyAppDir();
+}
+
+function getMigrationTempDir() {
+  return path.join(getHomeDir(), `${CCTOOLBOX_DIR_NAME}-migration-${process.pid}-${Date.now()}`);
 }
 
 function getGeminiDir() {
@@ -48,11 +65,11 @@ function getMigrationCompletePath() {
 }
 
 function getMigrationLogPath() {
-  return path.join(getClaudeDir(), MIGRATION_LOG_FILE);
+  return path.join(getNewAppDir(), MIGRATION_LOG_FILE);
 }
 
 function getMigrationErrorLogPath() {
-  return path.join(getClaudeDir(), MIGRATION_ERROR_LOG_FILE);
+  return path.join(getNewAppDir(), MIGRATION_ERROR_LOG_FILE);
 }
 
 function ensureDir(dirPath) {
@@ -70,7 +87,7 @@ function formatDate(date) {
 
 function logMigration(message) {
   try {
-    ensureDir(getClaudeDir());
+    ensureDir(getNewAppDir());
     const timestamp = new Date().toISOString();
     fs.appendFileSync(getMigrationLogPath(), `[${timestamp}] ${message}\n`, 'utf8');
   } catch (error) {
@@ -80,7 +97,7 @@ function logMigration(message) {
 
 function logMigrationError(error) {
   try {
-    ensureDir(getClaudeDir());
+    ensureDir(getNewAppDir());
     const timestamp = new Date().toISOString();
     const message = error instanceof Error ? error.stack || error.message : String(error);
     fs.appendFileSync(getMigrationErrorLogPath(), `[${timestamp}] ${message}\n`, 'utf8');
@@ -136,7 +153,7 @@ function checkDiskSpace() {
     return;
   }
 
-  const parentDir = getClaudeDir();
+  const parentDir = getHomeDir();
   const stats = fs.statfsSync(parentDir);
   const available = stats.bavail * stats.bsize;
   if (available <= 0) {
@@ -211,11 +228,11 @@ function verifyMigration(oldDir, newDir) {
   return true;
 }
 
-function rollbackMigration(newDir) {
-  if (!fs.existsSync(newDir)) {
+function rollbackMigration(tempDir) {
+  if (!fs.existsSync(tempDir)) {
     return;
   }
-  fs.rmSync(newDir, { recursive: true, force: true });
+  fs.rmSync(tempDir, { recursive: true, force: true });
 }
 
 function createBackupDir(oldDir) {
@@ -228,8 +245,9 @@ function createBackupDir(oldDir) {
 }
 
 function performMigration(options = {}) {
-  const oldDir = getLegacyAppDir();
+  const oldDir = getMigrationSourceDir();
   const newDir = getNewAppDir();
+  let tempDir = null;
   if (!fs.existsSync(oldDir)) {
     return { status: 'no-legacy' };
   }
@@ -245,19 +263,31 @@ function performMigration(options = {}) {
     checkDiskSpace();
 
     createBackupDir(oldDir);
-    ensureDir(newDir);
+    tempDir = getMigrationTempDir();
+    ensureDir(tempDir);
     writeMigrationStatus('in-progress');
 
-    const totalFiles = copyDirectory(oldDir, newDir, (current, total) => {
+    const totalFiles = copyDirectory(oldDir, tempDir, (current, total) => {
       if (options.onProgress) {
         options.onProgress(current, total);
       }
     });
 
+    const verifiedTemp = verifyMigration(oldDir, tempDir);
+    if (!verifiedTemp) {
+      throw new Error('迁移临时目录校验失败');
+    }
+
+    ensureDir(newDir);
+    copyDirectory(tempDir, newDir);
+
     const verified = verifyMigration(oldDir, newDir);
     if (!verified) {
       throw new Error('迁移校验失败');
     }
+
+    rollbackMigration(tempDir);
+    tempDir = null;
 
     writeMigrationCompleteFlag();
     writeMigrationStatus('completed', { files: totalFiles });
@@ -267,7 +297,9 @@ function performMigration(options = {}) {
   } catch (error) {
     logMigrationError(error);
     writeMigrationStatus('failed', { error: error.message });
-    rollbackMigration(newDir);
+    if (tempDir) {
+      rollbackMigration(tempDir);
+    }
     return { status: 'failed', error };
   } finally {
     migrationInProgress = false;
@@ -279,7 +311,7 @@ function migrateIfNeeded(options = {}) {
     return { status: 'in-progress' };
   }
 
-  const oldDir = getLegacyAppDir();
+  const oldDir = getMigrationSourceDir();
   const newDir = getNewAppDir();
   const oldExists = fs.existsSync(oldDir);
   const newExists = fs.existsSync(newDir);
@@ -296,7 +328,7 @@ function migrateIfNeeded(options = {}) {
       writeMigrationStatus('completed');
       return { status: 'completed' };
     }
-    rollbackMigration(newDir);
+    writeMigrationStatus('failed', { error: '迁移中断且校验失败' });
   }
 
   if (!oldExists) {
@@ -324,18 +356,7 @@ function triggerBackgroundMigration() {
 }
 
 function getAppDir() {
-  const newDir = getNewAppDir();
-  if (fs.existsSync(newDir)) {
-    return newDir;
-  }
-
-  const legacyDir = getLegacyAppDir();
-  if (fs.existsSync(legacyDir)) {
-    triggerBackgroundMigration();
-    return legacyDir;
-  }
-
-  return newDir;
+  return getNewAppDir();
 }
 
 function getChannelsPath() {
@@ -347,7 +368,7 @@ function getStatsPath() {
 }
 
 function getBackupPath(type) {
-  let baseDir = getClaudeDir();
+  let baseDir = getAppDir();
   let newName = `${type || 'config'}.${APP_DIR_NAME}-backup`;
   let legacyName = `${type || 'config'}.${LEGACY_DIR_NAME}-backup`;
 

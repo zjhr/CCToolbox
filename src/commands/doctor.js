@@ -4,7 +4,7 @@ const path = require('path');
 const os = require('os');
 const { exec } = require('child_process');
 const { promisify } = require('util');
-const { loadConfig } = require('../config/loader');
+const { getConfigFilePath, loadConfig } = require('../config/loader');
 const { isPortInUse } = require('../utils/port-helper');
 
 const execAsync = promisify(exec);
@@ -114,7 +114,7 @@ async function checkNodeVersion() {
  * 检查配置文件
  */
 async function checkConfigFiles() {
-  const configPath = path.join(os.homedir(), '.claude/config.json');
+  const configPath = getConfigFilePath();
   const exists = fs.existsSync(configPath);
 
   if (exists) {

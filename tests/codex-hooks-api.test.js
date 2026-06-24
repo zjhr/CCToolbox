@@ -69,7 +69,7 @@ function readJson(filePath) {
 async function runTests() {
   await withTempEnv(async (tempRoot) => {
     const codexHooksPath = path.join(tempRoot, '.codex', 'hooks.json');
-    const appDir = path.join(tempRoot, '.claude', 'cctoolbox');
+    const appDir = path.join(tempRoot, '.cctoolbox');
     const uiConfigPath = path.join(appDir, 'ui-config.json');
     const notifyScriptPath = path.join(appDir, 'codex-notify-hook.js');
 

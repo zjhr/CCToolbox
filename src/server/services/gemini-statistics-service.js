@@ -6,7 +6,7 @@ const { getStatsPath } = require('../../utils/app-path-manager');
  * Gemini 统计服务 - 数据采集和存储
  *
  * 文件结构：
- * ~/.claude/cctoolbox/stats/
+ * ~/.cctoolbox/stats/
  *   ├── gemini-statistics.json         # Gemini 总体统计
  *   └── gemini-daily-stats/
  *       ├── 2025-12-05.json           # 每日汇总统计

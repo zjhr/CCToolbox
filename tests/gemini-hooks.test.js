@@ -106,7 +106,7 @@ async function runGeminiHooksTests() {
   await withTempHome(async (tempRoot) => {
     const geminiDir = path.join(tempRoot, '.gemini');
     const settingsPath = path.join(geminiDir, 'settings.json');
-    const appDir = path.join(tempRoot, '.claude', 'cctoolbox');
+    const appDir = path.join(tempRoot, '.cctoolbox');
     const uiConfigPath = path.join(appDir, 'ui-config.json');
     const notifyScriptPath = path.join(appDir, 'gemini-notify-hook.js');
 
@@ -179,7 +179,7 @@ async function runGeminiHooksTests() {
   await withTempHome(async (tempRoot) => {
     const geminiDir = path.join(tempRoot, '.gemini');
     const settingsPath = path.join(geminiDir, 'settings.json');
-    const appDir = path.join(tempRoot, '.claude', 'cctoolbox');
+    const appDir = path.join(tempRoot, '.cctoolbox');
     const notifyScriptPath = path.join(appDir, 'gemini-notify-hook.js');
 
     ensureDir(geminiDir);

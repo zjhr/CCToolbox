@@ -89,7 +89,7 @@ function readClaudeSettings(tempRoot) {
 }
 
 function readActiveChannelState(tempRoot) {
-  const activePath = path.join(tempRoot, '.claude', 'cctoolbox', 'active-channel.json');
+  const activePath = path.join(tempRoot, '.cctoolbox', 'active-channel.json');
   return JSON.parse(fs.readFileSync(activePath, 'utf8'));
 }
 
@@ -334,7 +334,7 @@ async function runTests() {
     async () => {
       await withTempHome(async (tempRoot) => {
         ensureDir(path.join(tempRoot, '.claude'));
-        const appDir = path.join(tempRoot, '.claude', 'cctoolbox');
+        const appDir = path.join(tempRoot, '.cctoolbox');
         ensureDir(appDir);
         fs.writeFileSync(
           path.join(appDir, 'channels.json'),
@@ -635,7 +635,7 @@ async function runTests() {
     '旧版渠道数据缺失 customModels 时应回填为空数组',
     async () => {
       await withTempHome(async (tempRoot) => {
-        const appDir = path.join(tempRoot, '.claude', 'cctoolbox');
+        const appDir = path.join(tempRoot, '.cctoolbox');
         ensureDir(appDir);
 
         fs.writeFileSync(

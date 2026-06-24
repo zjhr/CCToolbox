@@ -6,7 +6,7 @@ const { getStatsPath } = require('../../utils/app-path-manager');
  * 统计服务 - 数据采集和存储
  *
  * 文件结构：
- * ~/.claude/cctoolbox/stats/
+ * ~/.cctoolbox/stats/
  *   ├── statistics.json              # 总体统计（实时更新）
  *   ├── daily-stats/
  *   │   ├── 2025-11-22.json         # 每日汇总统计

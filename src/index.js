@@ -192,7 +192,7 @@ async function main() {
     console.log(chalk.gray("旧配置未受影响："));
     console.log(chalk.gray("  ~/.claude/cc-tool/\n"));
     console.log(chalk.gray("错误日志："));
-    console.log(chalk.gray("  ~/.claude/cctoolbox-migration-error.log\n"));
+    console.log(chalk.gray("  ~/.cctoolbox/cctoolbox-migration-error.log\n"));
     console.log(chalk.yellow("建议："));
     console.log(chalk.gray("  1. 检查磁盘空间和文件权限"));
     console.log(chalk.gray("  2. 重新运行命令触发迁移"));

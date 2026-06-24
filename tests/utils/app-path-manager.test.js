@@ -36,7 +36,7 @@ function runTests() {
 
     const claudeDir = path.join(tempRoot, '.claude');
     const oldDir = path.join(claudeDir, 'cc-tool');
-    const newDir = path.join(claudeDir, 'cctoolbox');
+    const newDir = path.join(tempRoot, '.cctoolbox');
 
     const appDir = manager.getAppDir();
     assert.strictEqual(appDir, newDir);
@@ -63,13 +63,13 @@ function runTests() {
 
     const claudeDir = path.join(tempRoot, '.claude');
     const oldDir = path.join(claudeDir, 'cc-tool');
-    const newDir = path.join(claudeDir, 'cctoolbox');
+    const newDir = path.join(tempRoot, '.cctoolbox');
 
     ensureDir(claudeDir);
     writeFile(path.join(oldDir, 'channels.json'), '{"channels": []}');
 
     const appDir = manager.getAppDir();
-    assert.strictEqual(appDir, oldDir);
+    assert.strictEqual(appDir, newDir);
 
     const result = manager.migrateIfNeeded();
     assert.ok(['completed', 'already-migrated'].includes(result.status));
@@ -85,7 +85,7 @@ function runTests() {
 
     const claudeDir = path.join(tempRoot, '.claude');
     const oldDir = path.join(claudeDir, 'cc-tool');
-    const newDir = path.join(claudeDir, 'cctoolbox');
+    const newDir = path.join(tempRoot, '.cctoolbox');
 
     ensureDir(claudeDir);
     writeFile(path.join(oldDir, 'channels.json'), '{"channels": []}');
@@ -93,8 +93,46 @@ function runTests() {
     writeFile(newDir, 'not-a-directory');
     const result = manager.performMigration();
     assert.strictEqual(result.status, 'failed');
-    assert.strictEqual(fs.existsSync(newDir), false);
+    assert.strictEqual(fs.existsSync(newDir), true);
+    assert.strictEqual(fs.readFileSync(newDir, 'utf8'), 'not-a-directory');
     assert.strictEqual(fs.existsSync(oldDir), true);
+  });
+
+  withTempDir((tempRoot) => {
+    process.env.CCTOOLBOX_HOME = tempRoot;
+    const manager = require('../../src/utils/app-path-manager');
+
+    const claudeAppDir = path.join(tempRoot, '.claude', 'cctoolbox');
+    const legacyDir = path.join(tempRoot, '.claude', 'cc-tool');
+    const newDir = path.join(tempRoot, '.cctoolbox');
+
+    writeFile(path.join(claudeAppDir, 'config.json'), '{"source":"claude-cctoolbox"}');
+    writeFile(path.join(legacyDir, 'config.json'), '{"source":"cc-tool"}');
+
+    const result = manager.performMigration();
+    assert.strictEqual(result.status, 'completed');
+
+    const migrated = JSON.parse(fs.readFileSync(path.join(newDir, 'config.json'), 'utf8'));
+    assert.strictEqual(migrated.source, 'claude-cctoolbox');
+    assert.strictEqual(fs.existsSync(path.join(newDir, '.migration-complete')), true);
+    assert.strictEqual(fs.existsSync(path.join(claudeAppDir, 'config.json')), true);
+  });
+
+  withTempDir((tempRoot) => {
+    process.env.CCTOOLBOX_HOME = tempRoot;
+    const manager = require('../../src/utils/app-path-manager');
+
+    const claudeAppDir = path.join(tempRoot, '.claude', 'cctoolbox');
+    const newDir = path.join(tempRoot, '.cctoolbox');
+
+    writeFile(path.join(claudeAppDir, 'config.json'), '{"source":"claude-cctoolbox"}');
+    writeFile(newDir, 'not-a-directory');
+
+    const result = manager.performMigration();
+    assert.strictEqual(result.status, 'failed');
+    assert.strictEqual(fs.existsSync(path.join(claudeAppDir, 'config.json')), true);
+    assert.strictEqual(fs.existsSync(newDir), true);
+    assert.strictEqual(fs.readFileSync(newDir, 'utf8'), 'not-a-directory');
   });
 }
 

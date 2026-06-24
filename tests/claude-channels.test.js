@@ -210,7 +210,7 @@ async function runClaudeChannelTests() {
     'loadChannels should normalize legacy domestic fields (baseURL + model) for refill mapping',
     async () => {
       await withTempHome(async (tempRoot) => {
-        const appDir = path.join(tempRoot, '.claude', 'cctoolbox');
+        const appDir = path.join(tempRoot, '.cctoolbox');
         ensureDir(appDir);
 
         const channelsPath = path.join(appDir, 'channels.json');

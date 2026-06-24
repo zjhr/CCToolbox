@@ -2,19 +2,19 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { getAppDir, getLegacyAppDir } = require('../utils/app-path-manager');
+const { getAppDir } = require('../utils/app-path-manager');
 const DEFAULT_CONFIG = require('./default');
 
 const PROJECT_CONFIG_FILE = path.join(__dirname, '../../config.json');
 const APP_CONFIG_FILE = path.join(getAppDir(), 'config.json');
-const LEGACY_APP_CONFIG_FILE = path.join(getLegacyAppDir(), 'config.json');
+
+function getConfigFilePath() {
+  return APP_CONFIG_FILE;
+}
 
 function resolveConfigFile() {
   if (fs.existsSync(APP_CONFIG_FILE)) {
     return APP_CONFIG_FILE;
-  }
-  if (fs.existsSync(LEGACY_APP_CONFIG_FILE)) {
-    return LEGACY_APP_CONFIG_FILE;
   }
   if (fs.existsSync(PROJECT_CONFIG_FILE)) {
     return PROJECT_CONFIG_FILE;
@@ -79,8 +79,8 @@ function loadConfig() {
  * 保存配置（原子写入 + 校验）
  */
 function saveConfig(config) {
+  const configFile = getConfigFilePath();
   try {
-    const configFile = resolveConfigFile();
     const configDir = path.dirname(configFile);
     if (!fs.existsSync(configDir)) {
       fs.mkdirSync(configDir, { recursive: true });
@@ -107,7 +107,7 @@ function saveConfig(config) {
     fs.renameSync(tmpPath, configFile);
   } catch (error) {
     // Clean up temp file on failure
-    try { fs.unlinkSync(resolveConfigFile() + '.tmp'); } catch (e) { /* ignore */ }
+    try { fs.unlinkSync(configFile + '.tmp'); } catch (e) { /* ignore */ }
     console.error('保存配置失败:', error.message);
   }
 }
@@ -116,4 +116,6 @@ module.exports = {
   loadConfig,
   saveConfig,
   expandHome,
+  resolveConfigFile,
+  getConfigFilePath,
 };

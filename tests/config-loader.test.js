@@ -55,7 +55,7 @@ async function withTempHome(run) {
 
 async function runTests() {
   await withTempHome(async (tempRoot) => {
-    const configPath = path.join(tempRoot, '.claude', 'cctoolbox', 'config.json');
+    const configPath = path.join(tempRoot, '.cctoolbox', 'config.json');
     fs.mkdirSync(path.dirname(configPath), { recursive: true });
     fs.writeFileSync(
       configPath,
@@ -70,6 +70,24 @@ async function runTests() {
     assert.strictEqual(loaded.maxDisplaySessions, 77);
   });
 
+  await withTempHome(async (tempRoot) => {
+    const projectConfigPath = path.join(__dirname, '..', 'config.json');
+    const projectConfigBefore = fs.readFileSync(projectConfigPath, 'utf8');
+
+    const { getConfigFilePath, resolveConfigFile, saveConfig } = require('../src/config/loader');
+    assert.strictEqual(resolveConfigFile(), projectConfigPath);
+
+    saveConfig({ marker: 'save-to-app-config', ports: { webUI: 19099 }, pricing: {} });
+
+    const appConfigPath = path.join(tempRoot, '.cctoolbox', 'config.json');
+    assert.strictEqual(getConfigFilePath(), appConfigPath);
+    assert.strictEqual(fs.existsSync(appConfigPath), true);
+    assert.strictEqual(fs.readFileSync(projectConfigPath, 'utf8'), projectConfigBefore);
+
+    const saved = JSON.parse(fs.readFileSync(appConfigPath, 'utf8'));
+    assert.strictEqual(saved.marker, 'save-to-app-config');
+  });
+
   console.log('config-loader tests passed');
 }
 
@@ -77,4 +95,3 @@ runTests().catch((error) => {
   console.error(error);
   process.exit(1);
 });
-
