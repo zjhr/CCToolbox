@@ -182,7 +182,7 @@ function pushModelIfValid(models, value) {
 
 /**
  * 从渠道配置提取模型列表作为回退
- * 兼容 Claude(modelConfig)、Codex(modelName)、Gemini(model)
+ * 兼容 Claude(modelConfig)、Codex(modelName)、Gemini(model)、customModels
  * @param {Object} channel - 渠道对象
  * @returns {string[]} 模型名称列表
  */
@@ -201,6 +201,13 @@ function extractModelsFromChannel(channel) {
     const fields = ['model', 'haikuModel', 'sonnetModel', 'opusModel'];
     for (const field of fields) {
       pushModelIfValid(models, modelConfig[field]);
+    }
+  }
+
+  // 用户自定义模型列表
+  if (Array.isArray(channel.customModels)) {
+    for (const name of channel.customModels) {
+      pushModelIfValid(models, name);
     }
   }
 
@@ -259,5 +266,6 @@ function clearModelCache(channelId) {
 module.exports = {
   getModelsForChannel,
   clearModelCache,
-  fetchModelsWithFallback
+  fetchModelsWithFallback,
+  extractModelsFromChannel
 };

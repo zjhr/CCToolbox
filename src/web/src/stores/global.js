@@ -450,6 +450,8 @@ let isInitialized = false
 export function initializeGlobalStore() {
   if (isInitialized) return
   const store = useGlobalStore()
+  // 不依赖 WebSocket 才能拿到代理开关状态，避免页面重开先显示关闭
+  store.initializeState()
   store.connectWebSocket()
   store.loadChannels()
   store.loadAdvancedConfig()

@@ -6,6 +6,25 @@
 
 ## [Unreleased]
 
+## [3.7.6] - 2026-07-14
+
+### Added
+
+- 🤖 **Claude 渠道按模型调度** - 代理请求携带 `model`，调度器优先分配声明了该模型的渠道（兼容 `[1m]` 等上下文后缀），无匹配时回退全部候选，避免误判 0 可用
+- 🆕 **customModels 模型提取** - `extractModelsFromChannel` 新增用户自定义模型列表解析，调度匹配与模型列表回退均覆盖自定义模型
+- 📋 **代理状态回显 activeChannel** - `/status` 接口返回当前激活渠道，前端页面重开即可正确回显开关与渠道，无需等待 WebSocket
+
+### Changed
+
+- 🔄 **渠道解析多级回退** - Claude/Codex/Gemini 代理启动统一为：当前 settings 真实渠道 -> active-channel.json -> 备份 settings -> 第一个启用渠道，兼容重启后残留 proxy 配置
+- 🔄 **代理自动恢复加安全条件** - `autoRestoreProxies` 重新启用，仅当存在 active-channel 标记且当前已是 proxy 配置或有备份时才重启进程，不再覆盖非代理 settings
+- 🔄 **前端初始化先取代理状态** - global store 初始化时先调用 `initializeState` 拿代理开关，再连 WebSocket，消除页面重开先显示关闭的闪烁
+
+### Fixed
+
+- 🐛 **停止代理误删 active-channel.json** - 该文件同时用于「写入渠道配置」，停止代理时不再删除，仅清理代理备份，避免渠道配置丢失
+- 🐛 **会话绑定渠道模型不匹配** - 绑定渠道声明了模型但不支持当前请求模型时，自动解绑并重新分配，防止请求路由到不支持该模型的渠道
+
 ## [3.7.5] - 2026-07-13
 
 ### Added

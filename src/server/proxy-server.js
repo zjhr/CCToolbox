@@ -160,7 +160,15 @@ async function startProxyServer(options = {}) {
         const sessionId = extractSessionId(req);
         const config = loadConfig();
         const enableSessionBinding = config.enableSessionBinding !== false; // 默认开启
-        const channel = await allocateChannel({ source: 'claude', sessionId, enableSessionBinding });
+        const requestedModel = (req.body && typeof req.body.model === 'string')
+          ? req.body.model
+          : null;
+        const channel = await allocateChannel({
+          source: 'claude',
+          sessionId,
+          enableSessionBinding,
+          model: requestedModel
+        });
 
         // 广播调度状态（请求开始）
         broadcastSchedulerState('claude', getSchedulerState('claude'));

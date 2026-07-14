@@ -2,6 +2,7 @@ const { getAllChannels } = require('./channels');
 const { getChannels: getCodexChannels } = require('./codex-channels');
 const { getChannels: getGeminiChannels } = require('./gemini-channels');
 const { isChannelAvailable, getChannelHealthStatus, setOnChannelFrozen } = require('./channel-health');
+const { extractModelsFromChannel } = require('./model-list');
 
 const channelProviders = {
   claude: () => getAllChannels(),
@@ -14,6 +15,65 @@ const channelProviders = {
     return Array.isArray(data?.channels) ? data.channels : [];
   }
 };
+
+/**
+ * 规范化模型 ID，去掉 Claude Code 的 [1m] 等上下文后缀
+ * @param {string|null|undefined} modelId
+ * @returns {string}
+ */
+function normalizeModelIdForMatch(modelId) {
+  if (!modelId || typeof modelId !== 'string') return '';
+  return modelId.trim().replace(/\[[^\]]*\]\s*$/g, '').trim();
+}
+
+/**
+ * 渠道是否声明了可用模型列表
+ * @param {Object} channel
+ * @returns {boolean}
+ */
+function channelDeclaresModels(channel) {
+  return extractModelsFromChannel(channel).length > 0;
+}
+
+/**
+ * 渠道是否支持指定模型（忽略 [1m] 后缀）
+ * @param {Object} channel
+ * @param {string} modelId
+ * @returns {boolean}
+ */
+function channelSupportsModel(channel, modelId) {
+  const target = normalizeModelIdForMatch(modelId);
+  if (!target) return false;
+  const models = extractModelsFromChannel(channel);
+  if (!models.length) return false;
+  const normalizedTarget = target.toLowerCase();
+  return models.some((name) => {
+    const normalized = normalizeModelIdForMatch(name).toLowerCase();
+    return normalized === normalizedTarget;
+  });
+}
+
+/**
+ * 按模型偏好过滤渠道；无匹配时回退全部候选
+ * @param {Object[]} channels
+ * @param {string|null|undefined} modelId
+ * @returns {Object[]}
+ */
+function preferChannelsForModel(channels, modelId) {
+  if (!Array.isArray(channels) || !channels.length) return [];
+  const target = normalizeModelIdForMatch(modelId);
+  if (!target) return channels.slice();
+
+  const declaring = channels.filter(channelDeclaresModels);
+  // 没有任何渠道声明模型时，不限制
+  if (!declaring.length) return channels.slice();
+
+  const matched = channels.filter((ch) => channelSupportsModel(ch, target));
+  if (matched.length) return matched;
+
+  // 声明了模型但全不匹配：回退全部，避免直接 0 可用
+  return channels.slice();
+}
 
 function createState() {
   return {
@@ -74,7 +134,12 @@ function refreshChannels(source = 'claude') {
       baseUrl: ch.baseUrl,
       apiKey: ch.apiKey,
       weight: Math.max(1, Number(ch.weight) || 1),
-      maxConcurrency: ch.maxConcurrency ?? null
+      maxConcurrency: ch.maxConcurrency ?? null,
+      // 保留模型声明，供按 model 选渠道
+      model: ch.model,
+      modelName: ch.modelName,
+      modelConfig: ch.modelConfig,
+      customModels: ch.customModels
     }));
 
   state.channels.forEach(ch => {
@@ -115,7 +180,16 @@ function tryAllocate(source = 'claude', options = {}) {
   const state = getState(source);
   const sessionId = options.sessionId;
   const enableSessionBinding = options.enableSessionBinding !== false; // 默认开启
-  const available = getAvailableChannels(source);
+  const requestedModel = options.model || null;
+  let available = getAvailableChannels(source);
+  if (!available.length) {
+    return null;
+  }
+
+  // Claude：按请求 model 优先选支持该模型的渠道
+  if (source === 'claude' && requestedModel) {
+    available = preferChannelsForModel(available, requestedModel);
+  }
   if (!available.length) {
     return null;
   }
@@ -125,8 +199,18 @@ function tryAllocate(source = 'claude', options = {}) {
     const boundId = state.sessionBindings.get(sessionId);
     const boundChannel = available.find(ch => ch.id === boundId);
     if (boundChannel) {
-      state.inflight.set(boundChannel.id, (state.inflight.get(boundChannel.id) || 0) + 1);
-      return boundChannel;
+      // 绑定渠道若不支持当前模型，则解绑并重新分配
+      if (
+        source === 'claude' &&
+        requestedModel &&
+        channelDeclaresModels(boundChannel) &&
+        !channelSupportsModel(boundChannel, requestedModel)
+      ) {
+        state.sessionBindings.delete(sessionId);
+      } else {
+        state.inflight.set(boundChannel.id, (state.inflight.get(boundChannel.id) || 0) + 1);
+        return boundChannel;
+      }
     }
   }
 
@@ -230,5 +314,9 @@ function getSchedulerState(source = 'claude') {
 module.exports = {
   allocateChannel,
   releaseChannel,
-  getSchedulerState
+  getSchedulerState,
+  normalizeModelIdForMatch,
+  channelDeclaresModels,
+  channelSupportsModel,
+  preferChannelsForModel
 };

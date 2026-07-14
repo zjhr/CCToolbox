@@ -37,40 +37,94 @@ function saveActiveChannelId(channelId) {
   fs.writeFileSync(filePath, JSON.stringify({ activeChannelId: channelId }, null, 2), 'utf8');
 }
 
+function extractApiKeyFromSettings(settings) {
+  let apiKey = settings?.env?.ANTHROPIC_API_KEY ||
+               settings?.env?.ANTHROPIC_AUTH_TOKEN ||
+               '';
+
+  // 如果 apiKey 仍为空，尝试从 apiKeyHelper 提取
+  if (!apiKey && settings?.apiKeyHelper) {
+    const match = settings.apiKeyHelper.match(/['"]([^'"]+)['"]/);
+    if (match && match[1]) {
+      apiKey = match[1];
+    }
+  }
+
+  // 代理占位 key 不当作真实渠道凭证
+  if (apiKey === 'PROXY_KEY') {
+    return '';
+  }
+  return apiKey;
+}
+
+function matchChannelByBaseUrlAndKey(baseUrl, apiKey, channels = getAllChannels()) {
+  if (!baseUrl || !apiKey || baseUrl.includes('127.0.0.1')) {
+    return null;
+  }
+  return channels.find(ch => ch.baseUrl === baseUrl && ch.apiKey === apiKey) || null;
+}
+
 // 从 settings.json 找到当前激活的渠道
 function findActiveChannelFromSettings() {
   try {
     const settings = readSettings();
     const baseUrl = settings?.env?.ANTHROPIC_BASE_URL || '';
-
-    // 兼容多种 API Key 格式（与 channels.js 保持一致）
-    let apiKey = settings?.env?.ANTHROPIC_API_KEY ||        // 标准格式
-                 settings?.env?.ANTHROPIC_AUTH_TOKEN ||     // 88code等平台格式
-                 '';
-
-    // 如果 apiKey 仍为空，尝试从 apiKeyHelper 提取
-    if (!apiKey && settings?.apiKeyHelper) {
-      const match = settings.apiKeyHelper.match(/['"]([^'"]+)['"]/);
-      if (match && match[1]) {
-        apiKey = match[1];
-      }
-    }
-
-    if (!baseUrl || !apiKey || baseUrl.includes('127.0.0.1')) {
-      return null;
-    }
-
-    // 找到匹配的渠道
-    const channels = getAllChannels();
-    const matchingChannel = channels.find(ch =>
-      ch.baseUrl === baseUrl && ch.apiKey === apiKey
-    );
-
-    return matchingChannel;
+    const apiKey = extractApiKeyFromSettings(settings);
+    return matchChannelByBaseUrlAndKey(baseUrl, apiKey);
   } catch (err) {
     console.error('Error finding active channel:', err);
     return null;
   }
+}
+
+function loadSavedActiveChannelId() {
+  try {
+    const filePath = path.join(getAppDir(), 'active-channel.json');
+    if (!fs.existsSync(filePath)) return null;
+    const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    return data?.activeChannelId || null;
+  } catch (err) {
+    return null;
+  }
+}
+
+function findChannelFromBackupSettings() {
+  try {
+    if (!hasBackup()) return null;
+    const content = fs.readFileSync(getBackupPath(), 'utf8');
+    const settings = JSON.parse(content);
+    const baseUrl = settings?.env?.ANTHROPIC_BASE_URL || '';
+    const apiKey = extractApiKeyFromSettings(settings);
+    return matchChannelByBaseUrlAndKey(baseUrl, apiKey);
+  } catch (err) {
+    return null;
+  }
+}
+
+/**
+ * 启动代理时解析渠道：
+ * 1) 当前 settings 真实渠道
+ * 2) active-channel.json
+ * 3) 备份 settings
+ * 4) 第一个启用渠道
+ */
+function resolveChannelForProxyStart() {
+  const channels = getAllChannels();
+  const enabled = channels.filter(ch => ch.enabled !== false);
+
+  const fromSettings = findActiveChannelFromSettings();
+  if (fromSettings) return fromSettings;
+
+  const savedId = loadSavedActiveChannelId();
+  if (savedId) {
+    const saved = channels.find(ch => ch.id === savedId);
+    if (saved && saved.enabled !== false) return saved;
+  }
+
+  const fromBackup = findChannelFromBackupSettings();
+  if (fromBackup && fromBackup.enabled !== false) return fromBackup;
+
+  return enabled[0] || null;
 }
 
 // 获取代理状态
@@ -85,9 +139,20 @@ router.get('/status', (req, res) => {
       currentProxyPort: getCurrentProxyPort()
     };
 
+    // 页面重开时需要 activeChannel 回显
+    let activeChannel = null;
+    const savedId = loadSavedActiveChannelId();
+    if (savedId) {
+      activeChannel = channels.find(ch => ch.id === savedId) || null;
+    }
+    if (!activeChannel) {
+      activeChannel = resolveChannelForProxyStart();
+    }
+
     res.json({
       proxy: proxyStatus,
       config: configStatus,
+      activeChannel: sanitizeChannelForResponse(activeChannel),
       channelsCount: channels.length,
       enabledChannelsCount: channels.filter(ch => ch.enabled !== false).length
     });
@@ -106,11 +171,11 @@ router.post('/start', async (req, res) => {
       });
     }
 
-    // 2. 从 settings.json 找到当前使用的渠道
-    const currentChannel = findActiveChannelFromSettings();
+    // 2. 解析启动渠道（兼容重启后残留 proxy settings）
+    const currentChannel = resolveChannelForProxyStart();
     if (!currentChannel) {
       return res.status(400).json({
-        error: '无法从 settings.json 识别当前渠道。请先激活一个渠道。'
+        error: '无法识别可用渠道。请先创建并启用至少一个渠道。'
       });
     }
 
@@ -181,19 +246,13 @@ router.post('/stop', async (req, res) => {
       }
     }
 
-    // 3. 删除备份文件和active-channel.json
+    // 3. 仅删除代理备份；active-channel.json 也用于“写入渠道配置”，不能随停代理删掉
     if (hasBackup()) {
       const backupPath = getBackupPath();
       if (fs.existsSync(backupPath)) {
         fs.unlinkSync(backupPath);
         console.log('✅ Removed backup file');
       }
-    }
-
-    const activeChannelPath = path.join(getAppDir(), 'active-channel.json');
-    if (fs.existsSync(activeChannelPath)) {
-      fs.unlinkSync(activeChannelPath);
-      console.log('✅ Removed active-channel.json');
     }
 
     // 4. 通过 WebSocket 推送代理状态更新
@@ -234,3 +293,5 @@ router.post('/logs/clear', (req, res) => {
 });
 
 module.exports = router;
+module.exports.findActiveChannelFromSettings = findActiveChannelFromSettings;
+module.exports.resolveChannelForProxyStart = resolveChannelForProxyStart;

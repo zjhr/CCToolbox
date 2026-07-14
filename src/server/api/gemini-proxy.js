@@ -68,9 +68,29 @@ router.post('/start', async (req, res) => {
       });
     }
 
-    // 2. 获取当前启用的渠道（多渠道模式）
+    // 2. 解析启动渠道：优先 gemini-active-channel.json，再回退第一个启用渠道
+    const { channels } = getChannels();
     const enabledChannels = getEnabledChannels();
-    const currentChannel = enabledChannels[0];
+    let currentChannel = null;
+
+    try {
+      const activePath = path.join(getAppDir(), 'gemini-active-channel.json');
+      if (fs.existsSync(activePath)) {
+        const data = JSON.parse(fs.readFileSync(activePath, 'utf8'));
+        if (data?.activeChannelId) {
+          currentChannel = channels.find(
+            (ch) => ch.id === data.activeChannelId && ch.enabled !== false
+          ) || null;
+        }
+      }
+    } catch (err) {
+      // ignore and fallback
+    }
+
+    if (!currentChannel) {
+      currentChannel = enabledChannels[0] || null;
+    }
+
     if (!currentChannel) {
       return res.status(400).json({
         error: 'No enabled Gemini channel found. Please create and enable a channel first.'
