@@ -22,6 +22,15 @@ function loadTomlParser() {
 
 const toml = loadTomlParser();
 
+// 用于序列化 config.toml 的库：必须用 @iarna/toml（支持 stringify 且完整保留
+// 数组/嵌套 table/对象等所有类型）。'toml' 库只能 parse，不能 stringify。
+let tomlStringify = null;
+try {
+  tomlStringify = require('@iarna/toml').stringify;
+} catch (e) {
+  tomlStringify = null;
+}
+
 // Codex 配置文件路径
 function getConfigPath() {
   return path.join(os.homedir(), '.codex', 'config.toml');
@@ -65,44 +74,16 @@ function readConfig() {
 }
 
 // 将配置对象转换为 TOML 字符串
+// 必须完整保留主人原有配置（数组、嵌套 table、env 对象等），
+// 只用 @iarna/toml.stringify 做无损往返序列化。
+// 旧实现手写只处理 string/boolean/number，会静默丢弃数组与嵌套字段，导致
+// 开启代理后主人 config.toml 里的 mcp_servers / preferred_auth_methods / env 等被清空。
 function configToToml(config) {
-  let content = `# Codex Configuration
-# Managed by CCToolbox (Proxy Mode)
-
-`;
-
-  // 写入顶级字段
-  for (const [key, value] of Object.entries(config)) {
-    if (key === 'model_providers') continue; // 稍后处理
-    if (typeof value === 'string') {
-      content += `${key} = "${value}"\n`;
-    } else if (typeof value === 'boolean') {
-      content += `${key} = ${value}\n`;
-    } else if (typeof value === 'number') {
-      content += `${key} = ${value}\n`;
-    }
+  if (!tomlStringify) {
+    throw new Error('无法序列化 config.toml：缺少 @iarna/toml 依赖');
   }
-
-  content += '\n';
-
-  // 写入 model_providers
-  if (config.model_providers) {
-    for (const [providerKey, providerConfig] of Object.entries(config.model_providers)) {
-      content += `[model_providers.${providerKey}]\n`;
-      for (const [key, value] of Object.entries(providerConfig)) {
-        if (typeof value === 'string') {
-          content += `${key} = "${value}"\n`;
-        } else if (typeof value === 'boolean') {
-          content += `${key} = ${value}\n`;
-        } else if (typeof value === 'number') {
-          content += `${key} = ${value}\n`;
-        }
-      }
-      content += '\n';
-    }
-  }
-
-  return content;
+  const header = `# Codex Configuration\n# Managed by CCToolbox (Proxy Mode)\n\n`;
+  return header + tomlStringify(config);
 }
 
 // 写入 config.toml

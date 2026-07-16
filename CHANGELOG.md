@@ -6,6 +6,22 @@
 
 ## [Unreleased]
 
+## [3.8.0] - 2026-07-16
+
+### Added
+
+- 🆕 **渠道上游模型缓存接口** - model-list 新增 `getCachedModelsSync` / `primeModelsCache`，调度器可零阻塞读取上游真实模型缓存
+- ✅ **渠道模型路由测试** - 新增 `channel-model-routing.test.js`，覆盖模型匹配、回退与上游缓存过滤行为
+- ✅ **Codex 配置保留测试** - 新增 `codex-config-preserve.test.js`，验证 `config.toml` 序列化保留数组/嵌套/ env 等字段
+
+### Changed
+
+- 🔄 **渠道调度器模型匹配重构** - `channel-scheduler` 改为优先使用上游真实模型缓存；有缓存时全不匹配返回空候选，避免把请求路由到明确不支持的渠道
+
+### Fixed
+
+- 🐛 **Codex config.toml 字段丢失** - `codex-settings-manager` 序列化改用 `@iarna/toml.stringify`，修复开启代理后 `mcp_servers` / `env` 等嵌套字段被静默清空
+
 ## [3.7.6] - 2026-07-14
 
 ### Added

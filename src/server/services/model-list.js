@@ -252,6 +252,37 @@ async function getModelsForChannel(channel, channelType = 'claude', forceRefresh
 }
 
 /**
+ * 同步读取渠道已缓存的上游模型列表（零阻塞，用于调度器选渠道）
+ * 仅命中内存缓存时返回模型；未命中返回 null（调用方应回退到配置声明）
+ * @param {Object} channel - 渠道对象
+ * @param {string} channelType - 渠道类型
+ * @returns {string[]|null} 命中缓存返回模型数组，未命中返回 null
+ */
+function getCachedModelsSync(channel, channelType = 'claude') {
+  if (!channel || !channel.id) return null;
+  const cacheKey = `${channelType}:${channel.id}`;
+  const cached = modelCache.get(cacheKey);
+  if (cached && Date.now() - cached.fetchedAt < CACHE_TTL) {
+    return cached.models;
+  }
+  return null;
+}
+
+/**
+ * 后台预热渠道模型缓存（不抛错、不阻塞调用方）
+ * 用于渠道刷新时异步填充上游真实模型列表，供调度器后续同步读取
+ * @param {Object} channel - 渠道对象
+ * @param {string} channelType - 渠道类型
+ * @param {boolean} forceRefresh - 是否强制刷新
+ * @returns {Promise<string[]>} 实际获取到的模型列表
+ */
+function primeModelsCache(channel, channelType = 'claude', forceRefresh = false) {
+  return getModelsForChannel(channel, channelType, forceRefresh)
+    .then((result) => (result && Array.isArray(result.models) ? result.models : []))
+    .catch(() => []);
+}
+
+/**
  * 清除指定渠道的模型缓存
  * @param {string} channelId - 渠道 ID
  */
@@ -265,6 +296,8 @@ function clearModelCache(channelId) {
 
 module.exports = {
   getModelsForChannel,
+  getCachedModelsSync,
+  primeModelsCache,
   clearModelCache,
   fetchModelsWithFallback,
   extractModelsFromChannel

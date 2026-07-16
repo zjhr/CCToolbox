@@ -2,7 +2,7 @@ const { getAllChannels } = require('./channels');
 const { getChannels: getCodexChannels } = require('./codex-channels');
 const { getChannels: getGeminiChannels } = require('./gemini-channels');
 const { isChannelAvailable, getChannelHealthStatus, setOnChannelFrozen } = require('./channel-health');
-const { extractModelsFromChannel } = require('./model-list');
+const { extractModelsFromChannel, getCachedModelsSync, primeModelsCache } = require('./model-list');
 
 const channelProviders = {
   claude: () => getAllChannels(),
@@ -27,12 +27,27 @@ function normalizeModelIdForMatch(modelId) {
 }
 
 /**
+ * 获取渠道声明/已缓存的上游模型列表（用于调度选渠道，零阻塞）
+ * 优先用已缓存的上游真实模型（更准确），回退到渠道配置声明
+ * @param {Object} channel
+ * @param {string} channelType
+ * @returns {string[]}
+ */
+function getChannelKnownModels(channel, channelType = 'claude') {
+  // 优先读上游真实模型缓存（后台预热填充，零阻塞）
+  const cached = getCachedModelsSync(channel, channelType);
+  if (cached && cached.length) return cached;
+  // 回退：渠道配置声明的模型
+  return extractModelsFromChannel(channel);
+}
+
+/**
  * 渠道是否声明了可用模型列表
  * @param {Object} channel
  * @returns {boolean}
  */
 function channelDeclaresModels(channel) {
-  return extractModelsFromChannel(channel).length > 0;
+  return getChannelKnownModels(channel).length > 0;
 }
 
 /**
@@ -44,7 +59,7 @@ function channelDeclaresModels(channel) {
 function channelSupportsModel(channel, modelId) {
   const target = normalizeModelIdForMatch(modelId);
   if (!target) return false;
-  const models = extractModelsFromChannel(channel);
+  const models = getChannelKnownModels(channel);
   if (!models.length) return false;
   const normalizedTarget = target.toLowerCase();
   return models.some((name) => {
@@ -54,7 +69,13 @@ function channelSupportsModel(channel, modelId) {
 }
 
 /**
- * 按模型偏好过滤渠道；无匹配时回退全部候选
+ * 按模型偏好过滤渠道
+ * - 有渠道支持该模型时：严格只保留支持的渠道
+ * - 有渠道已知模型数据但全不匹配，且无任何上游真实模型缓存时：
+ *   保留旧行为回退全部（配置声明只是 hint，可能漏列，避免误杀合法请求）
+ * - 有渠道已缓存上游真实模型但全不匹配时：上游确实都不支持，返回空，
+ *   避免把请求路由到明确不支持该模型的渠道（偶发 model not found 根因）
+ * - 所有渠道都无模型数据时：无法判断，返回全部（不限制）
  * @param {Object[]} channels
  * @param {string|null|undefined} modelId
  * @returns {Object[]}
@@ -65,13 +86,20 @@ function preferChannelsForModel(channels, modelId) {
   if (!target) return channels.slice();
 
   const declaring = channels.filter(channelDeclaresModels);
-  // 没有任何渠道声明模型时，不限制
+  // 没有任何渠道已知模型数据时，无法判断，不限制
   if (!declaring.length) return channels.slice();
 
   const matched = channels.filter((ch) => channelSupportsModel(ch, target));
   if (matched.length) return matched;
 
-  // 声明了模型但全不匹配：回退全部，避免直接 0 可用
+  // 至少有一个渠道已缓存上游真实模型时，以缓存为准：全不匹配说明上游确实都不支持，
+  // 不回退全部候选，避免路由到不支持该模型的渠道触发 model not found。
+  const hasUpstreamCache = channels.some(
+    (ch) => Array.isArray(getCachedModelsSync(ch, 'claude')) && getCachedModelsSync(ch, 'claude').length > 0
+  );
+  if (hasUpstreamCache) return [];
+
+  // 仅有配置声明 hint、无上游缓存时：配置可能漏列，保留旧行为回退全部，避免误杀合法请求
   return channels.slice();
 }
 
@@ -145,6 +173,14 @@ function refreshChannels(source = 'claude') {
   state.channels.forEach(ch => {
     if (!state.inflight.has(ch.id)) {
       state.inflight.set(ch.id, 0);
+    }
+  });
+
+  // 后台预热各渠道上游真实模型缓存（不阻塞分配，失败静默）
+  // 缓存命中后，channelSupportsModel 即可基于上游真实模型严格过滤
+  state.channels.forEach(ch => {
+    if (ch.baseUrl && ch.apiKey && !getCachedModelsSync(ch, source)) {
+      primeModelsCache(ch, source).catch(() => {});
     }
   });
 }
