@@ -39,6 +39,8 @@ async function handleProxyStart() {
 
     // 4. 修改配置文件
     const configResult = setProxyConfig(proxyResult.port);
+    const { setProxyEnabled } = require('../server/services/proxy-runtime');
+    setProxyEnabled('claude', true);
     console.log('✅ 配置文件已更新');
 
     if (hasBackup()) {
@@ -89,6 +91,8 @@ async function handleProxyStop() {
     } else {
       console.log('⚠️  未找到备份文件，配置未恢复');
     }
+    const { setProxyEnabled } = require('../server/services/proxy-runtime');
+    setProxyEnabled('claude', false);
 
     console.log('\n✅ 代理已完全停止并清理\n');
   } catch (error) {

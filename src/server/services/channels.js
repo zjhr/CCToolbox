@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { isProxyConfig, writeSettings: atomicWriteSettings, backupSettings, settingsExists: claudeSettingsExists } = require('./settings-manager');
+const { writeSettings: atomicWriteSettings } = require('./settings-manager');
 const { getAppDir, getChannelsPath } = require('../../utils/app-path-manager');
 
 function ensureAppDir() {
@@ -472,16 +472,9 @@ function applyChannelToSettings(id) {
   // Validate channel data before writing
   validateChannelData(channel);
 
-  // Backup current settings before writing
-  if (claudeSettingsExists()) {
-    try {
-      backupSettings();
-    } catch (err) {
-      throw new Error('Failed to backup settings before applying: ' + err.message);
-    }
-  }
-
   // Write settings FIRST, then update business state (avoid state drift on failure)
+  // 注意：不再调用 backupSettings()——代理备份槽与渠道写入共用路径时，
+  // 会让 autoRestore 误判、关闭代理时错误还原 env。
   const extraEnvKeys = updateClaudeSettingsWithModelConfig(channel);
 
   channel.enabled = true;
@@ -606,13 +599,10 @@ function updateClaudeSettingsWithModelConfig(channel) {
   }
   setEnvValue(settings, 'ENABLE_TOOL_SEARCH', toolSearchValue);
 
+  // 无代理配置的渠道不应删除用户手动维护的代理和 NO_PROXY。
   if (proxyUrl) {
     setEnvValue(settings, 'HTTPS_PROXY', proxyUrl);
     setEnvValue(settings, 'HTTP_PROXY', proxyUrl);
-  } else {
-    setEnvValue(settings, 'HTTPS_PROXY');
-    setEnvValue(settings, 'HTTP_PROXY');
-    delete settings.env.NO_PROXY;
   }
 
   const extraEnvKeys = applyExtraEnv(settings, extraEnvJson);

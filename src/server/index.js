@@ -7,21 +7,21 @@ const { startWebSocketServer: attachWebSocketServer } = require('./websocket-ser
 const { isPortInUse, killProcessByPort, waitForPortRelease } = require('../utils/port-helper');
 const {
   isProxyConfig: isClaudeProxyConfig,
-  hasBackup: hasClaudeProxyBackup
+  setProxyConfig: setClaudeProxyConfig
 } = require('./services/settings-manager');
 const {
   isProxyConfig: isCodexProxyConfig,
-  hasBackup: hasCodexProxyBackup,
   setProxyConfig: setCodexProxyConfig
 } = require('./services/codex-settings-manager');
 const {
   isProxyConfig: isGeminiProxyConfig,
-  hasBackup: hasGeminiProxyBackup
+  setProxyConfig: setGeminiProxyConfig
 } = require('./services/gemini-settings-manager');
 const { startProxyServer } = require('./proxy-server');
 const { startCodexProxyServer } = require('./codex-proxy-server');
 const { startGeminiProxyServer } = require('./gemini-proxy-server');
 const { getAppDir } = require('../utils/app-path-manager');
+const { isProxyEnabled } = require('./services/proxy-runtime');
 const { startTrashCleanup } = require('./services/trash');
 const { startUpdateChecker } = require('./services/update-checker');
 const { SkillService } = require('./services/skill-service');
@@ -128,6 +128,7 @@ async function startServer(port) {
   app.use('/api/settings', require('./api/settings'));
   app.use('/api/config', require('./api/config'));
   app.use('/api/statistics', require('./api/statistics'));
+  app.use('/api/request-logs', require('./api/request-logs'));
   app.use('/api/codex/statistics', require('./api/codex-statistics'));
   app.use('/api/gemini/statistics', require('./api/gemini-statistics'));
   app.use('/api/version', require('./api/version'));
@@ -254,43 +255,41 @@ function startSkillUpdateCheck() {
 /**
  * 自动恢复代理状态
  *
- * 注意：Claude 的 active-channel.json 同时被“写入渠道配置”和“开启代理”复用，
- * 不能仅凭该文件存在就判定代理开着。必须同时看到 proxy 配置/备份。
+ * 仅依据显式开启标记（proxy-enabled / .proxy-active-*）。
+ * 禁止用 active-channel.json 或渠道写入产生的 settings backup 推断代理是否开启——
+ * 那两者与“动态切换”意图无关，会导致关闭后仍被自动拉起、并误改 settings env。
  */
 function autoRestoreProxies() {
   const config = loadConfig();
-  const fs = require('fs');
-  const ccToolDir = getAppDir();
 
-  const claudeActiveFile = path.join(ccToolDir, 'active-channel.json');
-  const shouldRestoreClaude =
-    fs.existsSync(claudeActiveFile) &&
-    (isClaudeProxyConfig() || hasClaudeProxyBackup());
-  if (shouldRestoreClaude) {
-    console.log(chalk.cyan('\n🔄 检测到 Claude 代理残留状态，正在自动启动...'));
+  if (isProxyEnabled('claude')) {
+    console.log(chalk.cyan('\n🔄 检测到 Claude 代理曾显式开启，正在自动启动...'));
     const proxyPort = config.ports?.proxy || 10088;
     startProxyServer(proxyPort)
-      .then(() => {
-        console.log(chalk.green(`✅ Claude 代理已自动启动，端口: ${proxyPort}`));
+      .then((result) => {
+        const port = result?.port || proxyPort;
+        console.log(chalk.green(`✅ Claude 代理已自动启动，端口: ${port}`));
+        if (!isClaudeProxyConfig()) {
+          try {
+            setClaudeProxyConfig(port);
+            console.log(chalk.gray('   已同步 settings.json 代理字段'));
+          } catch (err) {
+            console.error(chalk.red(`❌ Claude 代理配置同步失败: ${err.message}`));
+          }
+        }
       })
       .catch((err) => {
         console.error(chalk.red(`❌ Claude 代理启动失败: ${err.message}`));
       });
   }
 
-  const codexActiveFile = path.join(ccToolDir, 'codex-active-channel.json');
-  const shouldRestoreCodex =
-    fs.existsSync(codexActiveFile) &&
-    (isCodexProxyConfig() || hasCodexProxyBackup());
-  if (shouldRestoreCodex) {
-    console.log(chalk.cyan('\n🔄 检测到 Codex 代理残留状态，正在自动启动...'));
+  if (isProxyEnabled('codex')) {
+    console.log(chalk.cyan('\n🔄 检测到 Codex 代理曾显式开启，正在自动启动...'));
     const codexProxyPort = config.ports?.codexProxy || 10089;
     startCodexProxyServer(codexProxyPort)
       .then((result) => {
         const port = result?.port || codexProxyPort;
         console.log(chalk.green(`✅ Codex 代理已自动启动，端口: ${port}`));
-
-        // 重启后重新写入 cc-proxy 配置与环境变量，避免缺少 provider/env 导致报错
         try {
           const cfgResult = setCodexProxyConfig(port);
           if (cfgResult?.success) {
@@ -305,17 +304,21 @@ function autoRestoreProxies() {
       });
   }
 
-  const geminiActiveFile = path.join(ccToolDir, 'gemini-active-channel.json');
-  const shouldRestoreGemini =
-    fs.existsSync(geminiActiveFile) &&
-    (isGeminiProxyConfig() || hasGeminiProxyBackup());
-  if (shouldRestoreGemini) {
-    console.log(chalk.cyan('\n🔄 检测到 Gemini 代理残留状态，正在自动启动...'));
+  if (isProxyEnabled('gemini')) {
+    console.log(chalk.cyan('\n🔄 检测到 Gemini 代理曾显式开启，正在自动启动...'));
     const geminiProxyPort = config.ports?.geminiProxy || 10090;
     startGeminiProxyServer(geminiProxyPort)
       .then((result) => {
         if (result.success) {
           console.log(chalk.green(`✅ Gemini 代理已自动启动，端口: ${result.port}`));
+          if (!isGeminiProxyConfig()) {
+            try {
+              setGeminiProxyConfig(result.port);
+              console.log(chalk.gray('   已同步 Gemini 代理配置'));
+            } catch (err) {
+              console.error(chalk.red(`❌ Gemini 代理配置同步失败: ${err.message}`));
+            }
+          }
         } else {
           console.error(chalk.red(`❌ Gemini 代理启动失败: ${result.error || 'Unknown error'}`));
         }

@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import Home from '../views/Home.vue'
 import ProjectList from '../views/ProjectList.vue'
 import SessionList from '../views/SessionList.vue'
+import RequestLogs from '../views/RequestLogs.vue'
 
 const routes = [
   {
@@ -50,6 +51,11 @@ const routes = [
     component: SessionList,
     props: true,
     meta: { channel: 'gemini' }
+  },
+  {
+    path: '/request-logs',
+    name: 'request-logs',
+    component: RequestLogs
   },
   // 404 重定向到首页
   {

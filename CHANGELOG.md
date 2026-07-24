@@ -6,6 +6,20 @@
 
 ## [Unreleased]
 
+## [3.8.1] - 2026-07-24
+
+### Fixed
+
+- 🐛 **代理状态推断修复** - 关闭代理后不再因 active-channel / 渠道 backup 被误自动拉起
+- 🐛 **代理 env 保留修复** - 切换 Claude 渠道时保留用户手动配置的 HTTPS_PROXY / HTTP_PROXY / NO_PROXY
+- 🐛 **代理备份刷新修复** - 开启代理前 force 刷新 settings backup，避免陈旧备份还原错误 env
+- 🐛 **AUTH_TOKEN 冲突修复** - 代理配置写入时删除 ANTHROPIC_AUTH_TOKEN，避免与 PROXY_KEY 并存
+
+### Changed
+
+- 🔄 **渠道写入不再清空代理 env** - updateClaudeSettingsWithModelConfig 仅在配置 proxyUrl 时写代理字段，否则保留现有值
+- 📋 **新增请求日志查询 API 与页面** - `/api/request-logs` 支持分页/过滤/汇总，前端新增 `/request-logs` 视图
+
 ## [3.8.0] - 2026-07-16
 
 ### Added

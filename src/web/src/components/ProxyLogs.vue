@@ -16,6 +16,10 @@
         <n-icon size="16"><TrashOutline /></n-icon>
         清空
       </n-button>
+      <n-button text size="small" @click="openRequestLogs">
+        <n-icon size="16"><TimeOutline /></n-icon>
+        历史
+      </n-button>
     </div>
 
     <div class="logs-table">
@@ -116,7 +120,8 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { NButton, NIcon, NTag, NTooltip } from 'naive-ui'
-import { TrashOutline, CheckmarkCircle, CloseCircle } from '@vicons/ionicons5'
+import { TrashOutline, CheckmarkCircle, CloseCircle, TimeOutline } from '@vicons/ionicons5'
+import { useRouter } from 'vue-router'
 import { getTodayStatistics } from '../api/statistics'
 import { clearProxyLogs } from '../api/proxy'
 import message from '../utils/message'
@@ -129,6 +134,7 @@ const props = defineProps({
     default: 'claude' // 'claude' or 'codex'
   }
 })
+const router = useRouter()
 
 const { getLogs, wsConnected, clearLogsState, logLimit } = useGlobalState()
 const logStreams = {
@@ -159,6 +165,15 @@ function formatNumber(num) {
     return (num / 1000).toFixed(1) + 'K'
   }
   return num.toString()
+}
+
+function openRequestLogs() {
+  const toolType = props.source === 'codex'
+    ? 'codex'
+    : props.source === 'gemini'
+      ? 'gemini'
+      : 'claude-code'
+  router.push({ name: 'request-logs', query: { toolType } })
 }
 
 // 加载今日统计数据（根据 source 过滤）

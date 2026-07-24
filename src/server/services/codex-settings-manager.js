@@ -120,14 +120,15 @@ function writeAuth(auth) {
 }
 
 // 备份当前配置
-function backupSettings() {
+function backupSettings(options = {}) {
   try {
     if (!configExists()) {
       throw new Error('config.toml not found');
     }
 
-    // 如果已经有备份，不覆盖
-    if (hasBackup()) {
+    const force = options.force === true;
+    // 如果已经有备份，不覆盖（除非 force）
+    if (hasBackup() && !force) {
       console.log('Backup already exists, skipping backup');
       return { success: true, alreadyExists: true };
     }
@@ -551,8 +552,12 @@ function removeEnvFromShell(envName) {
 // 设置代理配置
 function setProxyConfig(proxyPort) {
   try {
-    // 先备份
-    backupSettings();
+    // 进入代理模式前强制刷新备份，避免陈旧 backup 误还原
+    if (!isProxyConfig()) {
+      backupSettings({ force: true });
+    } else if (!hasBackup()) {
+      console.warn('[Codex] Proxy config active without backup; continue without snapshot');
+    }
 
     // 读取当前配置
     const config = readConfig();

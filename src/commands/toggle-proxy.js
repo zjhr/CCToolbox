@@ -115,6 +115,8 @@ async function handleStartProxy(cliType, services) {
     // 修改配置文件
     const settingsManager = getSettingsManager(cliType);
     settingsManager.setProxyConfig(proxyResult.port);
+    const { setProxyEnabled } = require('../server/services/proxy-runtime');
+    setProxyEnabled(cliType, true);
     console.log(chalk.green('✅ 配置文件已更新'));
 
     if (settingsManager.hasBackup()) {
@@ -193,6 +195,8 @@ async function handleStopProxy(cliType, services) {
       settingsManager.restoreSettings();
       console.log(chalk.green('✅ 配置文件已恢复'));
     }
+    const { setProxyEnabled } = require('../server/services/proxy-runtime');
+    setProxyEnabled(cliType, false);
 
     console.log(chalk.cyan('\n💡 动态切换已关闭'));
     console.log(chalk.gray(`   现在调整渠道需要重启 ${toolName} 才能生效\n`));

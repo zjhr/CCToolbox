@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { getStatsPath } = require('../../utils/app-path-manager');
+const { appendRequestLog } = require('./request-logs-service');
 
 /**
  * 统计服务 - 数据采集和存储
@@ -178,24 +179,6 @@ function saveDailyStats(date, stats) {
     fs.writeFileSync(filePath, JSON.stringify(stats, null, 2), 'utf8');
   } catch (err) {
     console.error('Failed to save daily stats:', err);
-  }
-}
-
-// 追加请求日志（JSONL格式）
-function appendRequestLog(logEntry) {
-  const timestamp = new Date(logEntry.timestamp);
-  const year = timestamp.getFullYear();
-  const month = timestamp.getMonth() + 1;
-  const day = timestamp.getDate();
-
-  const filePath = getRequestLogFilePath(year, month, day);
-
-  try {
-    // JSONL 格式：每行一个 JSON 对象
-    const line = JSON.stringify(logEntry) + '\n';
-    fs.appendFileSync(filePath, line, 'utf8');
-  } catch (err) {
-    console.error('Failed to append request log:', err);
   }
 }
 

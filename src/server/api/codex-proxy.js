@@ -16,6 +16,7 @@ const {
 const { getChannels, getEnabledChannels } = require('../services/codex-channels');
 const { clearAllLogs } = require('../websocket-server');
 const { getAppDir } = require('../../utils/app-path-manager');
+const { setProxyEnabled } = require('../services/proxy-runtime');
 const fs = require('fs');
 const path = require('path');
 
@@ -116,6 +117,7 @@ router.post('/start', async (req, res) => {
 
     // 5. 设置代理配置（备份并修改 config.toml 和 auth.json）
     const configResult = setProxyConfig(proxyResult.port);
+    setProxyEnabled('codex', true);
 
     const updatedStatus = getCodexProxyStatus();
     const { channels: allChannels } = getChannels();
@@ -158,6 +160,7 @@ router.post('/stop', async (req, res) => {
 
     // 2. 停止代理服务器
     const proxyResult = await stopCodexProxyServer();
+    setProxyEnabled('codex', false);
 
     // 3. 恢复原始配置
     const { broadcastProxyState } = require('../websocket-server');

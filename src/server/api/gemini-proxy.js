@@ -15,6 +15,7 @@ const {
 } = require('../services/gemini-settings-manager');
 const { getChannels, getEnabledChannels } = require('../services/gemini-channels');
 const { getAppDir } = require('../../utils/app-path-manager');
+const { setProxyEnabled } = require('../services/proxy-runtime');
 const fs = require('fs');
 const path = require('path');
 
@@ -110,6 +111,7 @@ router.post('/start', async (req, res) => {
 
     // 5. 设置代理配置（备份并修改 .env 和 settings.json）
     setProxyConfig(proxyResult.port);
+    setProxyEnabled('gemini', true);
 
     const { broadcastProxyState } = require('../websocket-server');
     const proxyStatus = getGeminiProxyStatus();
@@ -139,6 +141,7 @@ router.post('/stop', async (req, res) => {
 
     // 2. 停止代理服务器
     const proxyResult = await stopGeminiProxyServer();
+    setProxyEnabled('gemini', false);
 
     // 3. 恢复原始配置
     const { broadcastProxyState } = require('../websocket-server');

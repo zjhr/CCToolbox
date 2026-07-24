@@ -29,3 +29,8 @@ export async function getRecentStatistics(days = 7) {
   const response = await client.get('/statistics/recent', { params: { days } })
   return response.data
 }
+
+export async function getRequestLogs(params) {
+  const response = await client.get('/request-logs', { params })
+  return response.data
+}

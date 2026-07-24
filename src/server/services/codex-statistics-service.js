@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { getStatsPath } = require('../../utils/app-path-manager');
+const { appendRequestLog } = require('./request-logs-service');
 
 /**
  * Codex 统计服务 - 数据采集和存储
@@ -181,6 +182,21 @@ function recordRequest(requestData) {
     // 计算 total tokens
     const totalTokens = (tokens.input || 0) + (tokens.output || 0) + (tokens.reasoning || 0);
     tokens.total = totalTokens;
+
+    appendRequestLog({
+      id: requestData.id,
+      timestamp,
+      toolType: 'codex',
+      channel,
+      channelId,
+      model,
+      tokens,
+      duration: requestData.duration,
+      success: requestData.success,
+      cost,
+      session: requestData.session,
+      project: requestData.project
+    });
 
     // 1. 更新总体统计
     const globalStats = loadStatistics();

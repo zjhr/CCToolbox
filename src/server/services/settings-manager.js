@@ -70,14 +70,15 @@ function writeSettings(settings) {
 }
 
 // 备份当前配置
-function backupSettings() {
+function backupSettings(options = {}) {
   try {
     if (!settingsExists()) {
       throw new Error('settings.json not found');
     }
 
-    // 如果已经有备份，不覆盖
-    if (hasBackup()) {
+    const force = options.force === true;
+    // 如果已经有备份，不覆盖（除非 force）
+    if (hasBackup() && !force) {
       console.log('Backup already exists, skipping backup');
       return { success: true, alreadyExists: true };
     }
@@ -89,6 +90,20 @@ function backupSettings() {
     return { success: true, alreadyExists: false };
   } catch (err) {
     throw new Error('Failed to backup settings: ' + err.message);
+  }
+}
+
+// 丢弃备份（不恢复）——写入渠道后 settings 已正确时使用
+function clearBackup() {
+  try {
+    const backupPath = getBackupPath();
+    if (fs.existsSync(backupPath)) {
+      fs.unlinkSync(backupPath);
+      return { success: true, removed: true };
+    }
+    return { success: true, removed: false };
+  } catch (err) {
+    throw new Error('Failed to clear backup: ' + err.message);
   }
 }
 
@@ -115,8 +130,13 @@ function restoreSettings() {
 // 设置代理配置
 function setProxyConfig(proxyPort) {
   try {
-    // 先备份
-    backupSettings();
+    // 进入代理模式前：强制刷新备份为「当前真实配置」
+    // 避免渠道写入留下的陈旧 backup 导致关闭代理时 env 被错误还原
+    if (!isProxyConfig()) {
+      backupSettings({ force: true });
+    } else if (!hasBackup()) {
+      console.warn('Proxy config active without backup; continue without snapshot');
+    }
 
     // 读取当前配置
     const settings = readSettings();
@@ -126,9 +146,11 @@ function setProxyConfig(proxyPort) {
       settings.env = {};
     }
 
-    // 修改为代理配置（使用 Claude Code 的标准格式）
+    // 仅改写代理所需字段，保留其余 env
     settings.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${proxyPort}`;
     settings.env.ANTHROPIC_API_KEY = 'PROXY_KEY';
+    // 避免 AUTH_TOKEN 与 PROXY_KEY 并存导致语义混乱
+    delete settings.env.ANTHROPIC_AUTH_TOKEN;
     settings.apiKeyHelper = `echo 'PROXY_KEY'`;
 
     // 写入
@@ -183,6 +205,7 @@ module.exports = {
   readSettings,
   writeSettings,
   backupSettings,
+  clearBackup,
   restoreSettings,
   setProxyConfig,
   isProxyConfig,

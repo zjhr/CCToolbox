@@ -586,6 +586,41 @@ async function runTests() {
   );
 
   await runTestCase(
+    '写入无代理 Claude 渠道时应保留用户手动配置的代理 env',
+    async () => {
+      await withTempHome(async (tempRoot) => {
+        const claudeDir = path.join(tempRoot, '.claude');
+        ensureDir(claudeDir);
+        fs.writeFileSync(
+          path.join(claudeDir, 'settings.json'),
+          JSON.stringify({
+            env: {
+              HTTPS_PROXY: 'http://127.0.0.1:7897',
+              HTTP_PROXY: 'http://127.0.0.1:7897',
+              NO_PROXY: 'localhost,127.0.0.1'
+            }
+          }, null, 2),
+          'utf8'
+        );
+
+        const service = loadClaudeChannelsService();
+        const channel = service.createChannel(
+          'No Proxy',
+          'https://api.anthropic.com',
+          'sk-no-proxy'
+        );
+        service.applyChannelToSettings(channel.id);
+
+        const settings = readClaudeSettings(tempRoot);
+        assert.strictEqual(settings.env.HTTPS_PROXY, 'http://127.0.0.1:7897');
+        assert.strictEqual(settings.env.HTTP_PROXY, 'http://127.0.0.1:7897');
+        assert.strictEqual(settings.env.NO_PROXY, 'localhost,127.0.0.1');
+      });
+    },
+    failures
+  );
+
+  await runTestCase(
     'updateCustomModels 应支持 claude/codex/gemini 的统一更新与清空',
     async () => {
       await withTempHome(async () => {

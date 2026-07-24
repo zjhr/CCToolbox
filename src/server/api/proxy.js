@@ -8,12 +8,14 @@ const {
   getCurrentProxyPort,
   settingsExists,
   hasBackup,
+  clearBackup,
   readSettings,
   getBackupPath
 } = require('../services/settings-manager');
 const { getAllChannels } = require('../services/channels');
 const { clearAllLogs } = require('../websocket-server');
 const { getAppDir } = require('../../utils/app-path-manager');
+const { setProxyEnabled } = require('../services/proxy-runtime');
 const fs = require('fs');
 const path = require('path');
 
@@ -190,14 +192,17 @@ router.post('/start', async (req, res) => {
       return res.status(500).json({ error: 'Failed to start proxy server' });
     }
 
-    // 5. 设置代理配置（备份并修改 settings.json）
+    // 5. 设置代理配置（备份并修改 settings.json 中的代理字段）
     setProxyConfig(proxyResult.port);
+
+    // 6. 记录显式开启意图（与渠道 backup / active-channel 解耦）
+    setProxyEnabled('claude', true);
 
     const updatedStatus = getProxyStatus();
     const channels = getAllChannels();
     const activeChannel = channels.find(ch => ch.enabled !== false);
 
-    // 6. 通过 WebSocket 推送代理状态更新
+    // 7. 通过 WebSocket 推送代理状态更新
     const { broadcastProxyState } = require('../websocket-server');
     broadcastProxyState('claude', updatedStatus, activeChannel, channels);
 
@@ -246,16 +251,16 @@ router.post('/stop', async (req, res) => {
       }
     }
 
-    // 3. 仅删除代理备份；active-channel.json 也用于“写入渠道配置”，不能随停代理删掉
+    // 3. 清理残留备份；active-channel.json 也用于“写入渠道配置”，不能随停代理删掉
     if (hasBackup()) {
-      const backupPath = getBackupPath();
-      if (fs.existsSync(backupPath)) {
-        fs.unlinkSync(backupPath);
-        console.log('✅ Removed backup file');
-      }
+      clearBackup();
+      console.log('✅ Removed backup file');
     }
 
-    // 4. 通过 WebSocket 推送代理状态更新
+    // 4. 清除显式开启标记，防止 UI/服务重启后误自动拉起
+    setProxyEnabled('claude', false);
+
+    // 5. 通过 WebSocket 推送代理状态更新
     const { broadcastProxyState } = require('../websocket-server');
     const updatedStatus = getProxyStatus();
     const channels = getAllChannels();

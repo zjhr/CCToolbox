@@ -248,11 +248,17 @@ router.post('/:id/apply-to-settings', async (req, res) => {
     if (proxyStatus && proxyStatus.running) {
       console.log(`Proxy is running, stopping to apply channel settings: ${channel.name}`);
 
-      // Stop proxy and restore backup
+      // 渠道已写入 settings，不要 restore 备份覆盖；只停服务并清理意图标记/陈旧备份
       const { stopProxyServer } = require('../proxy-server');
+      const { setProxyEnabled } = require('../services/proxy-runtime');
+      const { clearBackup, hasBackup } = require('../services/settings-manager');
       await stopProxyServer({ clearStartTime: false });
+      setProxyEnabled('claude', false);
+      if (hasBackup()) {
+        clearBackup();
+      }
 
-      console.log(`✅ 已停���动态切换，默认使用当前渠道`);
+      console.log(`✅ 已停止动态切换，默认使用当前渠道`);
       broadcastLog({
         type: 'action',
         action: 'stop_proxy',
