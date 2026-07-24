@@ -28,6 +28,7 @@ build/
 .serena
 .gemini
 .codex
+.codebase-memory/
 openspec
 __pycache__
 
