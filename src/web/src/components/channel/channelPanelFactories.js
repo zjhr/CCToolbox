@@ -660,6 +660,7 @@ const channelPanelFactories = {
     formLabelWidth: 90,
     showApplyButton: true,
     applyOnEditCurrent: true,
+    fallbackToFirstChannel: false,
     formSections: [
       {
         title: "基本信息",
@@ -768,7 +769,7 @@ const channelPanelFactories = {
       baseUrl: "",
       apiKey: "",
       websiteUrl: "",
-      modelName: "gpt-5.5",
+      modelName: "gpt-6-sol",
       enable1M: false,
       autoCompactRate: 90,
       maxConcurrency: null,
@@ -781,7 +782,7 @@ const channelPanelFactories = {
       baseUrl: channel.baseUrl || "",
       apiKey: resolveChannelApiKey(channel),
       websiteUrl: channel.websiteUrl || "",
-      modelName: channel.modelName || "gpt-5.5",
+      modelName: channel.modelName || "gpt-6-sol",
       enable1M: channel.enable1M === true,
       autoCompactRate: normalizeAutoCompactRate(channel.autoCompactRate),
       maxConcurrency: channel.maxConcurrency ?? null,

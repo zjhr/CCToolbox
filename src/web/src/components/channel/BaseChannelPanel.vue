@@ -269,6 +269,9 @@ const activeChannel = computed(() => {
     const matched = state.channels.find(channel => channel.id === state.currentChannel.id)
     if (matched) return matched
   }
+  if (config.fallbackToFirstChannel === false) {
+    return null
+  }
   const enabledChannel = state.channels.find(channel => channel.enabled !== false)
   if (enabledChannel) return enabledChannel
   return state.currentChannel || state.channels[0] || null
@@ -279,6 +282,8 @@ const reasoningEffort = ref('high')
 const lastSavedReasoningEffort = ref('high')
 const reasoningEffortSaving = ref(false)
 const reasoningEffortOptions = [
+  { label: 'ultra', value: 'ultra' },
+  { label: 'max', value: 'max' },
   { label: 'xhigh', value: 'xhigh' },
   { label: 'high', value: 'high' },
   { label: 'medium', value: 'medium' },

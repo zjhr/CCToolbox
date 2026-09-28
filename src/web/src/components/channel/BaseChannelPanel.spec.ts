@@ -263,7 +263,41 @@ describe('BaseChannelPanel 字段组件解析（Red）', () => {
 })
 
 describe('BaseChannelPanel Codex 推理强度同步（Red）', () => {
+  it('代理模式没有当前渠道时不应把第一条当作当前项，并提供 max/ultra 推理强度', async () => {
+    Reflect.set(mockedState, 'channels', [{ id: 'codex-first', enabled: true }])
+    mockedState.currentChannel = null
+    mockedState.currentChannelId = null
+
+    const wrapper = mount(BaseChannelPanel, {
+      props: { type: 'codex' },
+      attachTo: document.body,
+      global: {
+        stubs: {
+          teleport: true
+        }
+      }
+    })
+
+    try {
+      await flushPromises()
+
+      const exposed = wrapper.vm.$.exposed as {
+        getActiveChannel: () => unknown
+        getReasoningEffortOptions: () => Array<{ value: string }>
+      }
+      const efforts = exposed.getReasoningEffortOptions().map(option => option.value)
+
+      expect(exposed.getActiveChannel()).toBeNull()
+      expect(efforts).toContain('max')
+      expect(efforts).toContain('ultra')
+    } finally {
+      wrapper.unmount()
+      Reflect.set(mockedState, 'channels', [])
+    }
+  })
+
   it('refresh 应重新读取 config.toml 对应的推理强度', async () => {
+    vi.mocked(channelApi.getReasoningEffort).mockClear()
     vi.mocked(channelApi.getReasoningEffort)
       .mockResolvedValueOnce({ effort: 'medium' })
       .mockResolvedValueOnce({ effort: 'low' })

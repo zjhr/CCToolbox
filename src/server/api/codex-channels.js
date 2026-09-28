@@ -70,6 +70,7 @@ module.exports = (config) => {
         maxConcurrency,
         modelName,
         enable1M,
+        autoCompactRate,
         customModels
       } = req.body;
 
@@ -85,6 +86,7 @@ module.exports = (config) => {
         maxConcurrency,
         modelName,
         enable1M,
+        autoCompactRate,
         customModels
       });
       res.json(channel);

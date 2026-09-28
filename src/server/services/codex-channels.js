@@ -66,18 +66,44 @@ function loadChannels() {
   try {
     const content = fs.readFileSync(filePath, "utf8");
     const data = JSON.parse(content);
+    let codexConfig = {};
+    const configPath = path.join(getCodexDir(), "config.toml");
+    if (fs.existsSync(configPath)) {
+      try {
+        codexConfig = toml.parse(fs.readFileSync(configPath, "utf8")) || {};
+      } catch (err) {
+        // 配置文件无效时忽略，并保留渠道默认值
+      }
+    }
+
     // 确保渠道有 enabled 字段（兼容旧数据）
     if (data.channels) {
-      data.channels = data.channels.map((ch) => ({
-        ...ch,
-        envKey:
-          buildEnvKeyFromProvider(ch.providerKey) || normalizeEnvKey(ch.envKey),
-        enabled: ch.enabled !== false, // 默认启用
-        weight: ch.weight || 1,
-        maxConcurrency: ch.maxConcurrency || null,
-        modelName: ch.modelName || "gpt-5.5",
-        customModels: normalizeCustomModels(ch.customModels),
-      }));
+      data.channels = data.channels.map((ch) => {
+        const legacyActiveWith1M =
+          ch.enable1M === undefined &&
+          codexConfig.model_provider === ch.providerKey &&
+          Number(codexConfig.model_context_window) === 1000000;
+
+        return {
+          ...ch,
+          envKey:
+            buildEnvKeyFromProvider(ch.providerKey) || normalizeEnvKey(ch.envKey),
+          enabled: ch.enabled !== false, // 默认启用
+          weight: ch.weight || 1,
+          maxConcurrency: ch.maxConcurrency || null,
+          modelName: ch.modelName || "gpt-6-sol",
+          enable1M:
+            ch.enable1M === undefined ? legacyActiveWith1M : ch.enable1M === true,
+          autoCompactRate:
+            ch.autoCompactRate ??
+            (legacyActiveWith1M
+              ? normalizeAutoCompactRate(
+                  Number(codexConfig.model_auto_compact_token_limit) / 10000,
+                )
+              : undefined),
+          customModels: normalizeCustomModels(ch.customModels),
+        };
+      });
     }
     return data;
   } catch (err) {
@@ -143,7 +169,17 @@ function initializeFromConfig() {
           requiresOpenaiAuth: providerConfig.requires_openai_auth !== false,
           queryParams: providerConfig.query_params || null,
           enabled: config.model_provider === providerKey, // 当前激活的渠道启用
-          modelName: config.model || "gpt-5.5",
+          modelName: config.model || "gpt-6-sol",
+          enable1M:
+            config.model_provider === providerKey &&
+            Number(config.model_context_window) === 1000000,
+          autoCompactRate:
+            config.model_provider === providerKey &&
+            Number(config.model_context_window) === 1000000
+              ? normalizeAutoCompactRate(
+                  Number(config.model_auto_compact_token_limit) / 10000,
+                )
+              : undefined,
           customModels: [],
           weight: 1,
           maxConcurrency: null,
@@ -182,7 +218,14 @@ function saveChannels(data) {
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf8");
 }
 
-const VALID_REASONING_EFFORTS = new Set(["xhigh", "high", "medium", "low"]);
+const VALID_REASONING_EFFORTS = new Set([
+  "ultra",
+  "max",
+  "xhigh",
+  "high",
+  "medium",
+  "low",
+]);
 
 function normalizeReasoningEffort(effort) {
   if (typeof effort !== "string") return null;
@@ -204,6 +247,42 @@ function normalizeAutoCompactRate(rate) {
     return 99;
   }
   return rounded;
+}
+
+function applyCodexContextWindowSettings(config, channels, legacyProviderKey) {
+  const channelSettings = channels.map((channel) => {
+    const legacyEnabled =
+      channel.enable1M === undefined &&
+      channel.providerKey === legacyProviderKey &&
+      Number(config.model_context_window) === 1000000;
+
+    return {
+      enabled: channel.enable1M === true || legacyEnabled,
+      autoCompactRate:
+        channel.autoCompactRate ??
+        (legacyEnabled
+          ? Number(config.model_auto_compact_token_limit) / 10000
+          : undefined),
+    };
+  });
+
+  // Codex 的上下文窗口是全局配置；代理模式必须由所有可调度渠道共同决定。
+  const shouldEnable =
+    channelSettings.length > 0 &&
+    channelSettings.every((settings) => settings.enabled);
+  if (!shouldEnable) {
+    delete config.model_context_window;
+    delete config.model_auto_compact_token_limit;
+    return;
+  }
+
+  const compactRate = Math.min(
+    ...channelSettings.map((settings) =>
+      normalizeAutoCompactRate(settings.autoCompactRate),
+    ),
+  );
+  config.model_context_window = 1000000;
+  config.model_auto_compact_token_limit = compactRate * 10000;
 }
 
 // 获取所有渠道
@@ -247,7 +326,12 @@ function createChannel(
     enabled: extraConfig.enabled !== false, // 默认启用
     weight: extraConfig.weight || 1,
     maxConcurrency: extraConfig.maxConcurrency || null,
-    modelName: extraConfig.modelName || "gpt-5.5",
+    modelName: extraConfig.modelName || "gpt-6-sol",
+    enable1M: extraConfig.enable1M === true,
+    autoCompactRate:
+      extraConfig.enable1M === true
+        ? normalizeAutoCompactRate(extraConfig.autoCompactRate)
+        : undefined,
     customModels: normalizeCustomModels(extraConfig.customModels),
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -270,13 +354,7 @@ function createChannel(
     }
   }
 
-  writeCodexConfigForMultiChannel(
-    data.channels,
-    undefined,
-    {},
-    extraConfig.enable1M,
-    extraConfig.autoCompactRate,
-  );
+  writeCodexConfigForMultiChannel(data.channels);
 
   return newChannel;
 }
@@ -310,6 +388,10 @@ function updateChannel(channelId, updates) {
     updatedAt: Date.now(),
   };
   newChannel.customModels = normalizeCustomModels(newChannel.customModels);
+  newChannel.enable1M = newChannel.enable1M === true;
+  newChannel.autoCompactRate = newChannel.enable1M
+    ? normalizeAutoCompactRate(newChannel.autoCompactRate)
+    : undefined;
   newChannel.envKey =
     buildEnvKeyFromProvider(newChannel.providerKey) ||
     normalizeEnvKey(newChannel.envKey);
@@ -354,13 +436,7 @@ function updateChannel(channelId, updates) {
     }
   }
 
-  writeCodexConfigForMultiChannel(
-    data.channels,
-    undefined,
-    {},
-    newChannel.enable1M,
-    newChannel.autoCompactRate,
-  );
+  writeCodexConfigForMultiChannel(data.channels);
 
   return data.channels[index];
 }
@@ -481,8 +557,6 @@ function writeCodexConfigForMultiChannel(
   allChannels,
   reasoningEffort,
   cleanupOptions = {},
-  enable1M,
-  autoCompactRate,
 ) {
   const providerKeysToRemove = new Set(
     Array.isArray(cleanupOptions.removeProviderKeys)
@@ -507,7 +581,7 @@ function writeCodexConfigForMultiChannel(
 
   // 读取现有配置，保留所有现有字段（特别是 mcp_servers, projects 等）
   let config = {
-    model: "gpt-4",
+    model: "gpt-6-sol",
     model_reasoning_effort: "high",
     show_raw_agent_reasoning: true,
   };
@@ -542,7 +616,8 @@ function writeCodexConfigForMultiChannel(
   }
 
   // 判断是否已启用动态切换
-  const isProxyMode = config.model_provider === "cc-proxy";
+  const previousProvider = config.model_provider;
+  const isProxyMode = previousProvider === "cc-proxy";
   const existingProviders =
     config && typeof config.model_providers === "object"
       ? config.model_providers
@@ -560,11 +635,14 @@ function writeCodexConfigForMultiChannel(
     const currentChannel = allChannels.find(
       (channel) => channel.providerKey === currentProvider,
     );
-    // 保留已存在且有效的当前渠道，避免新增/更新渠道时重置选择
-    config.model_provider =
-      currentChannel && currentChannel.enabled !== false
-        ? currentProvider
-        : fallbackProvider;
+    // 保留有效选择；配置原本没有渠道时，不因新增渠道而自动选中第一条。
+    if (currentChannel && currentChannel.enabled !== false) {
+      config.model_provider = currentProvider;
+    } else if (currentProvider) {
+      config.model_provider = fallbackProvider;
+    } else {
+      delete config.model_provider;
+    }
   }
 
   // 重建 model_providers 配置，先保留已有的非渠道 provider，避免丢失用户自定义配置
@@ -623,14 +701,10 @@ function writeCodexConfigForMultiChannel(
     }
   }
 
-  if (enable1M === true) {
-    const compactRate = normalizeAutoCompactRate(autoCompactRate);
-    config.model_context_window = 1000000;
-    config.model_auto_compact_token_limit = compactRate * 10000;
-  } else if (enable1M === false) {
-    delete config.model_context_window;
-    delete config.model_auto_compact_token_limit;
-  }
+  const contextChannels = isProxyMode
+    ? allChannels.filter((channel) => channel.enabled !== false)
+    : allChannels.filter((channel) => channel.providerKey === config.model_provider);
+  applyCodexContextWindowSettings(config, contextChannels, previousProvider);
 
   // 使用 TOML 序列化写入配置（保留注释和格式）
   try {
@@ -807,7 +881,7 @@ function applyChannelToSettings(channelId) {
 
   // 读取现有配置，保留 mcp_servers, projects 等
   let config = {
-    model: "gpt-4",
+    model: "gpt-6-sol",
     model_reasoning_effort: "high",
     show_raw_agent_reasoning: true,
   };
@@ -826,8 +900,14 @@ function applyChannelToSettings(channelId) {
   }
 
   // 设置当前渠道为 model_provider
+  const previousProvider = config.model_provider;
   config.model_provider = channel.providerKey;
-  config.model = channel.modelName || config.model || "gpt-5.5";
+  config.model = channel.modelName || config.model || "gpt-6-sol";
+  applyCodexContextWindowSettings(
+    config,
+    [channel],
+    previousProvider === channel.providerKey ? previousProvider : null,
+  );
 
   // 确保 model_providers 对象存在
   if (!config.model_providers) {

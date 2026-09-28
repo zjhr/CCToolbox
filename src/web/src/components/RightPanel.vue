@@ -276,25 +276,26 @@ const currentPanelRef = computed(() => channelRefs[currentChannel.value]?.value 
 const activeChannel = computed(() => currentPanelRef.value?.getActiveChannel?.() || null)
 const canOpenActiveWebsite = computed(() => Boolean(activeChannel.value?.websiteUrl))
 const showReasoningEffort = computed(() => currentChannel.value === 'codex')
-const currentModelName = computed(() => activeChannel.value?.modelName || 'gpt-5.5')
+const currentModelName = computed(() => activeChannel.value?.modelName || 'gpt-6-sol')
 const panelReasoningEffort = computed(() => currentPanelRef.value?.getReasoningEffort?.() || 'high')
 const reasoningEffortOptions = computed(() => currentPanelRef.value?.getReasoningEffortOptions?.() || [
+  { label: 'ultra', value: 'ultra' },
+  { label: 'max', value: 'max' },
   { label: 'xhigh', value: 'xhigh' },
   { label: 'high', value: 'high' },
   { label: 'medium', value: 'medium' },
   { label: 'low', value: 'low' }
 ])
 const modelPresetOptions = [
-  { label: 'gpt-5.3', value: 'gpt-5.3' },
-  { label: 'gpt-5.3-codex', value: 'gpt-5.3-codex' },
-  { label: 'gpt-5.4', value: 'gpt-5.4' },
-  { label: 'gpt-5.5', value: 'gpt-5.5' },
+  { label: 'gpt-6-luna', value: 'gpt-6-luna' },
+  { label: 'gpt-6-sol', value: 'gpt-6-sol' },
+  { label: 'gpt-6-astra', value: 'gpt-6-astra' },
   { label: 'gpt-5.6-sol', value: 'gpt-5.6-sol' },
   { label: 'gpt-5.6-terra', value: 'gpt-5.6-terra' },
   { label: 'gpt-5.6-luna', value: 'gpt-5.6-luna' }
 ]
 const modelSelectorVisible = ref(false)
-const draftModelName = ref('gpt-5.5')
+const draftModelName = ref('gpt-6-sol')
 const draftReasoningEffort = ref('high')
 const currentReasoningEffort = ref('high')
 const modelSelectionTouched = ref(false)

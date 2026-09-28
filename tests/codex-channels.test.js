@@ -71,7 +71,7 @@ async function runCodexChannelTests() {
   const failures = [];
 
   await runTestCase(
-    'createChannel should use gpt-5.4 as default model name',
+    'createChannel should use gpt-6-sol as default model name',
     async () => {
       await withTempHome(async () => {
         const { createChannel } = loadCodexChannelsService();
@@ -83,7 +83,128 @@ async function runCodexChannelTests() {
           ''
         );
 
-        assert.strictEqual(channel.modelName, 'gpt-5.4');
+        assert.strictEqual(channel.modelName, 'gpt-6-sol');
+      });
+    },
+    failures
+  );
+
+  await runTestCase(
+    'create and apply should preserve the current channel and scope 1M settings to it',
+    async () => {
+      await withTempHome(async (tempRoot) => {
+        const {
+          createChannel,
+          updateChannel,
+          applyChannelToSettings
+        } = loadCodexChannelsService();
+
+        const channelA = createChannel(
+          'Channel A',
+          'provider-context-a',
+          'https://example-a.com/v1',
+          '',
+          'responses',
+          { enable1M: true, autoCompactRate: 75 }
+        );
+        const configPath = path.join(tempRoot, '.codex', 'config.toml');
+
+        let config = toml.parse(fs.readFileSync(configPath, 'utf8'));
+        assert.strictEqual(config.model_provider, undefined);
+        assert.strictEqual(config.model_context_window, undefined);
+
+        applyChannelToSettings(channelA.id);
+        config = toml.parse(fs.readFileSync(configPath, 'utf8'));
+        assert.strictEqual(config.model_provider, channelA.providerKey);
+        assert.strictEqual(config.model_context_window, 1000000);
+        assert.strictEqual(config.model_auto_compact_token_limit, 750000);
+
+        const channelB = createChannel(
+          'Channel B',
+          'provider-context-b',
+          'https://example-b.com/v1',
+          '',
+          'responses',
+          { enable1M: false }
+        );
+        config = toml.parse(fs.readFileSync(configPath, 'utf8'));
+        assert.strictEqual(channelB.enable1M, false);
+        assert.strictEqual(config.model_provider, channelA.providerKey);
+        assert.strictEqual(config.model_context_window, 1000000);
+        assert.strictEqual(config.model_auto_compact_token_limit, 750000);
+
+        applyChannelToSettings(channelB.id);
+        config = toml.parse(fs.readFileSync(configPath, 'utf8'));
+        assert.strictEqual(config.model_provider, channelB.providerKey);
+        assert.strictEqual(config.model_context_window, undefined);
+        assert.strictEqual(config.model_auto_compact_token_limit, undefined);
+
+        updateChannel(channelB.id, { enable1M: true, autoCompactRate: 82 });
+        config = toml.parse(fs.readFileSync(configPath, 'utf8'));
+        assert.strictEqual(config.model_context_window, 1000000);
+        assert.strictEqual(config.model_auto_compact_token_limit, 820000);
+
+        updateChannel(channelA.id, { enable1M: false });
+        config = toml.parse(fs.readFileSync(configPath, 'utf8'));
+        assert.strictEqual(config.model_provider, channelB.providerKey);
+        assert.strictEqual(config.model_context_window, 1000000);
+        assert.strictEqual(config.model_auto_compact_token_limit, 820000);
+      });
+    },
+    failures
+  );
+
+  await runTestCase(
+    'proxy mode should enable 1M only when every enabled channel allows it',
+    async () => {
+      await withTempHome(async (tempRoot) => {
+        const { createChannel, updateChannel } = loadCodexChannelsService();
+        const channelA = createChannel(
+          'Proxy Channel A',
+          'provider-proxy-context-a',
+          'https://example-a.com/v1',
+          '',
+          'responses',
+          { enable1M: true, autoCompactRate: 75 }
+        );
+        const channelB = createChannel(
+          'Proxy Channel B',
+          'provider-proxy-context-b',
+          'https://example-b.com/v1',
+          '',
+          'responses',
+          { enable1M: false }
+        );
+        const configPath = path.join(tempRoot, '.codex', 'config.toml');
+        fs.writeFileSync(configPath, 'model_provider = "cc-proxy"\n', 'utf8');
+
+        updateChannel(channelA.id, { enable1M: true, autoCompactRate: 75 });
+        let config = toml.parse(fs.readFileSync(configPath, 'utf8'));
+        assert.strictEqual(config.model_provider, 'cc-proxy');
+        assert.strictEqual(config.model_context_window, undefined);
+
+        updateChannel(channelB.id, { enable1M: true, autoCompactRate: 84 });
+        config = toml.parse(fs.readFileSync(configPath, 'utf8'));
+        assert.strictEqual(config.model_provider, 'cc-proxy');
+        assert.strictEqual(config.model_context_window, 1000000);
+        assert.strictEqual(config.model_auto_compact_token_limit, 750000);
+      });
+    },
+    failures
+  );
+
+  await runTestCase(
+    'updateReasoningEffort should accept max and ultra',
+    async () => {
+      await withTempHome(async (tempRoot) => {
+        const { updateReasoningEffort } = loadCodexChannelsService();
+        const configPath = path.join(tempRoot, '.codex', 'config.toml');
+
+        for (const effort of ['max', 'ultra']) {
+          assert.deepStrictEqual(updateReasoningEffort(effort), { effort });
+          const config = toml.parse(fs.readFileSync(configPath, 'utf8'));
+          assert.strictEqual(config.model_reasoning_effort, effort);
+        }
       });
     },
     failures
@@ -141,7 +262,7 @@ async function runCodexChannelTests() {
 
           assert.strictEqual(auth[channel.envKey], 'sk-auth-sync-test');
           assert.strictEqual(auth.OPENAI_API_KEY, 'sk-auth-sync-test');
-          assert.ok(configContent.includes('model = "gpt-5.4"'));
+          assert.ok(configContent.includes('model = "gpt-6-sol"'));
         } finally {
           childProcess.execFileSync = originalExecFileSync;
         }

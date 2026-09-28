@@ -2,6 +2,14 @@ import { describe, it, expect } from 'vitest'
 import channelPanelFactories from './channelPanelFactories'
 
 describe('channelPanelFactories', () => {
+  it('Codex 新渠道默认使用 GPT-6-Sol，且无当前提供方时不回退选中第一条', () => {
+    const factory = channelPanelFactories.codex()
+
+    expect(factory.getInitialForm().modelName).toBe('gpt-6-sol')
+    expect(factory.mapChannelToForm({}).modelName).toBe('gpt-6-sol')
+    expect(factory.fallbackToFirstChannel).toBe(false)
+  })
+
   it('claude 配置应该正确包含并处理 enable1M 字段', () => {
     const factory = channelPanelFactories.claude()
     
