@@ -509,9 +509,6 @@ function writeCodexConfigForMultiChannel(
   let config = {
     model: "gpt-4",
     model_reasoning_effort: "high",
-    model_reasoning_summary_format: "experimental",
-    network_access: "enabled",
-    disable_response_storage: false,
     show_raw_agent_reasoning: true,
   };
 
@@ -527,14 +524,6 @@ function writeCodexConfigForMultiChannel(
         model: parsedConfig.model || config.model,
         model_reasoning_effort:
           parsedConfig.model_reasoning_effort || config.model_reasoning_effort,
-        model_reasoning_summary_format:
-          parsedConfig.model_reasoning_summary_format ||
-          config.model_reasoning_summary_format,
-        network_access: parsedConfig.network_access || config.network_access,
-        disable_response_storage:
-          parsedConfig.disable_response_storage !== undefined
-            ? parsedConfig.disable_response_storage
-            : config.disable_response_storage,
         show_raw_agent_reasoning:
           parsedConfig.show_raw_agent_reasoning !== undefined
             ? parsedConfig.show_raw_agent_reasoning
@@ -820,9 +809,6 @@ function applyChannelToSettings(channelId) {
   let config = {
     model: "gpt-4",
     model_reasoning_effort: "high",
-    model_reasoning_summary_format: "experimental",
-    network_access: "enabled",
-    disable_response_storage: false,
     show_raw_agent_reasoning: true,
   };
 
