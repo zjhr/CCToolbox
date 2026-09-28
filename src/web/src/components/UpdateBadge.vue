@@ -21,6 +21,8 @@
     <UpdatePanel
       :current="updateInfo?.current"
       :remote="updateInfo?.remote"
+      :current-commit="updateInfo?.currentCommit"
+      :latest-commit="updateInfo?.latestCommit"
       :updating="isUpdating"
       :progress="updateProgress"
       @update="handleUpdate"

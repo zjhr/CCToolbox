@@ -6,11 +6,13 @@
       <div class="version-card">
         <div class="label">当前版本</div>
         <div class="value">{{ current || '-' }}</div>
+        <div v-if="showCommitDetails" class="commit-id">{{ currentCommit.slice(0, 7) }}</div>
       </div>
       <div class="arrow">→</div>
       <div class="version-card latest">
         <div class="label">最新版本</div>
         <div class="value">{{ remote || '-' }}</div>
+        <div v-if="showCommitDetails" class="commit-id">{{ latestCommit.slice(0, 7) }}</div>
       </div>
     </div>
 
@@ -33,14 +35,23 @@
 
 <script setup>
 import { NButton } from 'naive-ui'
+import { computed } from 'vue'
 import UpdateProgress from './UpdateProgress.vue'
 
-defineProps({
+const props = defineProps({
   current: {
     type: String,
     default: null
   },
   remote: {
+    type: String,
+    default: null
+  },
+  currentCommit: {
+    type: String,
+    default: null
+  },
+  latestCommit: {
     type: String,
     default: null
   },
@@ -53,6 +64,16 @@ defineProps({
     default: null
   }
 })
+
+const showCommitDetails = computed(() =>
+  Boolean(
+    props.current &&
+    props.current === props.remote &&
+    props.currentCommit &&
+    props.latestCommit &&
+    props.currentCommit !== props.latestCommit
+  )
+)
 
 defineEmits(['update', 'dismiss'])
 </script>
@@ -97,6 +118,13 @@ defineEmits(['update', 'dismiss'])
   font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
+}
+
+.commit-id {
+  margin-top: 2px;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-family: var(--font-mono, monospace);
 }
 
 .arrow {

@@ -3,7 +3,7 @@ const path = require('path');
 const { execFile } = require('child_process');
 const { compareVersions } = require('./version-check');
 
-const FETCH_TIMEOUT_MS = 2000;
+const FETCH_TIMEOUT_MS = 15000;
 
 function runGitCommand(args, options = {}) {
   const { cwd, timeout = FETCH_TIMEOUT_MS } = options;
@@ -95,6 +95,20 @@ async function getRemoteVersion(rootDir, ref = 'origin/main') {
   }
 }
 
+// 获取本地或远端引用的提交号，补足仅比较 package.json 版本的盲区。
+async function getCommitHash(rootDir, ref) {
+  const result = await runGitCommand(['rev-parse', ref], {
+    cwd: rootDir,
+    timeout: FETCH_TIMEOUT_MS
+  });
+
+  if (result.error) {
+    return null;
+  }
+
+  return result.stdout.trim() || null;
+}
+
 async function checkGitUpdate(rootDir) {
   const isRepo = await isGitRepository(rootDir);
   if (!isRepo) {
@@ -116,55 +130,100 @@ async function checkGitUpdate(rootDir) {
     };
   }
 
-  const remoteUrl = await getRemoteUrl(rootDir);
-  const httpsUrl = toHttpsUrl(remoteUrl);
-  let fetchWarning = null;
-  let fetchRef = 'origin/main';
-
-  if (httpsUrl) {
-    const fetchResult = await runGitCommand(
-      ['fetch', httpsUrl, 'main', '--quiet', '--depth=1'],
-      {
-        cwd: rootDir,
-        timeout: FETCH_TIMEOUT_MS
-      }
-    );
-    const fetchError = fetchResult.error && !fetchResult.timedOut;
-    fetchWarning = fetchError ? (fetchResult.stderr || fetchResult.error.message) : null;
-    if (!fetchError) {
-      fetchRef = 'FETCH_HEAD';
-    }
-  } else {
-    const fetchResult = await runGitCommand(['fetch', 'origin', 'main', '--quiet'], {
-      cwd: rootDir,
-      timeout: FETCH_TIMEOUT_MS
-    });
-    const fetchError = fetchResult.error && !fetchResult.timedOut;
-    fetchWarning = fetchError ? (fetchResult.stderr || fetchResult.error.message) : null;
-  }
-
-  let remoteVersion = await getRemoteVersion(rootDir, fetchRef);
-  if (!remoteVersion && fetchRef !== 'origin/main') {
-    remoteVersion = await getRemoteVersion(rootDir, 'origin/main');
-  }
-  if (!remoteVersion) {
+  const currentCommit = await getCommitHash(rootDir, 'HEAD');
+  if (!currentCommit) {
     return {
       type: 'git',
       hasUpdate: false,
       current: currentVersion,
       latest: null,
       error: true,
-      reason: fetchWarning || 'remote version unavailable'
+      reason: 'local commit unavailable'
     };
   }
 
-  const hasUpdate = compareVersions(remoteVersion, currentVersion) > 0;
+  const remoteUrl = await getRemoteUrl(rootDir);
+  const httpsUrl = toHttpsUrl(remoteUrl);
+  let fetchRef = 'origin/main';
+  let fetchResult;
+
+  if (httpsUrl) {
+    fetchResult = await runGitCommand(
+      ['fetch', httpsUrl, 'main', '--quiet', '--depth=1'],
+      {
+        cwd: rootDir,
+        timeout: FETCH_TIMEOUT_MS
+      }
+    );
+    if (!fetchResult.error) {
+      fetchRef = 'FETCH_HEAD';
+    } else if (!fetchResult.timedOut) {
+      fetchResult = await runGitCommand(['fetch', 'origin', 'main', '--quiet'], {
+        cwd: rootDir,
+        timeout: FETCH_TIMEOUT_MS
+      });
+      if (!fetchResult.error) {
+        fetchRef = 'origin/main';
+      }
+    }
+  } else {
+    fetchResult = await runGitCommand(['fetch', 'origin', 'main', '--quiet'], {
+      cwd: rootDir,
+      timeout: FETCH_TIMEOUT_MS
+    });
+  }
+
+  if (fetchResult.error) {
+    return {
+      type: 'git',
+      hasUpdate: false,
+      current: currentVersion,
+      latest: null,
+      currentCommit,
+      latestCommit: null,
+      error: true,
+      reason: fetchResult.stderr || fetchResult.error.message
+    };
+  }
+
+  const remoteVersion = await getRemoteVersion(rootDir, fetchRef);
+  if (!remoteVersion) {
+    return {
+      type: 'git',
+      hasUpdate: false,
+      current: currentVersion,
+      latest: null,
+      currentCommit,
+      latestCommit: null,
+      error: true,
+      reason: 'remote version unavailable'
+    };
+  }
+
+  const latestCommit = await getCommitHash(rootDir, fetchRef);
+  if (!latestCommit) {
+    return {
+      type: 'git',
+      hasUpdate: false,
+      current: currentVersion,
+      latest: remoteVersion,
+      currentCommit,
+      latestCommit: null,
+      error: true,
+      reason: 'remote commit unavailable'
+    };
+  }
+
+  const hasUpdate =
+    latestCommit !== currentCommit ||
+    compareVersions(remoteVersion, currentVersion) > 0;
   return {
     type: 'git',
     hasUpdate,
     current: currentVersion,
     latest: remoteVersion,
-    warning: fetchWarning
+    currentCommit,
+    latestCommit
   };
 }
 

@@ -2,7 +2,7 @@ const express = require('express');
 const path = require('path');
 const { spawn } = require('child_process');
 const { checkGitUpdate, isGitRepository } = require('../../utils/git-version');
-const { getCurrentVersion } = require('../../utils/version-check');
+const { checkForUpdates, getCurrentVersion } = require('../../utils/version-check');
 const { broadcastUpdate } = require('../websocket-server');
 
 const router = express.Router();
@@ -16,11 +16,12 @@ const UPDATE_STEPS = [
   '重启服务',
   '健康检查'
 ];
+const NPM_UPDATE_STEPS = ['安装 npm 全局包'];
 
 let currentProcess = null;
 
-function buildSteps() {
-  return UPDATE_STEPS.map((title) => ({
+function buildSteps(titles = UPDATE_STEPS) {
+  return titles.map((title) => ({
     title,
     status: 'pending'
   }));
@@ -40,18 +41,127 @@ function emitProgress(state) {
 }
 
 async function performCheck() {
-  return checkGitUpdate(projectRoot);
+  const result = await checkGitUpdate(projectRoot);
+  if (result.type === 'git') {
+    return result;
+  }
+
+  return {
+    ...(await checkForUpdates()),
+    type: 'npm'
+  };
+}
+
+// npm 安装不会重启当前 Node 进程，完成后需要用户重启服务。
+function startNpmUpdate(res) {
+  const steps = buildSteps(NPM_UPDATE_STEPS);
+  const state = {
+    step: 1,
+    total: steps.length,
+    message: '正在更新 npm 全局包...',
+    progress: 0,
+    output: '',
+    steps: steps.map((step, index) => ({
+      ...step,
+      status: index === 0 ? 'in_progress' : 'pending'
+    }))
+  };
+  const outputLines = [];
+  let processFailed = false;
+  const command = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  const child = spawn(command, ['install', '-g', 'cctoolbox@latest'], {
+    shell: process.platform === 'win32',
+    windowsHide: true
+  });
+  currentProcess = child;
+
+  emitProgress(state);
+
+  const handleOutput = (data) => {
+    const lines = data.toString().split(/\r?\n/).filter(Boolean);
+    outputLines.push(...lines);
+    state.output = lines.length ? lines[lines.length - 1] : '';
+    emitProgress(state);
+  };
+
+  child.stdout.on('data', handleOutput);
+  child.stderr.on('data', handleOutput);
+
+  const emitFailure = (error) => {
+    if (processFailed) return;
+    processFailed = true;
+    if (currentProcess === child) currentProcess = null;
+    const failedSteps = steps.map((step, index) => ({
+      ...step,
+      status: index === 0 ? 'failed' : 'pending'
+    }));
+    emitProgress({
+      ...state,
+      message: 'npm 更新失败',
+      steps: failedSteps
+    });
+    broadcastUpdate({
+      type: 'update-error',
+      success: false,
+      message: 'npm 更新失败',
+      error: error.message,
+      rollback: false,
+      timestamp: Date.now()
+    });
+  };
+
+  child.on('error', emitFailure);
+  child.on('close', (code) => {
+    if (processFailed) return;
+    if (currentProcess === child) currentProcess = null;
+
+    if (code === 0) {
+      const completedSteps = steps.map((step) => ({ ...step, status: 'completed' }));
+      let newVersion = null;
+      try {
+        newVersion = getCurrentVersion();
+      } catch (error) {
+        newVersion = null;
+      }
+      emitProgress({
+        ...state,
+        message: 'npm 包已更新，需要重启服务后生效',
+        progress: 100,
+        steps: completedSteps
+      });
+      broadcastUpdate({
+        type: 'update-complete',
+        success: true,
+        message: 'npm 包已更新，请重启 CCToolbox 服务后生效',
+        newVersion,
+        restartRequired: true,
+        timestamp: Date.now()
+      });
+      return;
+    }
+
+    emitFailure(
+      new Error(outputLines.slice(-10).join('\n') || `npm 更新退出码 ${code}`)
+    );
+  });
+
+  res.json({
+    success: true,
+    message: 'npm update started'
+  });
 }
 
 router.get('/check', async (_req, res) => {
   try {
     const result = await performCheck();
-    if (result.type === 'git' && result.hasUpdate) {
+    if (result.hasUpdate && !result.error) {
       broadcastUpdate({
         type: 'update-available',
-        updateType: 'git',
+        updateType: result.type,
         current: result.current,
         remote: result.latest,
+        currentCommit: result.currentCommit,
+        latestCommit: result.latestCommit,
         timestamp: Date.now()
       });
     }
@@ -74,11 +184,7 @@ router.post('/execute', async (_req, res) => {
 
   const isRepo = await isGitRepository(projectRoot);
   if (!isRepo) {
-    return res.status(400).json({
-      success: false,
-      error: 'Not a git repository',
-      message: '请使用: npm install -g cctoolbox@latest'
-    });
+    return startNpmUpdate(res);
   }
 
   const steps = buildSteps();

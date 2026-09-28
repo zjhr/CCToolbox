@@ -30,6 +30,9 @@
       <span v-if="countdown !== null" class="success-text">
         更新完成，{{ countdown }} 秒后刷新
       </span>
+      <span v-else-if="progress?.restartRequired" class="success-text">
+        更新已安装，请重启服务后生效
+      </span>
       <span v-else-if="progress?.status === 'failed'" class="fail-text">
         更新失败，请查看日志或手动更新
       </span>
@@ -90,7 +93,7 @@ function startCountdown() {
 watch(
   () => props.progress?.status,
   (status) => {
-    if (status === 'completed' && countdown.value === null) {
+    if (status === 'completed' && !props.progress?.restartRequired && countdown.value === null) {
       startCountdown()
     }
     if (status !== 'completed' && timer) {

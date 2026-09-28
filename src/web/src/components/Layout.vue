@@ -924,6 +924,22 @@ function handlePanelVisibilityChange(event) {
 }
 
 // 检查版本更新
+function formatGitUpdateVersion(result, side) {
+  const version = side === "current" ? result.current : result.latest;
+  const commit = side === "current" ? result.currentCommit : result.latestCommit;
+  const hasCommitOnlyUpdate =
+    result.current === result.latest &&
+    result.currentCommit &&
+    result.latestCommit &&
+    result.currentCommit !== result.latestCommit;
+
+  if (!version || !hasCommitOnlyUpdate) {
+    return version || "unknown";
+  }
+
+  return `${version} (${commit.slice(0, 7)})`;
+}
+
 async function checkForUpdates() {
   try {
     const envResult = await checkGitUpdate();
@@ -955,7 +971,7 @@ async function handleManualUpdateCheck() {
 
       if (gitResult.hasUpdate) {
         message.success(
-          `发现新版本：${gitResult.current} → ${gitResult.latest}`
+          `发现新版本：${formatGitUpdateVersion(gitResult, "current")} → ${formatGitUpdateVersion(gitResult, "latest")}`
         );
       } else {
         message.success("已经是最新版本");

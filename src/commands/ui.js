@@ -23,9 +23,20 @@ async function handleUI() {
   if (!isDaemon) {
     checkUpdateSilently().then((result) => {
       if (result.hasUpdate && !result.error) {
+        const commitOnlyUpdate =
+          result.current === result.latest &&
+          result.currentCommit &&
+          result.latestCommit &&
+          result.currentCommit !== result.latestCommit;
+        const currentVersion = commitOnlyUpdate
+          ? `${result.current} (${result.currentCommit.slice(0, 7)})`
+          : result.current;
+        const latestVersion = commitOnlyUpdate
+          ? `${result.latest} (${result.latestCommit.slice(0, 7)})`
+          : result.latest;
         console.log(chalk.yellow.bold('\n📢 发现新版本可用！'));
-        console.log(chalk.gray(`   当前版本: ${result.current}`));
-        console.log(chalk.gray(`   最新版本: ${result.latest}`));
+        console.log(chalk.gray(`   当前版本: ${currentVersion}`));
+        console.log(chalk.gray(`   最新版本: ${latestVersion}`));
         console.log(chalk.cyan('   运行 ') + chalk.white.bold('ct update') + chalk.cyan(' 进行更新\n'));
       }
     }).catch(() => {

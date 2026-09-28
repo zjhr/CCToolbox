@@ -86,6 +86,8 @@ export function useUpdateChecker() {
           type: data.updateType || 'git',
           current: data.current,
           remote: data.remote,
+          currentCommit: data.currentCommit,
+          latestCommit: data.latestCommit,
           timestamp: data.timestamp
         }
         break
@@ -98,6 +100,7 @@ export function useUpdateChecker() {
           progress: data.progress,
           output: data.output,
           steps: data.steps || [],
+          restartRequired: data.restartRequired === true,
           status: 'in_progress'
         }
         break
@@ -108,7 +111,8 @@ export function useUpdateChecker() {
           message: data.message || '更新完成',
           progress: 100,
           status: 'completed',
-          newVersion: data.newVersion
+          newVersion: data.newVersion,
+          restartRequired: data.restartRequired === true
         }
         break
       case 'update-error':
@@ -117,6 +121,7 @@ export function useUpdateChecker() {
           ...updateProgress.value,
           message: data.message || '更新失败',
           error: data.error,
+          restartRequired: false,
           status: 'failed'
         }
         break
@@ -128,12 +133,14 @@ export function useUpdateChecker() {
   async function checkUpdate() {
     try {
       const result = await checkUpdateApi()
-      if (result.type === 'git' && result.hasUpdate && !result.error) {
+      if (result.hasUpdate && !result.error) {
         hasUpdate.value = true
         updateInfo.value = {
-          type: 'git',
+          type: result.type || 'git',
           current: result.current,
           remote: result.latest,
+          currentCommit: result.currentCommit,
+          latestCommit: result.latestCommit,
           timestamp: Date.now()
         }
       }
